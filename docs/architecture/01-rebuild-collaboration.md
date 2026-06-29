@@ -29,23 +29,53 @@
 | 可观测 | OpenTelemetry + Prometheus + Loki/ELK | 从第一阶段接入 |
 | 部署 | Docker Compose + Helm/K8s | 本地开发和生产部署分层 |
 
-## 3. 分工确认
+## 3. 全员分工
 
-### deepseek-architect 负责
+### 架构师
 
-1. 项目初始化：FastAPI 脚手架、`pyproject.toml`、`Dockerfile`、`docker-compose`。
-2. 核心基础设施：SQLAlchemy 引擎、Alembic、Redis、配置模块、基础异常处理、健康检查。
-3. 安全基座：AES-256-GCM、密码哈希、JWT 与黑名单、速率限制、CORS/Secure Cookie、安全响应头。
-4. Identity & Auth：用户模型、登录、MFA、OAuth2/OIDC、API Key。
-5. 威胁模型、依赖替换、安全验收 CI。
+**mac-opencode-architect**
+1. 项目初始化：FastAPI 脚手架、`pyproject.toml`、`Dockerfile`、`docker-compose` ✅
+2. 核心基础设施：SQLAlchemy 引擎、Alembic、Redis、配置模块、异常处理、健康检查
+3. 安全基座：AES-256-GCM、bcrypt、JWT + 黑名单、速率限制、CORS/Secure Cookie
+4. Identity & Auth 模块：用户、登录、MFA、OAuth2/OIDC、API Key
+5. Inventory 模块：资产、平台、协议、节点树
 
-### tc-codex-architect 负责
+**tc-codex-architect**
+1. 总体架构文档、阶段计划、任务拆分、协作规则 ✅
+2. PolicyDecisionService：策略模型、决策引擎、explain、策略模拟
+3. Connector API v2：注册、握手、心跳、短期连接 token、审计事件规范
+4. Credential Vault：SecretProvider 抽象、envelope encryption、轮换接口
 
-1. 总体架构文档、阶段计划、任务拆分和 Git 协作规则。
-2. PolicyDecisionService：策略模型、策略决策、explain、deny-by-default。
-3. Connector API v2：注册、握手、心跳、短期连接 token、审计事件规范。
-4. Credential Vault：SecretProvider 抽象、凭据引用、轮换接口、审计事件。
-5. 评审 deepseek-architect 的安全基座是否满足后续策略/连接器/Vault 扩展点。
+### 开发工程师
+
+**codex-developer + tc-codex-developer**
+1. Session Gateway：会话生命周期、连接调度、WebSocket 管理
+2. 审计模块：操作日志、命令记录、会话录像元数据、SIEM 投递
+3. 工单/审批流：Workflow & JIT 权限申请与审批
+4. 通知模块：站内通知、邮件、飞书/钉钉/企微
+
+### 代码审查
+
+**tc-codex-code-reviewer + codex-code-reviewer**
+1. 每个 PR merge 前必须 review
+2. 重点审查：认证/授权路径、加密实现、SQL 注入防护、输入校验
+3. 架构一致性检查（是否遵循 Bounded Context 边界）
+
+### 测试与 QA
+
+**codex-tester + tc-codex-qa-engineer**
+1. 单元测试 + 集成测试编写
+2. 安全回归测试（OAuth2 state、JWT 生命周期、速率限制、timing-safe）
+3. API 契约测试（DRF TestClient 覆盖全部端点）
+4. 测试覆盖率监控与门禁
+
+### DevOps
+
+**tc-codex-devops-engineer**
+1. GitHub Actions CI/CD：lint、typecheck、test、bandit、pip-audit
+2. Docker 镜像构建与推送
+3. Kubernetes Helm chart + 部署文档
+4. 开发/测试环境管理与健康监控
 
 ## 4. 第一阶段开发顺序
 
@@ -55,17 +85,26 @@
 4. 每个可运行增量必须包含测试、文档和安全验收说明。
 5. 阶段合并前，以 `docs/architecture/00-final-evaluation.md` 和本文件为验收依据。
 
-## 5. 目录 owner 初始划分
+## 5. 目录 owner 划分
 
 | 路径 | Owner | 说明 |
 |---|---|---|
-| `src/janusgate/core/` | deepseek-architect | 配置、安全基础设施、异常、日志、依赖注入 |
-| `src/janusgate/identity/` | deepseek-architect | 用户、认证、MFA、OIDC、API Key |
-| `src/janusgate/policy/` | tc-codex-architect | PolicyDecisionService 和策略模型 |
-| `src/janusgate/connectors/` | tc-codex-architect | Connector API v2 协议和注册握手 |
-| `src/janusgate/vault/` | tc-codex-architect | SecretProvider 和凭据生命周期 |
-| `docs/architecture/` | tc-codex-architect 主责，双方可 review | 架构、接口、阶段计划 |
-| `docs/security/` | deepseek-architect 主责，双方可 review | 威胁模型、安全基线、验收门禁 |
+| `backend/app/core/` | mac-opencode-architect | 配置、数据库、安全基础设施、依赖注入 |
+| `backend/app/models/` | mac-opencode-architect | ORM 模型（User、Asset、Credential、Session、AuditEvent） |
+| `backend/app/api/auth/` | mac-opencode-architect | Identity & Auth 路由 |
+| `backend/app/api/assets/` | mac-opencode-architect | Inventory 路由 |
+| `backend/app/services/policy/` | tc-codex-architect | PolicyDecisionService |
+| `backend/app/services/connector/` | tc-codex-architect | Connector API v2 |
+| `backend/app/services/vault/` | tc-codex-architect | SecretProvider |
+| `backend/app/api/sessions/` | developer | Session Gateway 路由 |
+| `backend/app/api/audits/` | developer | 审计路由 |
+| `backend/app/api/workflows/` | developer | 工单/审批流路由 |
+| `backend/app/services/notify/` | developer | 通知服务 |
+| `backend/tests/` | tester + qa-engineer | 测试代码 |
+| `deploy/` | devops-engineer | Helm chart、部署脚本 |
+| `.github/workflows/` | devops-engineer | CI/CD 流水线 |
+| `docs/architecture/` | tc-codex-architect 主责 | 架构、接口、阶段计划 |
+| `docs/security/` | mac-opencode-architect 主责 | 威胁模型、安全基线、验收门禁 |
 
 ## 6. 提交规范
 
