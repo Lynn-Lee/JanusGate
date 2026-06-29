@@ -8,6 +8,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 
+from app.api import auth
 from app.core.config import settings
 from app.core.database import engine
 from app.core.exceptions import register_exception_handlers
@@ -38,6 +39,8 @@ app.add_middleware(
 )
 
 register_exception_handlers(app)
+
+app.include_router(auth.router, prefix="/api/v1")
 
 
 @app.get("/health")
