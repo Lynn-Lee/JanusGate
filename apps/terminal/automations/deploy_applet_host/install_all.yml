@@ -1,9 +1,0 @@
----
-
-- hosts: all
-
-  tasks:
-    - name: Install all applets
-      ansible.windows.win_powershell:
-        script: |
-          tinkerd install all

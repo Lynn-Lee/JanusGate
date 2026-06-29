@@ -1,51 +1,28 @@
-.DS_Store
+# ── 环境变量 ──
+.env
+.env.*
+
+# ── Python ──
+__pycache__/
 *.pyc
 *.pyo
-*.swp
-.env
-env
-env*
-venv
-dist
-build
-*.egg
-*.egg-info
-_mailinglist
-dump.rdb
-.tox
-.cache/
-.idea/
+*.egg-info/
+.venv/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+htmlcov/
+.coverage
+coverage.xml
+
+# ── IDE ──
 .vscode/
-.fleet/
-db.sqlite3
-config.py
-config.yml
+.idea/
+*.swp
+.DS_Store
+
+# ── Docker ──
 *.log
-host_rsa_key
-*.bat
-tags
-jumpserver.iml
-.python-version
-tmp/*
-sessions/*
-media
-celerybeat.pid
-django.db
-celerybeat-schedule.db
-docs/_build/
-xpack
-xpack.bak
-### Vagrant ###
-.vagrant/
-release/*
-releashe
-/apps/script.py
-data/*
-test.py
-.history/
-.test/
-*.mo
-apps.iml
-*.db
-*.mmdb
-*.ipdb
+
+# ── Uploads ──
+backend/downloads/
