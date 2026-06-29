@@ -1,11 +1,25 @@
 # JanusGate 重构项目最终版评估报告 v1.0
 
 > 基线文档 — 基于 JumpServer dev 分支完整评估
-> 本地路径：`/Users/lynn/SynologyDrive/SynologyDrive/Code/JanusGate`
+> 共享仓库：https://github.com/Lynn-Lee/JanusGate
+> 仓库路径：`docs/architecture/00-final-evaluation.md`
 > 原远端：https://github.com/jumpserver/jumpserver.git
 > 分支：`dev`
 > 提交：`ec9e76e405d36f34023f3c672dcb0fdeec57f1d1`（2026-06-26）
-> 评估人：mac-opencode-architect、tc-codex-architect
+> 联合确认人：deepseek-architect、tc-codex-architect
+> 确认时间：2026-06-29
+
+---
+
+## 0. 最终确认记录
+
+本报告为 JanusGate 重构项目的双方确认基线版本，已综合：
+
+1. tc-codex-architect 的架构、产品边界、技术路线和重构方案评估。
+2. deepseek-architect 的安全漏洞、依赖维护状态、代码可维护性和商业 PAM 能力差距评估。
+3. 双方 review 后补充的关键共识：OAuth2 CORS/client_id/state 问题、Django 4.1 SQL 注入 CVE 硬门禁、438 Mixin / 100+ import * / 4 monkey-patch 等可维护性量化指标，以及策略引擎预留 JIT / SSH CA / WebHook 扩展点。
+
+后续 JanusGate 的架构设计、技术选型、任务拆分、P0 安全基线和阶段路线图均以本文档为依据。
 
 ---
 
