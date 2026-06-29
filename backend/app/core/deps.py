@@ -9,11 +9,13 @@ from typing import Any
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from redis.asyncio import Redis
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.core.database import get_db
 from app.core.security import decode_token
+from app.models.user import User
 
 security_scheme = HTTPBearer()
 
@@ -55,10 +57,15 @@ async def current_user(
     if not user_id:
         raise _UNAUTHORIZED
 
+    result = await db.execute(select(User).where(User.id == int(user_id)))
+    db_user = result.scalar_one_or_none()
+    if not db_user or not db_user.is_active:
+        raise _UNAUTHORIZED
+
     return {
-        "id": user_id,
-        "username": payload.get("username", ""),
-        "tenant_id": payload.get("tenant_id", "default"),
+        "id": db_user.id,
+        "username": db_user.username,
+        "tenant_id": db_user.tenant_id if hasattr(db_user, "tenant_id") else "default",
         "permissions": payload.get("permissions", []),
     }
 

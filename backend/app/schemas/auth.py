@@ -8,9 +8,11 @@ class LoginRequest(BaseModel):
 
 
 class TokenResponse(BaseModel):
-    access_token: str
-    refresh_token: str
+    access_token: str = ""
+    refresh_token: str = ""
     token_type: str = "Bearer"
+    requires_2fa: bool = False
+    two_fa_token: str = ""
 
 
 class TwoFASetupResponse(BaseModel):
@@ -19,6 +21,11 @@ class TwoFASetupResponse(BaseModel):
 
 
 class TwoFAVerifyRequest(BaseModel):
+    totp_code: str = Field(min_length=6, max_length=6)
+
+
+class Login2FARequest(BaseModel):
+    two_fa_token: str
     totp_code: str = Field(min_length=6, max_length=6)
 
 
