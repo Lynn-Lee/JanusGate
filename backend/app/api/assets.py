@@ -1,4 +1,6 @@
 """资产 API 路由。"""
+from typing import Any
+
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -17,8 +19,8 @@ async def list_assets(
     skip: int = Query(0, ge=0),
     limit: int = Query(50, ge=1, le=200),
     db: AsyncSession = Depends(get_db),
-    _user: dict = Depends(current_user),
-):
+    _user: dict[str, Any] = Depends(current_user),
+) -> list[AssetResponse]:
     assets = await AssetService.list_assets(db, skip, limit)
     return [
         AssetResponse(
@@ -32,8 +34,8 @@ async def list_assets(
 
 @router.get("/{asset_id}", response_model=AssetResponse)
 async def get_asset(
-    asset_id: int, db: AsyncSession = Depends(get_db), _user: dict = Depends(current_user)
-):
+    asset_id: int, db: AsyncSession = Depends(get_db), _user: dict[str, Any] = Depends(current_user)
+) -> AssetResponse:
     asset = await AssetService.get_asset(db, asset_id)
     if not asset:
         raise HTTPException(404, "资产不存在")
@@ -46,8 +48,8 @@ async def get_asset(
 
 @router.post("/", response_model=AssetResponse)
 async def create_asset(
-    data: AssetCreate, db: AsyncSession = Depends(get_db), _user: dict = Depends(current_user)
-):
+    data: AssetCreate, db: AsyncSession = Depends(get_db), _user: dict[str, Any] = Depends(current_user)
+) -> AssetResponse:
     asset = await AssetService.create_asset(db, data.model_dump())
     return AssetResponse(
         id=asset.id, name=asset.name, address=asset.address, platform_id=asset.platform_id,
@@ -58,8 +60,8 @@ async def create_asset(
 
 @router.delete("/{asset_id}")
 async def delete_asset(
-    asset_id: int, db: AsyncSession = Depends(get_db), _user: dict = Depends(current_user)
-):
+    asset_id: int, db: AsyncSession = Depends(get_db), _user: dict[str, Any] = Depends(current_user)
+) -> dict[str, str]:
     deleted = await AssetService.delete_asset(db, asset_id)
     if not deleted:
         raise HTTPException(404, "资产不存在")
@@ -67,14 +69,16 @@ async def delete_asset(
 
 
 @router.post("/test-connection")
-async def test_connection(address: str, port: int = 22, _user: dict = Depends(current_user)):
+async def test_connection(
+    address: str, port: int = 22, _user: dict[str, Any] = Depends(current_user)
+) -> dict[str, Any]:
     return await AssetService.test_connection(address, port)
 
 
 @router.post("/platforms", response_model=PlatformResponse)
 async def create_platform(
-    data: PlatformCreate, db: AsyncSession = Depends(get_db), _user: dict = Depends(current_user)
-):
+    data: PlatformCreate, db: AsyncSession = Depends(get_db), _user: dict[str, Any] = Depends(current_user)
+) -> PlatformResponse:
     platform = Platform(**data.model_dump())
     db.add(platform)
     await db.commit()
@@ -87,8 +91,8 @@ async def create_platform(
 
 @router.get("/platforms", response_model=list[PlatformResponse])
 async def list_platforms(
-    db: AsyncSession = Depends(get_db), _user: dict = Depends(current_user)
-):
+    db: AsyncSession = Depends(get_db), _user: dict[str, Any] = Depends(current_user)
+) -> list[PlatformResponse]:
     result = await db.execute(select(Platform).order_by(Platform.id))
     platforms = result.scalars().all()
     return [

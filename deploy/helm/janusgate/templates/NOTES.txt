@@ -1,0 +1,8 @@
+JanusGate has been deployed.
+
+Check rollout:
+  kubectl rollout status deployment/{{ include "janusgate.fullname" . }} -n {{ .Release.Namespace }}
+
+Port-forward for a local health check:
+  kubectl port-forward svc/{{ include "janusgate.fullname" . }} 8000:{{ .Values.service.port }} -n {{ .Release.Namespace }}
+  curl -fsS http://localhost:8000/health

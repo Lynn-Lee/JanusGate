@@ -2,7 +2,9 @@
 JanusGate — FastAPI 应用入口。
 策略驱动的 PAM / 零信任访问网关。
 """
+from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
+from typing import Any
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -15,7 +17,7 @@ from app.core.exceptions import register_exception_handlers
 
 
 @asynccontextmanager
-async def lifespan(app: FastAPI):
+async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     yield
     await engine.dispose()
 
@@ -45,5 +47,5 @@ app.include_router(assets.router, prefix="/api/v1")
 
 
 @app.get("/health")
-async def health():
+async def health() -> dict[str, Any]:
     return {"status": "ok", "version": "0.1.0"}

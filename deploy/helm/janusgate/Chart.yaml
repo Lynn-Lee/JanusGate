@@ -1,0 +1,12 @@
+apiVersion: v2
+name: janusgate
+version: 0.1.0
+appVersion: "0.1.0"
+description: JanusGate PAM / zero-trust access gateway backend
+keywords:
+  - pam
+  - zero-trust
+  - fastapi
+maintainers:
+  - name: JanusGate maintainers
+type: application

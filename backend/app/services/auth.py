@@ -3,6 +3,7 @@ import hashlib
 import secrets
 import uuid
 from datetime import UTC, datetime
+from typing import Any
 
 import pyotp
 from sqlalchemy import select
@@ -69,7 +70,7 @@ class AuthService:
         await db.commit()
 
     @staticmethod
-    async def setup_totp(db: AsyncSession, user_id: int) -> dict:
+    async def setup_totp(db: AsyncSession, user_id: int) -> dict[str, str]:
         result = await db.execute(select(User).where(User.id == user_id))
         user = result.scalar_one_or_none()
         if not user:
@@ -118,7 +119,7 @@ class AuthService:
         await db.commit()
 
     @staticmethod
-    async def create_api_key(db: AsyncSession, user_id: int, name: str) -> dict:
+    async def create_api_key(db: AsyncSession, user_id: int, name: str) -> dict[str, Any]:
         key_id = uuid.uuid4().hex
         secret = secrets.token_hex(24)
         secret_hash = hashlib.sha256(secret.encode()).hexdigest()
