@@ -7,8 +7,8 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
-from fastapi.middleware.trustedhost import TrustedHostMiddleware
 
+from app.api.audits.routes import router as audits_router
 from app.core.config import settings
 from app.core.database import engine
 from app.core.exceptions import register_exception_handlers
@@ -39,6 +39,7 @@ app.add_middleware(
 )
 
 register_exception_handlers(app)
+app.include_router(audits_router)
 
 
 @app.get("/health")
