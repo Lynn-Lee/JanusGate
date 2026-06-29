@@ -6,6 +6,10 @@ non-production key so local/unit test runs do not depend on a developer .env fil
 from __future__ import annotations
 
 import os
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 os.environ.setdefault("APP_ENV", "development")
 os.environ.setdefault("SECRET_KEY", "test-secret-key-" + "x" * 48)
