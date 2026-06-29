@@ -3,7 +3,7 @@ FastAPI 公共 Depends 依赖：用户认证 + 权限校验。
 使用 JWT + Redis 黑名单，恒定时间比较。
 """
 import hmac
-from collections.abc import AsyncGenerator
+from collections.abc import AsyncGenerator, Callable
 from typing import Any
 
 from fastapi import Depends, HTTPException, status
@@ -70,7 +70,7 @@ async def current_user(
     }
 
 
-def require_permission(perm: str):
+def require_permission(perm: str) -> Callable[[dict[str, Any]], Any]:
     async def checker(user: dict[str, Any] = Depends(current_user)) -> dict[str, Any]:
         if perm not in user.get("permissions", []):
             raise HTTPException(status_code=403, detail=f"缺少权限: {perm}")
