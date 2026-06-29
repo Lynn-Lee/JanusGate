@@ -3,6 +3,8 @@ FastAPI 公共 Depends 依赖：用户认证 + 权限校验。
 使用 JWT + Redis 黑名单，恒定时间比较。
 """
 import hmac
+from collections.abc import AsyncGenerator, Callable
+from typing import Any
 
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
@@ -21,7 +23,7 @@ _UNAUTHORIZED = HTTPException(
 )
 
 
-async def get_redis() -> Redis:
+async def get_redis() -> AsyncGenerator[Redis, None]:
     r = Redis.from_url(settings.REDIS_URL, decode_responses=True)
     try:
         yield r
@@ -33,7 +35,7 @@ async def current_user(
     credentials: HTTPAuthorizationCredentials = Depends(security_scheme),
     db: AsyncSession = Depends(get_db),
     redis: Redis = Depends(get_redis),
-) -> dict:
+) -> dict[str, Any]:
     token = credentials.credentials
     try:
         payload = decode_token(token)
@@ -61,8 +63,8 @@ async def current_user(
     }
 
 
-def require_permission(perm: str):
-    async def checker(user: dict = Depends(current_user)) -> dict:
+def require_permission(perm: str) -> Callable[[dict[str, Any]], Any]:
+    async def checker(user: dict[str, Any] = Depends(current_user)) -> dict[str, Any]:
         if perm not in user.get("permissions", []):
             raise HTTPException(status_code=403, detail=f"缺少权限: {perm}")
         return user

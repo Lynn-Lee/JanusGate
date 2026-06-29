@@ -5,13 +5,13 @@ services:
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-janusgate}
       POSTGRES_USER: ${POSTGRES_USER:-janusgate}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-janusgate}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set in .env}
     volumes:
       - pg_data:/var/lib/postgresql/data
     ports:
       - "5432:5432"
     healthcheck:
-      test: ["CMD", "pg_isready", "-U", "${POSTGRES_USER:-janusgate}"]
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -37,8 +37,9 @@ services:
     restart: unless-stopped
     env_file: .env
     environment:
-      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-janusgate}:${POSTGRES_PASSWORD:-janusgate}@postgres:5432/${POSTGRES_DB:-janusgate}
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-janusgate}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set in .env}@postgres:5432/${POSTGRES_DB:-janusgate}
       REDIS_URL: redis://redis:6379/0
+      SECRET_KEY: ${SECRET_KEY:?SECRET_KEY must be set in .env}
     ports:
       - "8000:8000"
     depends_on:
@@ -46,8 +47,17 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
-    volumes:
-      - ./backend:/app
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+    security_opt:
+      - no-new-privileges:true
+    read_only: true
+    tmpfs:
+      - /tmp
 
 volumes:
   pg_data:

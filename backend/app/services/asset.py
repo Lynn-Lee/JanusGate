@@ -1,5 +1,6 @@
 """资产服务：CRUD + 连接测试。"""
 import socket
+from typing import Any
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -22,7 +23,7 @@ class AssetService:
         return result.scalar_one_or_none()
 
     @staticmethod
-    async def create_asset(db: AsyncSession, data: dict) -> Asset:
+    async def create_asset(db: AsyncSession, data: dict[str, Any]) -> Asset:
         asset = Asset(**data)
         db.add(asset)
         await db.commit()
@@ -30,7 +31,9 @@ class AssetService:
         return asset
 
     @staticmethod
-    async def update_asset(db: AsyncSession, asset_id: int, data: dict) -> Asset | None:
+    async def update_asset(
+        db: AsyncSession, asset_id: int, data: dict[str, Any]
+    ) -> Asset | None:
         result = await db.execute(select(Asset).where(Asset.id == asset_id))
         asset = result.scalar_one_or_none()
         if not asset:
@@ -53,7 +56,9 @@ class AssetService:
         return True
 
     @staticmethod
-    async def test_connection(address: str, port: int, timeout: float = 5.0) -> dict:
+    async def test_connection(
+        address: str, port: int, timeout: float = 5.0
+    ) -> dict[str, Any]:
         try:
             sock = socket.create_connection((address, port), timeout=timeout)
             sock.close()

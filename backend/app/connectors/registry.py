@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import secrets
+from typing import Any, Protocol
 from uuid import uuid4
 
 from app.connectors.schemas import (
@@ -11,6 +12,10 @@ from app.connectors.schemas import (
     ConnectorStatus,
 )
 from app.policy.schemas import PolicyDecision
+
+
+class PolicyEvaluator(Protocol):
+    def evaluate(self, request: dict[str, Any]) -> Any: ...
 
 
 class InMemoryConnectorStore:
@@ -53,7 +58,12 @@ class ConnectorRegistry:
         )
         return self._store.save(record)
 
-    def issue_connection_token(self, connector_id: str, request: dict, policy_service) -> ConnectionToken:
+    def issue_connection_token(
+        self,
+        connector_id: str,
+        request: dict[str, Any],
+        policy_service: PolicyEvaluator,
+    ) -> ConnectionToken:
         connector = self._store.get(connector_id)
         if connector is None:
             raise ValueError("CONNECTOR_NOT_FOUND")
