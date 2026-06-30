@@ -1,4 +1,5 @@
 """资产服务：CRUD + 连接测试。"""
+import asyncio
 import ipaddress
 import socket
 from typing import Any
@@ -8,22 +9,28 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.asset import Asset
 
-_PRIVATE_RANGES = [
-    ipaddress.ip_network("10.0.0.0/8"),
-    ipaddress.ip_network("172.16.0.0/12"),
-    ipaddress.ip_network("192.168.0.0/16"),
-    ipaddress.ip_network("127.0.0.0/8"),
-    ipaddress.ip_network("169.254.0.0/16"),
-    ipaddress.ip_network("0.0.0.0/8"),
-]
-
 
 def _is_private_ip(address: str) -> bool:
     try:
         ip = ipaddress.ip_address(address)
-        return any(ip in net for net in _PRIVATE_RANGES)
+        return (
+            ip.is_private
+            or ip.is_loopback
+            or ip.is_link_local
+            or ip.is_multicast
+            or ip.is_reserved
+            or ip.is_unspecified
+        )
     except ValueError:
         return False
+
+
+def _resolves_to_private_ip(address: str, port: int) -> bool:
+    try:
+        infos = socket.getaddrinfo(address, port, type=socket.SOCK_STREAM)
+    except socket.gaierror:
+        return False
+    return any(_is_private_ip(str(info[4][0])) for info in infos)
 
 
 class AssetService:
@@ -77,10 +84,10 @@ class AssetService:
     async def test_connection(
         address: str, port: int, timeout: float = 5.0
     ) -> dict[str, Any]:
-        if _is_private_ip(address):
+        if _is_private_ip(address) or _resolves_to_private_ip(address, port):
             return {"reachable": False, "error": "SSRF protection: private/internal IP blocked"}
         try:
-            sock = socket.create_connection((address, port), timeout=timeout)
+            sock = await asyncio.to_thread(socket.create_connection, (address, port), timeout=timeout)
             sock.close()
             return {"reachable": True, "error": ""}
         except Exception as e:

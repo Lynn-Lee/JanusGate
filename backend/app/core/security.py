@@ -6,6 +6,7 @@ import base64
 import hashlib
 import os
 import re
+import uuid
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
@@ -53,6 +54,8 @@ def create_access_token(data: dict[str, Any]) -> str:
     payload = data.copy()
     payload.update({
         "exp": datetime.now(UTC) + timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES),
+        "iat": datetime.now(UTC),
+        "jti": uuid.uuid4().hex,
         "type": "access",
     })
     return jwt.encode(payload, settings.SECRET_KEY, algorithm=settings.JWT_ALGORITHM)
@@ -62,7 +65,21 @@ def create_refresh_token(data: dict[str, Any]) -> str:
     payload = data.copy()
     payload.update({
         "exp": datetime.now(UTC) + timedelta(days=settings.REFRESH_TOKEN_EXPIRE_DAYS),
+        "iat": datetime.now(UTC),
+        "jti": uuid.uuid4().hex,
         "type": "refresh",
+    })
+    return jwt.encode(payload, settings.SECRET_KEY, algorithm=settings.JWT_ALGORITHM)
+
+
+def create_mfa_token(data: dict[str, Any]) -> str:
+    payload = data.copy()
+    payload.update({
+        "exp": datetime.now(UTC) + timedelta(minutes=5),
+        "iat": datetime.now(UTC),
+        "jti": uuid.uuid4().hex,
+        "type": "mfa",
+        "requires_2fa": True,
     })
     return jwt.encode(payload, settings.SECRET_KEY, algorithm=settings.JWT_ALGORITHM)
 

@@ -6,7 +6,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
-from app.core.deps import current_user
+from app.core.deps import require_permission
 from app.models.asset import Platform
 from app.schemas.asset import AssetCreate, AssetResponse, PlatformCreate, PlatformResponse
 from app.services.asset import AssetService
@@ -19,7 +19,7 @@ async def list_assets(
     skip: int = Query(0, ge=0),
     limit: int = Query(50, ge=1, le=200),
     db: AsyncSession = Depends(get_db),
-    _user: dict[str, Any] = Depends(current_user),
+    _user: dict[str, Any] = Depends(require_permission("assets:read")),
 ) -> list[AssetResponse]:
     assets = await AssetService.list_assets(db, skip, limit)
     return [
@@ -32,23 +32,9 @@ async def list_assets(
     ]
 
 
-@router.get("/{asset_id}", response_model=AssetResponse)
-async def get_asset(
-    asset_id: int, db: AsyncSession = Depends(get_db), _user: dict[str, Any] = Depends(current_user)
-) -> AssetResponse:
-    asset = await AssetService.get_asset(db, asset_id)
-    if not asset:
-        raise HTTPException(404, "资产不存在")
-    return AssetResponse(
-        id=asset.id, name=asset.name, address=asset.address, platform_id=asset.platform_id,
-        port=asset.port, username=asset.username, is_active=asset.is_active,
-        description=asset.description, created_at=asset.created_at.isoformat() if asset.created_at else "",
-    )
-
-
 @router.post("/", response_model=AssetResponse)
 async def create_asset(
-    data: AssetCreate, db: AsyncSession = Depends(get_db), _user: dict[str, Any] = Depends(current_user)
+    data: AssetCreate, db: AsyncSession = Depends(get_db), _user: dict[str, Any] = Depends(require_permission("assets:write"))
 ) -> AssetResponse:
     asset = await AssetService.create_asset(db, data.model_dump())
     return AssetResponse(
@@ -60,7 +46,7 @@ async def create_asset(
 
 @router.delete("/{asset_id}")
 async def delete_asset(
-    asset_id: int, db: AsyncSession = Depends(get_db), _user: dict[str, Any] = Depends(current_user)
+    asset_id: int, db: AsyncSession = Depends(get_db), _user: dict[str, Any] = Depends(require_permission("assets:write"))
 ) -> dict[str, str]:
     deleted = await AssetService.delete_asset(db, asset_id)
     if not deleted:
@@ -70,14 +56,14 @@ async def delete_asset(
 
 @router.post("/test-connection")
 async def test_connection(
-    address: str, port: int = 22, _user: dict[str, Any] = Depends(current_user)
+    address: str, port: int = 22, _user: dict[str, Any] = Depends(require_permission("assets:test"))
 ) -> dict[str, Any]:
     return await AssetService.test_connection(address, port)
 
 
 @router.post("/platforms", response_model=PlatformResponse)
 async def create_platform(
-    data: PlatformCreate, db: AsyncSession = Depends(get_db), _user: dict[str, Any] = Depends(current_user)
+    data: PlatformCreate, db: AsyncSession = Depends(get_db), _user: dict[str, Any] = Depends(require_permission("assets:write"))
 ) -> PlatformResponse:
     platform = Platform(**data.model_dump())
     db.add(platform)
@@ -91,7 +77,7 @@ async def create_platform(
 
 @router.get("/platforms", response_model=list[PlatformResponse])
 async def list_platforms(
-    db: AsyncSession = Depends(get_db), _user: dict[str, Any] = Depends(current_user)
+    db: AsyncSession = Depends(get_db), _user: dict[str, Any] = Depends(require_permission("assets:read"))
 ) -> list[PlatformResponse]:
     result = await db.execute(select(Platform).order_by(Platform.id))
     platforms = result.scalars().all()
@@ -102,3 +88,18 @@ async def list_platforms(
         )
         for p in platforms
     ]
+
+
+@router.get("/{asset_id}", response_model=AssetResponse)
+async def get_asset(
+    asset_id: int, db: AsyncSession = Depends(get_db), _user: dict[str, Any] = Depends(require_permission("assets:read"))
+) -> AssetResponse:
+    asset = await AssetService.get_asset(db, asset_id)
+    if not asset:
+        raise HTTPException(404, "资产不存在")
+    return AssetResponse(
+        id=asset.id, name=asset.name, address=asset.address, platform_id=asset.platform_id,
+        port=asset.port, username=asset.username, is_active=asset.is_active,
+        description=asset.description, created_at=asset.created_at.isoformat() if asset.created_at else "",
+    )
+
