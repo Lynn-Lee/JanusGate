@@ -48,6 +48,22 @@ def build_workflow_service() -> tuple[WorkflowService, FakeAuditSink, FakeSessio
     return service, audit, revoker
 
 
+def build_sequenced_workflow_service() -> tuple[WorkflowService, FakeAuditSink, FakeSessionRevoker]:
+    audit = FakeAuditSink()
+    revoker = FakeSessionRevoker()
+    request_seq = iter(["wr-1", "wr-2", "wr-3", "wr-4"])
+    grant_seq = iter(["grant-1", "grant-2", "grant-3", "grant-4"])
+    service = WorkflowService(
+        store=InMemoryWorkflowStore(),
+        audit_sink=audit,
+        session_revoker=revoker,
+        now=lambda: datetime(2026, 6, 30, 12, 0, tzinfo=UTC),
+        request_id_factory=lambda: next(request_seq),
+        grant_id_factory=lambda: next(grant_seq),
+    )
+    return service, audit, revoker
+
+
 @pytest.mark.asyncio
 async def test_workflow_submit_and_approve_creates_active_jit_grant() -> None:
     service, audit, _revoker = build_workflow_service()
@@ -506,6 +522,7 @@ def test_workflow_api_detail_list_reject_and_revoke_paths() -> None:
         app.dependency_overrides.clear()
 
 
+
 def test_workflow_api_detail_is_actor_scoped_for_requesters() -> None:
     service, _audit, _revoker = build_workflow_service()
     app.dependency_overrides[get_workflow_service] = lambda: service
@@ -551,5 +568,212 @@ def test_workflow_api_detail_is_actor_scoped_for_requesters() -> None:
             approver_response = client.get("/api/v1/workflows/requests/wr-1")
             assert approver_response.status_code == 200
             assert approver_response.json()["metadata"]["ticket_id"] == "INC-1001"
+    finally:
+        app.dependency_overrides.clear()
+
+
+@pytest.mark.asyncio
+async def test_requester_can_revoke_only_pending_request_not_approved_grant() -> None:
+    service, _audit, revoker = build_sequenced_workflow_service()
+    requester = {"id": "user-1", "username": "alice", "tenant_id": "tenant-1"}
+    approver = {
+        "id": "approver-1",
+        "username": "bob",
+        "tenant_id": "tenant-1",
+        "permissions": ["workflow:approve"],
+    }
+
+    await service.create_request(
+        actor=requester,
+        asset_id="asset-1",
+        account_id="root",
+        protocol="ssh",
+        action="session.connect",
+        reason="取消前的排障申请",
+        requested_ttl_seconds=1800,
+        metadata={},
+    )
+    await service.submit_request("wr-1", actor_id="user-1", tenant_id="tenant-1")
+    pending_revoked = await service.revoke_request(
+        "wr-1",
+        actor=requester,
+        reason="requester_cancelled",
+    )
+    assert pending_revoked.status is WorkflowRequestStatus.REVOKED
+
+    await service.create_request(
+        actor=requester,
+        asset_id="asset-1",
+        account_id="root",
+        protocol="ssh",
+        action="session.connect",
+        reason="已获批排障申请",
+        requested_ttl_seconds=1800,
+        metadata={},
+    )
+    await service.submit_request("wr-2", actor_id="user-1", tenant_id="tenant-1")
+    await service.approve_request(
+        "wr-2",
+        actor=approver,
+        decision_reason="允许排障",
+        grant_ttl_seconds=1800,
+    )
+
+    with pytest.raises(PermissionError, match="WORKFLOW_REVOKE_NOT_ALLOWED"):
+        await service.revoke_request("wr-2", actor=requester, reason="requester_after_approved")
+
+    grant = await service.get_grant("grant-1", tenant_id="tenant-1")
+    assert grant is not None
+    assert grant.status is JitGrantStatus.ACTIVE
+    assert revoker.revoked_grants == []
+
+
+@pytest.mark.asyncio
+async def test_expired_or_mismatched_grant_is_fail_closed_for_session_validation() -> None:
+    service, _audit, _revoker = build_workflow_service()
+    await service.create_request(
+        actor={"id": "user-1", "username": "alice", "tenant_id": "tenant-1"},
+        asset_id="asset-1",
+        account_id="root",
+        protocol="ssh",
+        action="session.connect",
+        reason="数据库故障排查",
+        requested_ttl_seconds=60,
+        metadata={},
+    )
+    await service.submit_request("wr-1", actor_id="user-1", tenant_id="tenant-1")
+    await service.approve_request(
+        "wr-1",
+        actor={
+            "id": "approver-1",
+            "username": "bob",
+            "tenant_id": "tenant-1",
+            "permissions": ["workflow:approve"],
+        },
+        decision_reason="允许 1 分钟排障",
+        grant_ttl_seconds=60,
+    )
+
+    with pytest.raises(PermissionError, match="JIT_GRANT_ASSET_MISMATCH"):
+        await service.validate_for_session(
+            jit_grant_id="grant-1",
+            subject_id="user-1",
+            tenant_id="tenant-1",
+            asset_id="asset-other",
+            account_id="root",
+            protocol="ssh",
+            action="session.connect",
+            now=datetime(2026, 6, 30, 12, 0, tzinfo=UTC),
+        )
+
+    with pytest.raises(PermissionError, match="JIT_GRANT_EXPIRED"):
+        await service.validate_for_session(
+            jit_grant_id="grant-1",
+            subject_id="user-1",
+            tenant_id="tenant-1",
+            asset_id="asset-1",
+            account_id="root",
+            protocol="ssh",
+            action="session.connect",
+            now=datetime(2026, 6, 30, 12, 2, tzinfo=UTC),
+        )
+    grant = await service.get_grant("grant-1", tenant_id="tenant-1")
+    assert grant is not None
+    assert grant.status is JitGrantStatus.EXPIRED
+
+
+def test_workflow_api_blocks_self_approval_with_stable_error_contract() -> None:
+    service, _audit, _revoker = build_workflow_service()
+    app.dependency_overrides[get_workflow_service] = lambda: service
+    app.dependency_overrides[current_user] = lambda: {
+        "id": "user-1",
+        "username": "alice",
+        "tenant_id": "tenant-1",
+        "permissions": ["workflow:approve"],
+    }
+    try:
+        with TestClient(app) as client:
+            assert client.post(
+                "/api/v1/workflows/requests",
+                json={
+                    "asset_id": "asset-1",
+                    "account_id": "root",
+                    "protocol": "ssh",
+                    "action": "session.connect",
+                    "reason": "数据库故障排查",
+                    "requested_ttl_seconds": 1800,
+                },
+            ).status_code == 201
+            assert client.post("/api/v1/workflows/requests/wr-1/submit").status_code == 200
+            response = client.post(
+                "/api/v1/workflows/requests/wr-1/approve",
+                json={"decision_reason": "自己审批自己", "grant_ttl_seconds": 1800},
+            )
+
+        assert response.status_code == 403
+        assert response.json()["detail"] == "SELF_APPROVAL_NOT_ALLOWED"
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_workflow_api_scopes_active_grants_to_requester_unless_privileged() -> None:
+    service, _audit, _revoker = build_sequenced_workflow_service()
+    app.dependency_overrides[get_workflow_service] = lambda: service
+    try:
+        with TestClient(app) as client:
+            for user_id, asset_id in [("user-1", "asset-1"), ("user-2", "asset-2")]:
+                app.dependency_overrides[current_user] = lambda user_id=user_id: {
+                    "id": user_id,
+                    "username": user_id,
+                    "tenant_id": "tenant-1",
+                    "permissions": [],
+                }
+                created = client.post(
+                    "/api/v1/workflows/requests",
+                    json={
+                        "asset_id": asset_id,
+                        "account_id": "root",
+                        "protocol": "ssh",
+                        "action": "session.connect",
+                        "reason": f"{user_id} 排障",
+                        "requested_ttl_seconds": 1800,
+                    },
+                )
+                assert created.status_code == 201
+                request_id = created.json()["id"]
+                assert client.post(f"/api/v1/workflows/requests/{request_id}/submit").status_code == 200
+                app.dependency_overrides[current_user] = lambda: {
+                    "id": "approver-1",
+                    "username": "bob",
+                    "tenant_id": "tenant-1",
+                    "permissions": ["workflow:approve"],
+                }
+                assert client.post(
+                    f"/api/v1/workflows/requests/{request_id}/approve",
+                    json={"decision_reason": "允许排障", "grant_ttl_seconds": 1800},
+                ).status_code == 200
+
+            app.dependency_overrides[current_user] = lambda: {
+                "id": "user-2",
+                "username": "user-2",
+                "tenant_id": "tenant-1",
+                "permissions": [],
+            }
+            requester_response = client.get("/api/v1/workflows/grants/active")
+            assert requester_response.status_code == 200
+            assert [item["subject_id"] for item in requester_response.json()["items"]] == ["user-2"]
+
+            app.dependency_overrides[current_user] = lambda: {
+                "id": "auditor-1",
+                "username": "auditor",
+                "tenant_id": "tenant-1",
+                "permissions": ["workflow:audit"],
+            }
+            privileged_response = client.get("/api/v1/workflows/grants/active")
+            assert privileged_response.status_code == 200
+            assert {item["subject_id"] for item in privileged_response.json()["items"]} == {
+                "user-1",
+                "user-2",
+            }
     finally:
         app.dependency_overrides.clear()

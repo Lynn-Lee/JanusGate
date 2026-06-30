@@ -138,13 +138,20 @@ class InMemoryWorkflowStore:
     async def get_grant(self, grant_id: str) -> JitGrantRecord | None:
         return self._grants.get(grant_id)
 
-    async def list_active_grants(self, *, tenant_id: str, now: datetime) -> list[JitGrantRecord]:
+    async def list_active_grants(
+        self,
+        *,
+        tenant_id: str,
+        now: datetime,
+        subject_id: str | None = None,
+    ) -> list[JitGrantRecord]:
         return [
             grant
             for grant in self._grants.values()
             if grant.tenant_id == tenant_id
             and grant.status is JitGrantStatus.ACTIVE
             and grant.expires_at > now
+            and (subject_id is None or grant.subject_id == subject_id)
         ]
 
     def clear(self) -> None:
@@ -355,14 +362,12 @@ class WorkflowService:
         return grant
 
     async def list_active_grants(self, *, actor: dict[str, Any]) -> list[JitGrantRecord]:
-        grants = await self.store.list_active_grants(
+        subject_id = None if self._can_view_tenant_grants(actor) else str(actor["id"])
+        return await self.store.list_active_grants(
             tenant_id=str(actor.get("tenant_id", "default")),
             now=self.now(),
+            subject_id=subject_id,
         )
-        if self._can_view_tenant_grants(actor):
-            return grants
-        actor_id = str(actor["id"])
-        return [grant for grant in grants if grant.subject_id == actor_id]
 
     async def validate_for_session(
         self,
