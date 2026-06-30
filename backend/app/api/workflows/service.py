@@ -288,8 +288,14 @@ class WorkflowService:
     ) -> WorkflowRequestRecord:
         request = await self._get_request_for_tenant(request_id, str(actor.get("tenant_id", "default")))
         actor_id = str(actor["id"])
-        can_revoke = request.requester_id == actor_id or "workflow:approve" in actor.get("permissions", [])
-        if not can_revoke:
+        requester_can_revoke = (
+            request.requester_id == actor_id and request.status is WorkflowRequestStatus.PENDING
+        )
+        privileged_can_revoke = self._has_any_permission(
+            actor,
+            {"workflow:approve", "workflow:admin", "admin"},
+        )
+        if not requester_can_revoke and not privileged_can_revoke:
             raise PermissionError("WORKFLOW_REVOKE_NOT_ALLOWED")
         self._transition(request, WorkflowRequestStatus.REVOKED)
         request.revoked_at = self.now()
@@ -333,10 +339,14 @@ class WorkflowService:
         return grant
 
     async def list_active_grants(self, *, actor: dict[str, Any]) -> list[JitGrantRecord]:
-        return await self.store.list_active_grants(
+        grants = await self.store.list_active_grants(
             tenant_id=str(actor.get("tenant_id", "default")),
             now=self.now(),
         )
+        if self._can_view_tenant_grants(actor):
+            return grants
+        actor_id = str(actor["id"])
+        return [grant for grant in grants if grant.subject_id == actor_id]
 
     async def validate_for_session(
         self,
@@ -409,12 +419,21 @@ class WorkflowService:
         request.status = next_status
 
     def _require_approve_permission(self, actor: dict[str, Any]) -> None:
-        if "workflow:approve" not in actor.get("permissions", []):
+        if not self._has_any_permission(actor, {"workflow:approve", "workflow:admin", "admin"}):
             raise PermissionError("WORKFLOW_APPROVE_NOT_ALLOWED")
 
     def _validate_ttl(self, ttl_seconds: int) -> None:
         if ttl_seconds <= 0 or ttl_seconds > MAX_GRANT_TTL_SECONDS:
             raise ValueError("INVALID_GRANT_TTL")
+
+    def _can_view_tenant_grants(self, actor: dict[str, Any]) -> bool:
+        return self._has_any_permission(
+            actor,
+            {"workflow:approve", "workflow:audit", "workflow:admin", "audit:read", "admin"},
+        )
+
+    def _has_any_permission(self, actor: dict[str, Any], permissions: set[str]) -> bool:
+        return bool(permissions.intersection(set(actor.get("permissions", []))))
 
     async def _publish(
         self,

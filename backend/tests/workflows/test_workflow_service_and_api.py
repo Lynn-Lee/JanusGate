@@ -205,6 +205,125 @@ async def test_workflow_revoke_approved_request_revokes_grant_and_sessions() -> 
 
 
 @pytest.mark.asyncio
+async def test_workflow_requester_cannot_revoke_approved_grant() -> None:
+    service, _audit, revoker = build_workflow_service()
+    await service.create_request(
+        actor={"id": "user-1", "username": "alice", "tenant_id": "tenant-1"},
+        asset_id="asset-1",
+        account_id="root",
+        protocol="ssh",
+        action="session.connect",
+        reason="数据库故障排查",
+        requested_ttl_seconds=1800,
+        metadata={},
+    )
+    await service.submit_request("wr-1", actor_id="user-1", tenant_id="tenant-1")
+    await service.approve_request(
+        "wr-1",
+        actor={
+            "id": "approver-1",
+            "username": "bob",
+            "tenant_id": "tenant-1",
+            "permissions": ["workflow:approve"],
+        },
+        decision_reason="允许排障",
+        grant_ttl_seconds=1800,
+    )
+
+    with pytest.raises(PermissionError, match="WORKFLOW_REVOKE_NOT_ALLOWED"):
+        await service.revoke_request(
+            "wr-1",
+            actor={"id": "user-1", "username": "alice", "tenant_id": "tenant-1"},
+            reason="用户不能撤销已批准授权",
+        )
+
+    request = await service.get_request("wr-1", tenant_id="tenant-1")
+    grant = await service.get_grant("grant-1", tenant_id="tenant-1")
+    assert request is not None
+    assert request.status is WorkflowRequestStatus.APPROVED
+    assert grant is not None
+    assert grant.status is JitGrantStatus.ACTIVE
+    assert revoker.revoked_grants == []
+
+
+@pytest.mark.asyncio
+async def test_workflow_requester_can_revoke_own_pending_request() -> None:
+    service, _audit, revoker = build_workflow_service()
+    await service.create_request(
+        actor={"id": "user-1", "username": "alice", "tenant_id": "tenant-1"},
+        asset_id="asset-1",
+        account_id="root",
+        protocol="ssh",
+        action="session.connect",
+        reason="数据库故障排查",
+        requested_ttl_seconds=1800,
+        metadata={},
+    )
+    await service.submit_request("wr-1", actor_id="user-1", tenant_id="tenant-1")
+
+    revoked = await service.revoke_request(
+        "wr-1",
+        actor={"id": "user-1", "username": "alice", "tenant_id": "tenant-1"},
+        reason="用户取消",
+    )
+
+    assert revoked.status is WorkflowRequestStatus.REVOKED
+    assert revoked.grant_id == ""
+    assert revoker.revoked_grants == []
+
+
+@pytest.mark.asyncio
+async def test_workflow_active_grants_for_requester_are_subject_scoped() -> None:
+    audit = FakeAuditSink()
+    service = WorkflowService(
+        store=InMemoryWorkflowStore(),
+        audit_sink=audit,
+        session_revoker=FakeSessionRevoker(),
+        now=lambda: datetime(2026, 6, 30, 12, 0, tzinfo=UTC),
+        request_id_factory=iter(["wr-1", "wr-2"]).__next__,
+        grant_id_factory=iter(["grant-1", "grant-2"]).__next__,
+    )
+    for user_id, request_id in (("user-1", "wr-1"), ("user-2", "wr-2")):
+        await service.create_request(
+            actor={"id": user_id, "username": user_id, "tenant_id": "tenant-1"},
+            asset_id=f"asset-{user_id}",
+            account_id="root",
+            protocol="ssh",
+            action="session.connect",
+            reason="数据库故障排查",
+            requested_ttl_seconds=1800,
+            metadata={},
+        )
+        await service.submit_request(request_id, actor_id=user_id, tenant_id="tenant-1")
+        await service.approve_request(
+            request_id,
+            actor={
+                "id": "approver-1",
+                "username": "bob",
+                "tenant_id": "tenant-1",
+                "permissions": ["workflow:approve"],
+            },
+            decision_reason="允许排障",
+            grant_ttl_seconds=1800,
+        )
+
+    requester_grants = await service.list_active_grants(
+        actor={"id": "user-1", "username": "alice", "tenant_id": "tenant-1", "permissions": []}
+    )
+    approver_grants = await service.list_active_grants(
+        actor={
+            "id": "approver-1",
+            "username": "bob",
+            "tenant_id": "tenant-1",
+            "permissions": ["workflow:approve"],
+        }
+    )
+
+    assert [grant.id for grant in requester_grants] == ["grant-1"]
+    assert [grant.id for grant in approver_grants] == ["grant-1", "grant-2"]
+
+
+@pytest.mark.asyncio
 async def test_workflow_single_use_grant_cannot_be_reused_for_sessions() -> None:
     service, audit, _revoker = build_workflow_service()
     await service.create_request(
