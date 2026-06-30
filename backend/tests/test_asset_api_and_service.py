@@ -172,6 +172,24 @@ def test_platform_api_create_and_list_contract() -> None:
     assert isinstance(db.added[0], Platform)
 
 
+def test_platform_list_api_contract_uses_real_route() -> None:
+    install_auth_and_db(FakeDB(ScalarResult(values=[platform()])))
+
+    with TestClient(app) as client:
+        response = client.get("/api/v1/assets/platforms")
+
+    assert response.status_code == 200
+    assert response.json() == [
+        {
+            "id": 1,
+            "name": "Linux",
+            "category": "host",
+            "protocols": '["ssh"]',
+            "is_active": True,
+        }
+    ]
+
+
 @pytest.mark.asyncio
 async def test_list_platforms_route_handler_returns_platforms_directly() -> None:
     response = await assets_api.list_platforms(FakeDB(ScalarResult(values=[platform()])), {"id": 1})
