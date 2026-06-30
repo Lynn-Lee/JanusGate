@@ -320,7 +320,7 @@ class WorkflowService:
         *,
         actor: dict[str, Any],
     ) -> list[WorkflowRequestRecord]:
-        requester_id = None if "workflow:approve" in actor.get("permissions", []) else str(actor["id"])
+        requester_id = None if self._can_view_tenant_requests(actor) else str(actor["id"])
         return await self.store.list_requests(
             tenant_id=str(actor.get("tenant_id", "default")),
             requester_id=requester_id,
@@ -331,6 +331,22 @@ class WorkflowService:
         if request is None or request.tenant_id != tenant_id:
             return None
         return request
+
+    async def get_request_for_actor(
+        self,
+        request_id: str,
+        *,
+        actor: dict[str, Any],
+    ) -> WorkflowRequestRecord | None:
+        request = await self.get_request(
+            request_id,
+            tenant_id=str(actor.get("tenant_id", "default")),
+        )
+        if request is None:
+            return None
+        if self._can_view_tenant_requests(actor) or request.requester_id == str(actor["id"]):
+            return request
+        return None
 
     async def get_grant(self, grant_id: str, *, tenant_id: str) -> JitGrantRecord | None:
         grant = await self.store.get_grant(grant_id)
@@ -427,6 +443,12 @@ class WorkflowService:
             raise ValueError("INVALID_GRANT_TTL")
 
     def _can_view_tenant_grants(self, actor: dict[str, Any]) -> bool:
+        return self._has_any_permission(
+            actor,
+            {"workflow:approve", "workflow:audit", "workflow:admin", "audit:read", "admin"},
+        )
+
+    def _can_view_tenant_requests(self, actor: dict[str, Any]) -> bool:
         return self._has_any_permission(
             actor,
             {"workflow:approve", "workflow:audit", "workflow:admin", "audit:read", "admin"},

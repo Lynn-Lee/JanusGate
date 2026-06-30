@@ -66,9 +66,9 @@ async def get_workflow_request(
     user: dict[str, Any] = Depends(current_user),
     service: WorkflowService = Depends(get_workflow_service),
 ) -> WorkflowRequestResponse:
-    record = await service.get_request(
+    record = await service.get_request_for_actor(
         request_id,
-        tenant_id=str(user.get("tenant_id", "default")),
+        actor=user,
     )
     if record is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="WORKFLOW_REQUEST_NOT_FOUND")

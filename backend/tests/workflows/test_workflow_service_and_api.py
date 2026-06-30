@@ -504,3 +504,52 @@ def test_workflow_api_detail_list_reject_and_revoke_paths() -> None:
             assert revoke_response.json()["status"] == "revoked"
     finally:
         app.dependency_overrides.clear()
+
+
+def test_workflow_api_detail_is_actor_scoped_for_requesters() -> None:
+    service, _audit, _revoker = build_workflow_service()
+    app.dependency_overrides[get_workflow_service] = lambda: service
+    app.dependency_overrides[current_user] = lambda: {
+        "id": "user-1",
+        "username": "alice",
+        "tenant_id": "tenant-1",
+        "permissions": [],
+    }
+    try:
+        with TestClient(app) as client:
+            create_response = client.post(
+                "/api/v1/workflows/requests",
+                json={
+                    "asset_id": "asset-1",
+                    "account_id": "root",
+                    "protocol": "ssh",
+                    "action": "session.connect",
+                    "reason": "数据库故障排查",
+                    "requested_ttl_seconds": 1800,
+                    "metadata": {"ticket_id": "INC-1001"},
+                },
+            )
+            assert create_response.status_code == 201
+            own_detail_response = client.get("/api/v1/workflows/requests/wr-1")
+            assert own_detail_response.status_code == 200
+
+            app.dependency_overrides[current_user] = lambda: {
+                "id": "user-2",
+                "username": "mallory",
+                "tenant_id": "tenant-1",
+                "permissions": [],
+            }
+            other_requester_response = client.get("/api/v1/workflows/requests/wr-1")
+            assert other_requester_response.status_code == 404
+
+            app.dependency_overrides[current_user] = lambda: {
+                "id": "approver-1",
+                "username": "bob",
+                "tenant_id": "tenant-1",
+                "permissions": ["workflow:approve"],
+            }
+            approver_response = client.get("/api/v1/workflows/requests/wr-1")
+            assert approver_response.status_code == 200
+            assert approver_response.json()["metadata"]["ticket_id"] == "INC-1001"
+    finally:
+        app.dependency_overrides.clear()
