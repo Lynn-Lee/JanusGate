@@ -325,3 +325,42 @@ def test_policy_denies_approved_grant_missing_required_binding_constraint():
 
     assert result.decision == PolicyDecision.DENY
     assert result.reason_code == "APPROVAL_CONSTRAINT_MISMATCH"
+
+
+def test_policy_denies_when_request_context_missing_binding_fields_even_if_constraints_missing_too():
+    service = PolicyDecisionService(
+        rules=[
+            PolicyRule(
+                id="rule-approval",
+                subject_ids=["user-1"],
+                actions=["session.connect"],
+                resource_ids=["asset-1"],
+                tenant_id="tenant-a",
+                require_approval=True,
+            )
+        ]
+    )
+
+    result = service.evaluate(
+        _request(
+            action="session.connect",
+            context={"connector_id": "connector-1"},
+            approval=ApprovalState(
+                status="approved",
+                grant_id="grant-1",
+                workflow_request_id="wr-1",
+                expires_at=datetime.now(UTC) + timedelta(minutes=10),
+                constraints={
+                    "subject_id": "user-1",
+                    "asset_id": "asset-1",
+                    "action": "session.connect",
+                    "usage": "single-use",
+                    "max_uses": 1,
+                    "used_count": 0,
+                },
+            ),
+        )
+    )
+
+    assert result.decision == PolicyDecision.DENY
+    assert result.reason_code == "APPROVAL_CONSTRAINT_MISMATCH"

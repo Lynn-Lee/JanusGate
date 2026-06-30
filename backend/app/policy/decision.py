@@ -116,11 +116,16 @@ class PolicyDecisionService:
         if request.approval is None:
             return False
         constraints = request.approval.constraints
+        context_account_id = request.context.get("account_id")
+        context_protocol = request.context.get("protocol")
+        if not context_account_id or not context_protocol:
+            return False
+
         expected: dict[str, str] = {
             "subject_id": request.subject.id,
             "asset_id": request.resource.id,
-            "account_id": str(request.context.get("account_id", "")),
-            "protocol": str(request.context.get("protocol", "")),
+            "account_id": str(context_account_id),
+            "protocol": str(context_protocol),
             "action": request.action,
         }
 
