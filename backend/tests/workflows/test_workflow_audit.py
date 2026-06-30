@@ -37,6 +37,7 @@ def test_workflow_audit_event_catalog_covers_phase2_state_changes():
         "jit.grant.used",
         "jit.grant.expired",
         "jit.grant.revoked",
+        "session.revoked_by_jit_grant",
     }
     assert expected_events == WORKFLOW_AUDIT_EVENTS
 
@@ -106,3 +107,36 @@ def test_workflow_audit_events_are_queryable_through_audit_api():
     assert items[0]["event_type"] == "jit.grant.revoked"
     assert items[0]["metadata"]["workflow_request_id"] == "wr_2"
     assert items[0]["metadata"]["jit_grant_id"] == "jg_2"
+
+
+def test_session_revoked_by_jit_grant_event_reaches_siem_payload():
+    delivered_events: list[AuditEvent] = []
+
+    class CaptureSiemClient:
+        async def deliver(self, event: AuditEvent) -> None:
+            delivered_events.append(event)
+
+    original_siem_client = audit_service._siem_client
+    audit_service._siem_client = CaptureSiemClient()
+    try:
+        event = emit_workflow_audit_event(
+            audit_service,
+            actor=_system_actor(),
+            event_type="session.revoked_by_jit_grant",
+            workflow_request_id="wr_3",
+            jit_grant_id="jg_3",
+            action="disconnect",
+            resource_type="session",
+            resource_id="session-1",
+            metadata={"session_id": "session-1", "cookie": "plain-cookie"},
+        )
+    finally:
+        audit_service._siem_client = original_siem_client
+
+    assert event.event_type == "session.revoked_by_jit_grant"
+    assert event.metadata["workflow_request_id"] == "wr_3"
+    assert event.metadata["jit_grant_id"] == "jg_3"
+    assert event.metadata["session_id"] == "session-1"
+    assert event.metadata["cookie"] == "***REDACTED***"
+    assert delivered_events[0].metadata == event.metadata
+    assert "plain-cookie" not in str(delivered_events[0].metadata)

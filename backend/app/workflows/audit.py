@@ -16,6 +16,7 @@ WORKFLOW_AUDIT_EVENTS = {
     "jit.grant.used",
     "jit.grant.expired",
     "jit.grant.revoked",
+    "session.revoked_by_jit_grant",
 }
 
 
