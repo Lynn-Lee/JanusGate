@@ -1,5 +1,5 @@
 """审计事件 API 路由。"""
-from typing import Annotated
+from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 
@@ -10,7 +10,7 @@ from app.core.deps import current_user
 router = APIRouter(prefix="/api/v1/audits", tags=["audits"])
 
 
-def require_audit_permission(permission: str, user: dict) -> None:
+def require_audit_permission(permission: str, user: dict[str, Any]) -> None:
     if permission not in user.get("permissions", []):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=f"缺少权限: {permission}")
 
@@ -18,7 +18,7 @@ def require_audit_permission(permission: str, user: dict) -> None:
 @router.post("/events", response_model=AuditEvent, status_code=status.HTTP_201_CREATED)
 async def create_audit_event(
     payload: AuditEventCreate,
-    user: Annotated[dict, Depends(current_user)],
+    user: Annotated[dict[str, Any], Depends(current_user)],
 ) -> AuditEvent:
     require_audit_permission("audit:write", user)
     return await audit_service.create_event(payload, user)
@@ -26,7 +26,7 @@ async def create_audit_event(
 
 @router.get("/events", response_model=AuditEventList)
 def list_audit_events(
-    user: Annotated[dict, Depends(current_user)],
+    user: Annotated[dict[str, Any], Depends(current_user)],
     event_type: Annotated[str | None, Query(min_length=3, max_length=120)] = None,
     severity: AuditSeverity | None = None,
     limit: Annotated[int, Query(ge=1, le=200)] = 50,
