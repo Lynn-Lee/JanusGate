@@ -103,6 +103,9 @@ class PolicyDecisionService:
             if not request.approval.is_approved_now(datetime.now(UTC)):
                 trace.append(f"approval_not_approved:{request.approval.status}")
                 return self._deny("APPROVAL_REQUIRED", trace)
+            if not request.approval.grant_id or not request.approval.workflow_request_id:
+                trace.append("approval_grant_identity_missing")
+                return self._deny("APPROVAL_GRANT_REQUIRED", trace)
             if not self._approval_constraints_match(request):
                 trace.append("approval_constraints_mismatch")
                 return self._deny("APPROVAL_CONSTRAINT_MISMATCH", trace)
@@ -140,8 +143,9 @@ class PolicyDecisionService:
                     "workflow_required": True,
                     "jit_grant_id": request.approval.grant_id,
                     "workflow_request_id": request.approval.workflow_request_id,
-                    "approval_use_type": constraints.get("use_type", rule.approval_use_type),
-                    "approval_max_uses": constraints.get("max_uses", rule.approval_max_uses),
+                    "grant_usage": constraints.get("usage", rule.approval_use_type),
+                    "grant_max_uses": constraints.get("max_uses", rule.approval_max_uses),
+                    "grant_used_count": constraints.get("used_count", 0),
                 }
             )
         return obligations

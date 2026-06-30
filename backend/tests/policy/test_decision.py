@@ -19,7 +19,20 @@ def _request(**overrides):
         "context": {"connector_id": "connector-1", "account_id": "root", "protocol": "ssh"},
         "mfa_verified": True,
         "approval": ApprovalState(
-            status="approved", expires_at=datetime.now(UTC) + timedelta(minutes=10)
+            status="approved",
+            grant_id="grant-default",
+            workflow_request_id="wr-default",
+            expires_at=datetime.now(UTC) + timedelta(minutes=10),
+            constraints={
+                "subject_id": "user-1",
+                "asset_id": "asset-1",
+                "account_id": "root",
+                "protocol": "ssh",
+                "action": "asset.connect",
+                "usage": "single-use",
+                "max_uses": 1,
+                "used_count": 0,
+            },
         ),
         "connector_trusted": True,
     }
@@ -199,7 +212,7 @@ def test_policy_allows_valid_grant_and_returns_grant_obligations():
                     "account_id": "root",
                     "protocol": "ssh",
                     "action": "session.connect",
-                    "use_type": "limited-use",
+                    "usage": "limited-use",
                     "max_uses": 3,
                 },
             ),
@@ -210,5 +223,34 @@ def test_policy_allows_valid_grant_and_returns_grant_obligations():
     assert result.reason_code == "POLICY_ALLOWED"
     assert result.obligations["jit_grant_id"] == "grant-1"
     assert result.obligations["workflow_request_id"] == "wr-1"
-    assert result.obligations["approval_use_type"] == "limited-use"
-    assert result.obligations["approval_max_uses"] == 3
+    assert result.obligations["grant_usage"] == "limited-use"
+    assert result.obligations["grant_max_uses"] == 3
+
+
+def test_policy_denies_approved_state_without_valid_grant_identity():
+    service = PolicyDecisionService(
+        rules=[
+            PolicyRule(
+                id="rule-approval",
+                subject_ids=["user-1"],
+                actions=["session.connect"],
+                resource_ids=["asset-1"],
+                tenant_id="tenant-a",
+                require_approval=True,
+            )
+        ]
+    )
+
+    result = service.evaluate(
+        _request(
+            action="session.connect",
+            approval=ApprovalState(
+                status="approved",
+                expires_at=datetime.now(UTC) + timedelta(minutes=10),
+                constraints={"usage": "single-use", "max_uses": 1, "used_count": 0},
+            ),
+        )
+    )
+
+    assert result.decision == PolicyDecision.DENY
+    assert result.reason_code == "APPROVAL_GRANT_REQUIRED"
