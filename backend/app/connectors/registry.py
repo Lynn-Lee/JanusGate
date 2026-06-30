@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import secrets
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -23,14 +24,38 @@ class PolicyEvaluator(Protocol):
 
 @dataclass
 class ConnectorEnrollmentToken:
-    """Single-use connector enrollment token with optional binding."""
+    """Single-use connector enrollment token with optional binding.
 
-    value: str
+    Stores only token digest, never the plaintext enrollment token.
+    """
+
+    token_digest: str
     expires_at: datetime
     public_key_fingerprint: str | None = None
     connector_name: str | None = None
     environment: str | None = None
     used_at: datetime | None = None
+
+    @classmethod
+    def from_plaintext(
+        cls,
+        plaintext_token: str,
+        expires_at: datetime,
+        public_key_fingerprint: str | None = None,
+        connector_name: str | None = None,
+        environment: str | None = None,
+    ) -> ConnectorEnrollmentToken:
+        return cls(
+            token_digest=cls.digest(plaintext_token),
+            expires_at=expires_at,
+            public_key_fingerprint=public_key_fingerprint,
+            connector_name=connector_name,
+            environment=environment,
+        )
+
+    @staticmethod
+    def digest(plaintext_token: str) -> str:
+        return hashlib.sha256(plaintext_token.encode("utf-8")).hexdigest()
 
     def validate_for(self, request: ConnectorRegistrationRequest) -> None:
         now = datetime.now(UTC)
@@ -76,26 +101,14 @@ class ConnectorRegistry:
     def __init__(
         self,
         store: InMemoryConnectorStore,
-        enrollment_tokens: set[str] | dict[str, ConnectorEnrollmentToken],
+        enrollment_tokens: dict[str, ConnectorEnrollmentToken],
     ) -> None:
         self._store = store
-        self._enrollment_tokens = self._normalize_enrollment_tokens(enrollment_tokens)
-
-    def _normalize_enrollment_tokens(
-        self,
-        enrollment_tokens: set[str] | dict[str, ConnectorEnrollmentToken],
-    ) -> dict[str, ConnectorEnrollmentToken]:
-        if isinstance(enrollment_tokens, dict):
-            return enrollment_tokens
-        return {
-            token: ConnectorEnrollmentToken(
-                value=token, expires_at=datetime.max.replace(tzinfo=UTC)
-            )
-            for token in enrollment_tokens
-        }
+        self._enrollment_tokens = enrollment_tokens
 
     def register(self, request: ConnectorRegistrationRequest) -> ConnectorRecord:
-        enrollment_token = self._enrollment_tokens.get(request.enrollment_token)
+        token_digest = ConnectorEnrollmentToken.digest(request.enrollment_token)
+        enrollment_token = self._enrollment_tokens.get(token_digest)
         if enrollment_token is None:
             raise ValueError("INVALID_ENROLLMENT_TOKEN")
         enrollment_token.validate_for(request)

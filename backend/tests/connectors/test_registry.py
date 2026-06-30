@@ -30,33 +30,42 @@ class StubPolicyService:
         )
 
 
+def _enrollment_tokens(*tokens: ConnectorEnrollmentToken) -> dict[str, ConnectorEnrollmentToken]:
+    return {token.token_digest: token for token in tokens}
+
+
+def _active_token(plaintext: str = "token-1", **kwargs) -> ConnectorEnrollmentToken:
+    return ConnectorEnrollmentToken.from_plaintext(
+        plaintext,
+        expires_at=datetime.now(UTC) + timedelta(minutes=5),
+        **kwargs,
+    )
+
+
+def _registration_request(enrollment_token: str = "token-1") -> ConnectorRegistrationRequest:
+    return ConnectorRegistrationRequest(
+        name="koko-1",
+        environment="prod",
+        public_key_fingerprint="sha256:abc",
+        capabilities=[ConnectorCapability.SSH],
+        enrollment_token=enrollment_token,
+    )
+
+
 def test_connector_registration_rejects_invalid_enrollment_token():
-    registry = ConnectorRegistry(store=InMemoryConnectorStore(), enrollment_tokens={"token-1"})
+    registry = ConnectorRegistry(
+        store=InMemoryConnectorStore(),
+        enrollment_tokens=_enrollment_tokens(_active_token()),
+    )
 
     with pytest.raises(ValueError, match="INVALID_ENROLLMENT_TOKEN"):
-        registry.register(
-            ConnectorRegistrationRequest(
-                name="koko-1",
-                environment="prod",
-                public_key_fingerprint="sha256:abc",
-                capabilities=[ConnectorCapability.SSH],
-                enrollment_token="wrong-token",
-            )
-        )
+        registry.register(_registration_request(enrollment_token="wrong-token"))
 
 
 def test_inactive_connector_cannot_request_connection_token():
     store = InMemoryConnectorStore()
-    registry = ConnectorRegistry(store=store, enrollment_tokens={"token-1"})
-    connector = registry.register(
-        ConnectorRegistrationRequest(
-            name="koko-1",
-            environment="prod",
-            public_key_fingerprint="sha256:abc",
-            capabilities=[ConnectorCapability.SSH],
-            enrollment_token="token-1",
-        )
-    )
+    registry = ConnectorRegistry(store=store, enrollment_tokens=_enrollment_tokens(_active_token()))
+    connector = registry.register(_registration_request())
     store.set_status(connector.id, ConnectorStatus.INACTIVE)
 
     with pytest.raises(ValueError, match="CONNECTOR_NOT_ACTIVE"):
@@ -68,16 +77,11 @@ def test_inactive_connector_cannot_request_connection_token():
 
 
 def test_denied_policy_blocks_connection_token():
-    registry = ConnectorRegistry(store=InMemoryConnectorStore(), enrollment_tokens={"token-1"})
-    connector = registry.register(
-        ConnectorRegistrationRequest(
-            name="koko-1",
-            environment="prod",
-            public_key_fingerprint="sha256:abc",
-            capabilities=[ConnectorCapability.SSH],
-            enrollment_token="token-1",
-        )
+    registry = ConnectorRegistry(
+        store=InMemoryConnectorStore(),
+        enrollment_tokens=_enrollment_tokens(_active_token()),
     )
+    connector = registry.register(_registration_request())
 
     with pytest.raises(ValueError, match="POLICY_DENIED"):
         registry.issue_connection_token(
@@ -88,16 +92,11 @@ def test_denied_policy_blocks_connection_token():
 
 
 def test_allowed_policy_returns_short_lived_connection_token():
-    registry = ConnectorRegistry(store=InMemoryConnectorStore(), enrollment_tokens={"token-1"})
-    connector = registry.register(
-        ConnectorRegistrationRequest(
-            name="koko-1",
-            environment="prod",
-            public_key_fingerprint="sha256:abc",
-            capabilities=[ConnectorCapability.SSH],
-            enrollment_token="token-1",
-        )
+    registry = ConnectorRegistry(
+        store=InMemoryConnectorStore(),
+        enrollment_tokens=_enrollment_tokens(_active_token()),
     )
+    connector = registry.register(_registration_request())
 
     token = registry.issue_connection_token(
         connector.id,
@@ -114,20 +113,9 @@ def test_allowed_policy_returns_short_lived_connection_token():
 def test_enrollment_token_cannot_be_reused_after_successful_registration():
     registry = ConnectorRegistry(
         store=InMemoryConnectorStore(),
-        enrollment_tokens={
-            "token-1": ConnectorEnrollmentToken(
-                value="token-1",
-                expires_at=datetime.now(UTC) + timedelta(minutes=5),
-            )
-        },
+        enrollment_tokens=_enrollment_tokens(_active_token()),
     )
-    request = ConnectorRegistrationRequest(
-        name="koko-1",
-        environment="prod",
-        public_key_fingerprint="sha256:abc",
-        capabilities=[ConnectorCapability.SSH],
-        enrollment_token="token-1",
-    )
+    request = _registration_request()
 
     registry.register(request)
 
@@ -138,36 +126,24 @@ def test_enrollment_token_cannot_be_reused_after_successful_registration():
 def test_expired_enrollment_token_is_rejected():
     registry = ConnectorRegistry(
         store=InMemoryConnectorStore(),
-        enrollment_tokens={
-            "token-1": ConnectorEnrollmentToken(
-                value="token-1",
+        enrollment_tokens=_enrollment_tokens(
+            ConnectorEnrollmentToken.from_plaintext(
+                "token-1",
                 expires_at=datetime.now(UTC) - timedelta(seconds=1),
             )
-        },
+        ),
     )
 
     with pytest.raises(ValueError, match="ENROLLMENT_TOKEN_EXPIRED"):
-        registry.register(
-            ConnectorRegistrationRequest(
-                name="koko-1",
-                environment="prod",
-                public_key_fingerprint="sha256:abc",
-                capabilities=[ConnectorCapability.SSH],
-                enrollment_token="token-1",
-            )
-        )
+        registry.register(_registration_request())
 
 
 def test_enrollment_token_bound_to_fingerprint_rejects_mismatch():
     registry = ConnectorRegistry(
         store=InMemoryConnectorStore(),
-        enrollment_tokens={
-            "token-1": ConnectorEnrollmentToken(
-                value="token-1",
-                expires_at=datetime.now(UTC) + timedelta(minutes=5),
-                public_key_fingerprint="sha256:expected",
-            )
-        },
+        enrollment_tokens=_enrollment_tokens(
+            _active_token(public_key_fingerprint="sha256:expected")
+        ),
     )
 
     with pytest.raises(ValueError, match="ENROLLMENT_TOKEN_BINDING_MISMATCH"):
@@ -180,3 +156,11 @@ def test_enrollment_token_bound_to_fingerprint_rejects_mismatch():
                 enrollment_token="token-1",
             )
         )
+
+
+def test_enrollment_token_does_not_store_plaintext_value():
+    token = _active_token("super-secret-token")
+
+    assert not hasattr(token, "value")
+    assert token.token_digest == ConnectorEnrollmentToken.digest("super-secret-token")
+    assert token.token_digest != "super-secret-token"
