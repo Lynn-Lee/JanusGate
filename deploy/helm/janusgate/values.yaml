@@ -1,0 +1,98 @@
+replicaCount: 2
+
+image:
+  repository: ghcr.io/lynn-lee/janusgate-backend
+  tag: "0.1.0"
+  pullPolicy: IfNotPresent
+
+imagePullSecrets: []
+nameOverride: ""
+fullnameOverride: ""
+
+serviceAccount:
+  create: true
+  annotations: {}
+  name: ""
+
+podAnnotations: {}
+podLabels: {}
+
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 1000
+  runAsGroup: 1000
+  fsGroup: 1000
+
+securityContext:
+  allowPrivilegeEscalation: false
+  capabilities:
+    drop:
+      - ALL
+  readOnlyRootFilesystem: true
+
+service:
+  type: ClusterIP
+  port: 8000
+
+config:
+  appEnv: production
+  logLevel: INFO
+  redisUrl: redis://redis-master:6379/0
+  corsOrigins: '["https://janusgate.example.com"]'
+  rateLimitLoginPerMinute: "5"
+  rateLimitGlobalPerMinute: "120"
+
+secret:
+  # Do not commit real values. Prefer existingSecret in shared environments.
+  # existingSecret must provide: SECRET_KEY, DATABASE_URL, JWT_ALGORITHM,
+  # ACCESS_TOKEN_EXPIRE_MINUTES, REFRESH_TOKEN_EXPIRE_DAYS.
+  existingSecret: ""
+  secretKey: ""
+  databaseUrl: ""
+  jwtAlgorithm: HS256
+  accessTokenExpireMinutes: "30"
+  refreshTokenExpireDays: "7"
+
+container:
+  port: 8000
+
+ingress:
+  enabled: false
+  className: ""
+  annotations: {}
+  hosts:
+    - host: janusgate.example.com
+      paths:
+        - path: /
+          pathType: Prefix
+  tls: []
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 256Mi
+  limits:
+    cpu: 500m
+    memory: 512Mi
+
+livenessProbe:
+  httpGet:
+    path: /health
+    port: http
+  initialDelaySeconds: 20
+  periodSeconds: 30
+  timeoutSeconds: 5
+  failureThreshold: 3
+
+readinessProbe:
+  httpGet:
+    path: /health
+    port: http
+  initialDelaySeconds: 5
+  periodSeconds: 10
+  timeoutSeconds: 3
+  failureThreshold: 3
+
+nodeSelector: {}
+tolerations: []
+affinity: {}
