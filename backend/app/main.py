@@ -10,7 +10,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 
-from app.api import assets, auth
+from app.api import assets, auth, sessions
 from app.api.audits.routes import router as audits_router
 from app.core.config import settings
 from app.core.database import engine
@@ -45,6 +45,7 @@ register_exception_handlers(app)
 
 app.include_router(auth.router, prefix="/api/v1")
 app.include_router(assets.router, prefix="/api/v1")
+app.include_router(sessions.router, prefix="/api/v1")
 app.include_router(audits_router)
 
 
