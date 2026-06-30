@@ -56,6 +56,7 @@ class SessionRecord(BaseModel):
     connector_session_id: str = ""
     connection_url: str = ""
     client_ip: str = ""
+    client_ip_source: str = ""
     created_at: datetime
     updated_at: datetime
     closed_at: datetime | None = None
@@ -153,6 +154,7 @@ class SessionGatewayService:
         protocol: str,
         connection_token: str,
         client_ip: str = "",
+        client_ip_source: str = "direct",
     ) -> SessionRecord:
         now = self.now()
         session = SessionRecord(
@@ -163,6 +165,7 @@ class SessionGatewayService:
             protocol=protocol,
             connection_token_id=connection_token,
             client_ip=client_ip,
+            client_ip_source=client_ip_source,
             created_at=now,
             updated_at=now,
         )
@@ -180,6 +183,7 @@ class SessionGatewayService:
                 "context": {
                     "connection_token": connection_token,
                     "client_ip": client_ip,
+                    "client_ip_source": client_ip_source,
                 },
             }
         )
@@ -272,6 +276,8 @@ class SessionGatewayService:
             "connector_id": session.connector_id,
             "status": session.status.value,
             "reason_code": reason_code,
+            "client_ip": session.client_ip,
+            "client_ip_source": session.client_ip_source,
             "occurred_at": self.now().isoformat(),
         }
         session.audit_event_ids.append(event["id"])

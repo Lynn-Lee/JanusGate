@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 
 from app.api.sessions.schemas import SessionCloseRequest, SessionCreateRequest, SessionResponse
 from app.api.sessions.service import SessionGatewayService
@@ -18,12 +18,20 @@ def get_session_gateway_service() -> SessionGatewayService:
     return _session_gateway_service
 
 
+def get_request_client_ip(request: Request) -> tuple[str, str]:
+    if request.client is None:
+        return "", "request.client"
+    return request.client.host, "request.client"
+
+
 @router.post("/", response_model=SessionResponse, status_code=status.HTTP_201_CREATED)
 async def create_session(
     data: SessionCreateRequest,
+    request: Request,
     user: dict[str, Any] = Depends(current_user),
     service: SessionGatewayService = Depends(get_session_gateway_service),
 ) -> SessionResponse:
+    client_ip, client_ip_source = get_request_client_ip(request)
     try:
         session = await service.create_session(
             subject_id=str(user["id"]),
@@ -31,7 +39,8 @@ async def create_session(
             account_id=data.account_id,
             protocol=data.protocol,
             connection_token=data.connection_token,
-            client_ip=data.client_ip,
+            client_ip=client_ip,
+            client_ip_source=client_ip_source,
         )
     except PermissionError as exc:
         raise HTTPException(status_code=403, detail=str(exc)) from exc

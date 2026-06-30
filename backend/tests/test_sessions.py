@@ -218,3 +218,36 @@ def test_session_api_create_and_close_routes() -> None:
             assert close_response.json()["status"] == "closed"
     finally:
         app.dependency_overrides.clear()
+
+
+def test_session_api_uses_request_client_ip_not_spoofed_body_ip() -> None:
+    service, policy, _token_store, audit = build_service()
+
+    app.dependency_overrides[current_user] = lambda: {
+        "id": "user-1",
+        "username": "alice",
+        "tenant_id": "default",
+        "permissions": ["sessions:connect"],
+    }
+    app.dependency_overrides[get_session_gateway_service] = lambda: service
+    try:
+        with TestClient(app, client=("198.51.100.24", 50000)) as client:
+            response = client.post(
+                "/api/v1/sessions/",
+                json={
+                    "asset_id": "asset-1",
+                    "account_id": "account-1",
+                    "protocol": "ssh",
+                    "connection_token": "token-1",
+                    "client_ip": "10.0.0.1",
+                },
+                headers={"X-Forwarded-For": "10.0.0.2"},
+            )
+
+        assert response.status_code == 201
+        assert policy.requests[0]["context"]["client_ip"] == "198.51.100.24"
+        assert policy.requests[0]["context"]["client_ip_source"] == "request.client"
+        assert audit.events[0]["client_ip"] == "198.51.100.24"
+        assert audit.events[0]["client_ip_source"] == "request.client"
+    finally:
+        app.dependency_overrides.clear()
