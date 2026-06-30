@@ -1,5 +1,7 @@
 from fastapi.testclient import TestClient
 
+from app.api.audits.schemas import AuditEvent
+from app.api.audits.service import audit_service
 from app.core.deps import current_user
 from app.main import app
 
@@ -54,7 +56,6 @@ def test_create_audit_event_persists_and_masks_sensitive_fields():
     assert any(item["id"] == body["id"] for item in items)
 
 
-
 def test_siem_delivery_failure_does_not_block_audit_event_creation():
     app.dependency_overrides[current_user] = _audit_user
     client = TestClient(app)
@@ -78,7 +79,6 @@ def test_siem_delivery_failure_does_not_block_audit_event_creation():
     assert body["siem_delivery_error"]
     assert body["siem_delivery_attempts"] == 1
     assert body["siem_next_retry_at"]
-
 
 
 def test_write_permission_required_for_audit_event_creation():
@@ -151,3 +151,60 @@ def test_unknown_audit_category_is_rejected():
     )
 
     assert response.status_code == 422
+
+
+def test_sensitive_metadata_redaction_covers_headers_credentials_and_siem_payload():
+    delivered_events: list[AuditEvent] = []
+
+    class CaptureSiemClient:
+        async def deliver(self, event: AuditEvent) -> None:
+            delivered_events.append(event)
+
+    original_siem_client = audit_service._siem_client
+    audit_service._siem_client = CaptureSiemClient()
+    app.dependency_overrides[current_user] = _audit_user
+    client = TestClient(app)
+
+    try:
+        response = client.post(
+            "/api/v1/audits/events",
+            json={
+                "event_type": "connector.auth.failed",
+                "category": "connector",
+                "action": "authenticate",
+                "resource_type": "connector",
+                "resource_id": "connector-1",
+                "metadata": {
+                    "authorization": "Bearer plain-token",
+                    "cookie": "sessionid=plain-cookie",
+                    "credential": "plain-credential",
+                    "credentials": {"ssh_key": "plain-key", "username": "safe-user"},
+                    "headers": {
+                        "Authorization": "Bearer nested-token",
+                        "X-Request-ID": "req-123",
+                    },
+                },
+            },
+        )
+    finally:
+        audit_service._siem_client = original_siem_client
+
+    assert response.status_code == 201
+    body = response.json()
+    assert body["metadata"]["authorization"] == "***REDACTED***"
+    assert body["metadata"]["cookie"] == "***REDACTED***"
+    assert body["metadata"]["credential"] == "***REDACTED***"
+    assert body["metadata"]["credentials"] == "***REDACTED***"
+    assert body["metadata"]["headers"]["Authorization"] == "***REDACTED***"
+    assert body["metadata"]["headers"]["X-Request-ID"] == "req-123"
+
+    list_body = client.get("/api/v1/audits/events?event_type=connector.auth.failed").json()
+    item = list_body["items"][0]
+    assert item["metadata"] == body["metadata"]
+    assert delivered_events[0].metadata == body["metadata"]
+
+    serialized = str(body) + str(item) + str(delivered_events[0].metadata)
+    assert "plain-token" not in serialized
+    assert "plain-cookie" not in serialized
+    assert "plain-credential" not in serialized
+    assert "plain-key" not in serialized

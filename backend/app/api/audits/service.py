@@ -20,6 +20,11 @@ SENSITIVE_KEYS = {
     "refresh_token",
     "api_key",
     "private_key",
+    "authorization",
+    "cookie",
+    "credential",
+    "credentials",
+    "ssh_key",
 }
 
 
@@ -155,7 +160,10 @@ def redact_metadata(value: Any) -> Any:
 
 def _is_sensitive_key(key: str) -> bool:
     lowered = key.lower()
-    return lowered in SENSITIVE_KEYS or any(part in lowered for part in ("password", "secret", "token"))
+    return lowered in SENSITIVE_KEYS or any(
+        part in lowered
+        for part in ("password", "passwd", "secret", "token", "authorization", "cookie", "credential")
+    )
 
 
 repository = AuditEventRepository()
