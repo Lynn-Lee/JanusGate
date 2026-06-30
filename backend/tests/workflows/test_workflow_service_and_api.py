@@ -1,20 +1,27 @@
 """Workflow/JIT request API and state-machine tests."""
 from __future__ import annotations
 
+import asyncio
 from datetime import UTC, datetime
 
 import pytest
 from fastapi.testclient import TestClient
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
+from app.api.sessions.routes import get_session_gateway_service
 from app.api.workflows.routes import get_workflow_service
 from app.api.workflows.service import (
     InMemoryWorkflowStore,
     JitGrantStatus,
+    SQLAlchemyWorkflowStore,
     WorkflowRequestStatus,
     WorkflowService,
 )
+from app.core.database import Base, get_db
 from app.core.deps import current_user
 from app.main import app
+from app.models.workflow import WorkflowRequestModel
 
 
 class FakeAuditSink:
@@ -32,6 +39,17 @@ class FakeSessionRevoker:
     async def revoke_sessions_by_jit_grant(self, jit_grant_id: str, reason: str) -> list[str]:
         self.revoked_grants.append(f"{jit_grant_id}:{reason}")
         return ["session-1"]
+
+
+@pytest.fixture
+async def session_factory():
+    engine = create_async_engine("sqlite+aiosqlite:///:memory:")
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+    try:
+        yield async_sessionmaker(engine, expire_on_commit=False)
+    finally:
+        await engine.dispose()
 
 
 def build_workflow_service() -> tuple[WorkflowService, FakeAuditSink, FakeSessionRevoker]:
@@ -123,6 +141,174 @@ async def test_workflow_submit_and_approve_creates_active_jit_grant() -> None:
         "workflow.request.approved",
         "jit.grant.issued",
     ]
+
+
+@pytest.mark.asyncio
+async def test_workflow_api_persists_requests_through_sqlalchemy_dependency() -> None:
+    engine = create_async_engine("sqlite+aiosqlite:///:memory:")
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+    session_factory = async_sessionmaker(engine, expire_on_commit=False)
+
+    async def override_db():
+        async with session_factory() as session:
+            try:
+                yield session
+            except Exception:
+                await session.rollback()
+                raise
+            finally:
+                await session.close()
+
+    app.dependency_overrides[get_db] = override_db
+    app.dependency_overrides[current_user] = lambda: {
+        "id": "user-1",
+        "username": "alice",
+        "tenant_id": "tenant-1",
+        "permissions": [],
+    }
+    try:
+        with TestClient(app) as client:
+            response = client.post(
+                "/api/v1/workflows/requests",
+                json={
+                    "asset_id": "asset-1",
+                    "account_id": "root",
+                    "protocol": "ssh",
+                    "action": "session.connect",
+                    "reason": "数据库故障排查",
+                    "requested_ttl_seconds": 1800,
+                    "metadata": {"ticket_id": "INC-1001"},
+                },
+            )
+        assert response.status_code == 201
+
+        async with session_factory() as session:
+            result = await session.execute(select(WorkflowRequestModel))
+            persisted = result.scalar_one()
+            assert persisted.requester_id == "user-1"
+            assert persisted.asset_id == "asset-1"
+    finally:
+        app.dependency_overrides.clear()
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_workflow_service_dependency_uses_sqlalchemy_store(session_factory) -> None:
+    async with session_factory() as session:
+        service = get_workflow_service(session)
+        assert isinstance(service.store, SQLAlchemyWorkflowStore)
+
+
+@pytest.mark.asyncio
+async def test_session_gateway_dependency_uses_sqlalchemy_jit_client(session_factory) -> None:
+    async with session_factory() as session:
+        service = get_session_gateway_service(session)
+        assert isinstance(service.jit_grant_client, WorkflowService)
+        assert isinstance(service.jit_grant_client.store, SQLAlchemyWorkflowStore)
+
+
+@pytest.mark.asyncio
+async def test_single_use_grant_reservation_is_atomic_for_parallel_sessions(tmp_path) -> None:
+    engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path / 'workflow.db'}")
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+    session_factory = async_sessionmaker(engine, expire_on_commit=False)
+    try:
+        async with session_factory() as session:
+            service = WorkflowService(
+                store=SQLAlchemyWorkflowStore(session),
+                now=lambda: datetime(2026, 6, 30, 12, 0, tzinfo=UTC),
+                request_id_factory=lambda: "wr-1",
+                grant_id_factory=lambda: "grant-1",
+            )
+            await service.create_request(
+                actor={"id": "user-1", "username": "alice", "tenant_id": "tenant-1"},
+                asset_id="asset-1",
+                account_id="root",
+                protocol="ssh",
+                action="session.connect",
+                reason="数据库故障排查",
+                requested_ttl_seconds=1800,
+                metadata={},
+            )
+            await service.submit_request(
+                "wr-1",
+                actor_id="user-1",
+                tenant_id="tenant-1",
+            )
+            approved = await service.approve_request(
+                "wr-1",
+                actor={
+                    "id": "approver-1",
+                    "username": "bob",
+                    "tenant_id": "tenant-1",
+                    "permissions": ["workflow:approve"],
+                },
+                decision_reason="允许排障",
+                grant_ttl_seconds=1800,
+            )
+
+        async def reserve() -> object:
+            async with session_factory() as session:
+                service = WorkflowService(store=SQLAlchemyWorkflowStore(session))
+                return await service.validate_for_session(
+                    jit_grant_id=approved.grant_id,
+                    subject_id="user-1",
+                    tenant_id="tenant-1",
+                    asset_id="asset-1",
+                    account_id="root",
+                    protocol="ssh",
+                    action="session.connect",
+                    now=datetime(2026, 6, 30, 12, 1, tzinfo=UTC),
+                )
+
+        results = await asyncio.gather(reserve(), reserve(), return_exceptions=True)
+
+        successes = [result for result in results if not isinstance(result, Exception)]
+        failures = [result for result in results if isinstance(result, PermissionError)]
+        assert len(successes) == 1
+        assert len(failures) == 1
+        assert str(failures[0]) in {
+            "JIT_GRANT_NOT_ACTIVE:used",
+            "JIT_GRANT_USAGE_EXHAUSTED",
+            "JIT_GRANT_RESERVATION_CONFLICT",
+        }
+    finally:
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_workflow_audit_events_use_current_actor_for_decisions() -> None:
+    service, audit, _revoker = build_workflow_service()
+    await service.create_request(
+        actor={"id": "user-1", "username": "alice", "tenant_id": "tenant-1"},
+        asset_id="asset-1",
+        account_id="root",
+        protocol="ssh",
+        action="session.connect",
+        reason="数据库故障排查",
+        requested_ttl_seconds=1800,
+        metadata={},
+    )
+    await service.submit_request("wr-1", actor_id="user-1", tenant_id="tenant-1")
+    await service.approve_request(
+        "wr-1",
+        actor={
+            "id": "approver-1",
+            "username": "bob",
+            "tenant_id": "tenant-1",
+            "permissions": ["workflow:approve"],
+        },
+        decision_reason="允许排障",
+        grant_ttl_seconds=1800,
+    )
+
+    approved_event = next(event for event in audit.events if event["type"] == "workflow.request.approved")
+    issued_event = next(event for event in audit.events if event["type"] == "jit.grant.issued")
+    assert approved_event["actor_id"] == "approver-1"
+    assert approved_event["actor_username"] == "bob"
+    assert issued_event["actor_id"] == "approver-1"
 
 
 @pytest.mark.asyncio

@@ -1,6 +1,7 @@
 """Workflow/JIT request state machine and in-memory repository."""
 from __future__ import annotations
 
+import json
 import uuid
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
@@ -8,8 +9,20 @@ from enum import StrEnum
 from typing import Any, Protocol
 
 from pydantic import BaseModel, Field
+from sqlalchemy import select, update
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.sessions.service import JitGrantSessionBinding
+from app.models.workflow import (
+    JitGrantModel,
+    WorkflowRequestModel,
+)
+from app.models.workflow import (
+    JitGrantStatus as SQLAlchemyJitGrantStatus,
+)
+from app.models.workflow import (
+    WorkflowRequestStatus as SQLAlchemyWorkflowRequestStatus,
+)
 
 MAX_GRANT_TTL_SECONDS = 86_400
 
@@ -111,6 +124,51 @@ class NoopSessionRevoker:
         return []
 
 
+class WorkflowStore(Protocol):
+    async def save_request(self, request: WorkflowRequestRecord) -> WorkflowRequestRecord:
+        """Persist a workflow request."""
+
+    async def get_request(self, request_id: str) -> WorkflowRequestRecord | None:
+        """Return a workflow request by id."""
+
+    async def list_requests(
+        self, *, tenant_id: str, requester_id: str | None
+    ) -> list[WorkflowRequestRecord]:
+        """List workflow requests in scope."""
+
+    async def save_grant(self, grant: JitGrantRecord) -> JitGrantRecord:
+        """Persist a JIT grant."""
+
+    async def get_grant(self, grant_id: str) -> JitGrantRecord | None:
+        """Return a JIT grant by id."""
+
+    async def list_active_grants(
+        self,
+        *,
+        tenant_id: str,
+        now: datetime,
+        subject_id: str | None = None,
+    ) -> list[JitGrantRecord]:
+        """List active grants in scope."""
+
+    async def reserve_grant_for_session(
+        self,
+        *,
+        jit_grant_id: str,
+        subject_id: str,
+        tenant_id: str,
+        asset_id: str,
+        account_id: str,
+        protocol: str,
+        action: str,
+        now: datetime,
+    ) -> JitGrantRecord:
+        """Atomically reserve/consume a JIT grant for one session."""
+
+    async def commit(self) -> None:
+        """Commit any pending persistence changes."""
+
+
 class InMemoryWorkflowStore:
     def __init__(self) -> None:
         self._requests: dict[str, WorkflowRequestRecord] = {}
@@ -154,16 +212,368 @@ class InMemoryWorkflowStore:
             and (subject_id is None or grant.subject_id == subject_id)
         ]
 
+    async def reserve_grant_for_session(
+        self,
+        *,
+        jit_grant_id: str,
+        subject_id: str,
+        tenant_id: str,
+        asset_id: str,
+        account_id: str,
+        protocol: str,
+        action: str,
+        now: datetime,
+    ) -> JitGrantRecord:
+        grant = self._grants.get(jit_grant_id)
+        if grant is None or grant.tenant_id != tenant_id:
+            raise PermissionError("JIT_GRANT_NOT_FOUND")
+        _validate_grant_for_session(
+            grant,
+            subject_id=subject_id,
+            asset_id=asset_id,
+            account_id=account_id,
+            protocol=protocol,
+            action=action,
+            now=now,
+        )
+        _consume_grant(grant)
+        self._grants[grant.id] = grant
+        return grant
+
+    async def commit(self) -> None:
+        return None
+
     def clear(self) -> None:
         self._requests.clear()
         self._grants.clear()
+
+
+class SQLAlchemyWorkflowStore:
+    """WorkflowService store backed by SQLAlchemy persistence models."""
+
+    def __init__(self, session: AsyncSession) -> None:
+        self._session = session
+
+    async def save_request(self, request: WorkflowRequestRecord) -> WorkflowRequestRecord:
+        model = await self._request_model(request.id)
+        if model is None:
+            model = WorkflowRequestModel(
+                id=request.id,
+                tenant_id=request.tenant_id,
+                requester_id=request.requester_id,
+                requester_username=request.requester_username,
+                resource_type="asset",
+                asset_id=request.asset_id,
+                account_id=request.account_id,
+                protocol=request.protocol,
+                action=request.action,
+                reason=request.reason,
+                requested_ttl_seconds=request.requested_ttl_seconds,
+                status=SQLAlchemyWorkflowRequestStatus(request.status.value),
+                created_at=request.created_at,
+                metadata_json=json.dumps(request.metadata, sort_keys=True),
+            )
+            self._session.add(model)
+        self._apply_request_record(model, request)
+        await self._session.flush()
+        return await self._request_record(model)
+
+    async def get_request(self, request_id: str) -> WorkflowRequestRecord | None:
+        model = await self._request_model(request_id)
+        if model is None:
+            return None
+        return await self._request_record(model)
+
+    async def list_requests(
+        self, *, tenant_id: str, requester_id: str | None
+    ) -> list[WorkflowRequestRecord]:
+        stmt = select(WorkflowRequestModel).where(WorkflowRequestModel.tenant_id == tenant_id)
+        if requester_id is not None:
+            stmt = stmt.where(WorkflowRequestModel.requester_id == requester_id)
+        result = await self._session.execute(stmt)
+        return [await self._request_record(model) for model in result.scalars().all()]
+
+    async def save_grant(self, grant: JitGrantRecord) -> JitGrantRecord:
+        model = await self._grant_model(grant.id)
+        if model is None:
+            model = JitGrantModel(
+                id=grant.id,
+                tenant_id=grant.tenant_id,
+                workflow_request_id=grant.workflow_request_id,
+                subject_id=grant.subject_id,
+                asset_id=grant.asset_id,
+                account_id=grant.account_id,
+                protocol=grant.protocol,
+                action=grant.action,
+                status=SQLAlchemyJitGrantStatus(grant.status.value),
+                issued_at=grant.issued_at,
+                expires_at=grant.expires_at,
+                max_session_ttl_seconds=grant.max_session_ttl_seconds,
+                constraints_json=json.dumps(grant.constraints, sort_keys=True),
+            )
+            self._session.add(model)
+        self._apply_grant_record(model, grant)
+        await self._session.flush()
+        return self._grant_record(model)
+
+    async def get_grant(self, grant_id: str) -> JitGrantRecord | None:
+        model = await self._grant_model(grant_id)
+        if model is None:
+            return None
+        return self._grant_record(model)
+
+    async def list_active_grants(
+        self,
+        *,
+        tenant_id: str,
+        now: datetime,
+        subject_id: str | None = None,
+    ) -> list[JitGrantRecord]:
+        stmt = select(JitGrantModel).where(
+            JitGrantModel.tenant_id == tenant_id,
+            JitGrantModel.status == SQLAlchemyJitGrantStatus.active,
+            JitGrantModel.expires_at > now,
+        )
+        if subject_id is not None:
+            stmt = stmt.where(JitGrantModel.subject_id == subject_id)
+        result = await self._session.execute(stmt)
+        return [self._grant_record(model) for model in result.scalars().all()]
+
+    async def reserve_grant_for_session(
+        self,
+        *,
+        jit_grant_id: str,
+        subject_id: str,
+        tenant_id: str,
+        asset_id: str,
+        account_id: str,
+        protocol: str,
+        action: str,
+        now: datetime,
+    ) -> JitGrantRecord:
+        result = await self._session.execute(
+            select(JitGrantModel).where(
+                JitGrantModel.id == jit_grant_id,
+                JitGrantModel.tenant_id == tenant_id,
+            )
+        )
+        model = result.scalar_one_or_none()
+        if model is None:
+            raise PermissionError("JIT_GRANT_NOT_FOUND")
+        grant = self._grant_record(model)
+        _validate_grant_for_session(
+            grant,
+            subject_id=subject_id,
+            asset_id=asset_id,
+            account_id=account_id,
+            protocol=protocol,
+            action=action,
+            now=now,
+        )
+        _consume_grant(grant)
+        update_result = await self._session.execute(
+            update(JitGrantModel)
+            .where(
+                JitGrantModel.id == jit_grant_id,
+                JitGrantModel.tenant_id == tenant_id,
+                JitGrantModel.subject_id == subject_id,
+                JitGrantModel.asset_id == asset_id,
+                JitGrantModel.account_id == account_id,
+                JitGrantModel.protocol == protocol,
+                JitGrantModel.action == action,
+                JitGrantModel.status == SQLAlchemyJitGrantStatus.active,
+                JitGrantModel.expires_at > now,
+            )
+            .values(
+                status=SQLAlchemyJitGrantStatus(grant.status.value),
+                constraints_json=json.dumps(grant.constraints, sort_keys=True),
+            )
+            .execution_options(synchronize_session=False)
+        )
+        if int(getattr(update_result, "rowcount", 0)) != 1:
+            refreshed = await self._grant_model(jit_grant_id)
+            if refreshed is None or refreshed.tenant_id != tenant_id:
+                raise PermissionError("JIT_GRANT_NOT_FOUND")
+            _validate_grant_for_session(
+                self._grant_record(refreshed),
+                subject_id=subject_id,
+                asset_id=asset_id,
+                account_id=account_id,
+                protocol=protocol,
+                action=action,
+                now=now,
+            )
+            raise PermissionError("JIT_GRANT_RESERVATION_CONFLICT")
+        await self._session.flush()
+        return grant
+
+    async def commit(self) -> None:
+        await self._session.commit()
+
+    async def _request_model(self, request_id: str) -> WorkflowRequestModel | None:
+        result = await self._session.execute(
+            select(WorkflowRequestModel).where(WorkflowRequestModel.id == request_id)
+        )
+        return result.scalar_one_or_none()
+
+    async def _grant_model(self, grant_id: str) -> JitGrantModel | None:
+        result = await self._session.execute(
+            select(JitGrantModel).where(JitGrantModel.id == grant_id)
+        )
+        return result.scalar_one_or_none()
+
+    async def _request_record(self, model: WorkflowRequestModel) -> WorkflowRequestRecord:
+        grant_id = ""
+        grant_result = await self._session.execute(
+            select(JitGrantModel.id).where(JitGrantModel.workflow_request_id == model.id)
+        )
+        persisted_grant_id = grant_result.scalars().first()
+        if persisted_grant_id:
+            grant_id = str(persisted_grant_id)
+        return WorkflowRequestRecord(
+            id=model.id,
+            tenant_id=model.tenant_id,
+            requester_id=model.requester_id,
+            requester_username=model.requester_username,
+            asset_id=model.asset_id,
+            account_id=model.account_id,
+            protocol=model.protocol,
+            action=model.action,
+            reason=model.reason,
+            requested_ttl_seconds=model.requested_ttl_seconds,
+            status=WorkflowRequestStatus(_enum_value(model.status)),
+            created_at=model.created_at,
+            submitted_at=model.submitted_at,
+            decided_at=model.decided_at,
+            expires_at=model.expires_at,
+            revoked_at=model.revoked_at,
+            decision_reason=model.decision_reason,
+            approver_id=model.approver_id,
+            approver_username=model.approver_username,
+            grant_id=grant_id,
+            metadata=_json_dict(model.metadata_json),
+        )
+
+    def _grant_record(self, model: JitGrantModel) -> JitGrantRecord:
+        return JitGrantRecord(
+            id=model.id,
+            tenant_id=model.tenant_id,
+            workflow_request_id=model.workflow_request_id,
+            subject_id=model.subject_id,
+            asset_id=model.asset_id,
+            account_id=model.account_id,
+            protocol=model.protocol,
+            action=model.action,
+            status=JitGrantStatus(_enum_value(model.status)),
+            issued_at=model.issued_at,
+            expires_at=model.expires_at,
+            revoked_at=model.revoked_at,
+            max_session_ttl_seconds=model.max_session_ttl_seconds,
+            constraints=_json_dict(model.constraints_json),
+        )
+
+    def _apply_request_record(
+        self,
+        model: WorkflowRequestModel,
+        request: WorkflowRequestRecord,
+    ) -> None:
+        model.tenant_id = request.tenant_id
+        model.requester_id = request.requester_id
+        model.requester_username = request.requester_username
+        model.asset_id = request.asset_id
+        model.account_id = request.account_id
+        model.protocol = request.protocol
+        model.action = request.action
+        model.reason = request.reason
+        model.requested_ttl_seconds = request.requested_ttl_seconds
+        model.status = SQLAlchemyWorkflowRequestStatus(request.status.value)
+        model.created_at = request.created_at
+        model.submitted_at = request.submitted_at
+        model.decided_at = request.decided_at
+        model.expires_at = request.expires_at
+        model.revoked_at = request.revoked_at
+        model.decision_reason = request.decision_reason
+        model.approver_id = request.approver_id
+        model.approver_username = request.approver_username
+        model.metadata_json = json.dumps(request.metadata, sort_keys=True)
+
+    def _apply_grant_record(self, model: JitGrantModel, grant: JitGrantRecord) -> None:
+        model.tenant_id = grant.tenant_id
+        model.workflow_request_id = grant.workflow_request_id
+        model.subject_id = grant.subject_id
+        model.asset_id = grant.asset_id
+        model.account_id = grant.account_id
+        model.protocol = grant.protocol
+        model.action = grant.action
+        model.status = SQLAlchemyJitGrantStatus(grant.status.value)
+        model.issued_at = grant.issued_at
+        model.expires_at = grant.expires_at
+        model.revoked_at = grant.revoked_at
+        model.max_session_ttl_seconds = grant.max_session_ttl_seconds
+        model.constraints_json = json.dumps(grant.constraints, sort_keys=True)
+
+
+def _json_dict(raw: str) -> dict[str, Any]:
+    try:
+        value = json.loads(raw or "{}")
+    except json.JSONDecodeError:
+        return {}
+    return value if isinstance(value, dict) else {}
+
+
+def _enum_value(value: Any) -> str:
+    return str(getattr(value, "value", value))
+
+
+def _validate_grant_for_session(
+    grant: JitGrantRecord,
+    *,
+    subject_id: str,
+    asset_id: str,
+    account_id: str,
+    protocol: str,
+    action: str,
+    now: datetime,
+) -> None:
+    if grant.status is not JitGrantStatus.ACTIVE:
+        raise PermissionError(f"JIT_GRANT_NOT_ACTIVE:{grant.status}")
+    if _comparable_datetime(grant.expires_at, now) <= now:
+        grant.status = JitGrantStatus.EXPIRED
+        raise PermissionError("JIT_GRANT_EXPIRED")
+    if grant.subject_id != subject_id:
+        raise PermissionError("JIT_GRANT_SUBJECT_MISMATCH")
+    if grant.asset_id != asset_id:
+        raise PermissionError("JIT_GRANT_ASSET_MISMATCH")
+    if grant.account_id != account_id:
+        raise PermissionError("JIT_GRANT_ACCOUNT_MISMATCH")
+    if grant.protocol != protocol:
+        raise PermissionError("JIT_GRANT_PROTOCOL_MISMATCH")
+    if grant.action != action:
+        raise PermissionError("JIT_GRANT_ACTION_MISMATCH")
+    used_count = int(grant.constraints.get("used_count", 0))
+    max_uses = int(grant.constraints.get("max_uses", 1))
+    if used_count >= max_uses:
+        raise PermissionError("JIT_GRANT_USAGE_EXHAUSTED")
+
+
+def _comparable_datetime(value: datetime, reference: datetime) -> datetime:
+    if value.tzinfo is None and reference.tzinfo is not None:
+        return value.replace(tzinfo=reference.tzinfo)
+    return value
+
+
+def _consume_grant(grant: JitGrantRecord) -> None:
+    used_count = int(grant.constraints.get("used_count", 0)) + 1
+    grant.constraints["used_count"] = used_count
+    if used_count >= int(grant.constraints.get("max_uses", 1)):
+        grant.status = JitGrantStatus.USED
 
 
 class WorkflowService:
     def __init__(
         self,
         *,
-        store: InMemoryWorkflowStore | None = None,
+        store: WorkflowStore | None = None,
         audit_sink: AuditSink | None = None,
         session_revoker: SessionRevoker | None = None,
         now: Callable[[], datetime] | None = None,
@@ -205,7 +615,8 @@ class WorkflowService:
             metadata=metadata,
         )
         await self.store.save_request(request)
-        await self._publish("workflow.request.created", request)
+        await self._publish("workflow.request.created", request, actor=actor)
+        await self.store.commit()
         return request
 
     async def submit_request(
@@ -214,6 +625,7 @@ class WorkflowService:
         *,
         actor_id: str,
         tenant_id: str,
+        actor: dict[str, Any] | None = None,
     ) -> WorkflowRequestRecord:
         request = await self._get_request_for_tenant(request_id, tenant_id)
         if request.requester_id != actor_id:
@@ -221,7 +633,12 @@ class WorkflowService:
         self._transition(request, WorkflowRequestStatus.PENDING)
         request.submitted_at = self.now()
         await self.store.save_request(request)
-        await self._publish("workflow.request.submitted", request)
+        await self._publish(
+            "workflow.request.submitted",
+            request,
+            actor=actor or {"id": actor_id, "tenant_id": tenant_id},
+        )
+        await self.store.commit()
         return request
 
     async def approve_request(
@@ -270,8 +687,14 @@ class WorkflowService:
         request.grant_id = grant.id
         await self.store.save_grant(grant)
         await self.store.save_request(request)
-        await self._publish("workflow.request.approved", request, decision_reason=decision_reason)
-        await self._publish_grant("jit.grant.issued", grant, request)
+        await self._publish(
+            "workflow.request.approved",
+            request,
+            decision_reason=decision_reason,
+            actor=actor,
+        )
+        await self._publish_grant("jit.grant.issued", grant, request, actor=actor)
+        await self.store.commit()
         return request
 
     async def reject_request(
@@ -293,7 +716,13 @@ class WorkflowService:
         request.approver_id = str(actor["id"])
         request.approver_username = str(actor.get("username", ""))
         await self.store.save_request(request)
-        await self._publish("workflow.request.rejected", request, decision_reason=decision_reason)
+        await self._publish(
+            "workflow.request.rejected",
+            request,
+            decision_reason=decision_reason,
+            actor=actor,
+        )
+        await self.store.commit()
         return request
 
     async def revoke_request(
@@ -327,9 +756,10 @@ class WorkflowService:
                     grant.id,
                     reason="jit_grant_revoked",
                 )
-                await self._publish_grant("jit.grant.revoked", grant, request)
+                await self._publish_grant("jit.grant.revoked", grant, request, actor=actor)
         await self.store.save_request(request)
-        await self._publish("workflow.request.revoked", request, decision_reason=reason)
+        await self._publish("workflow.request.revoked", request, decision_reason=reason, actor=actor)
+        await self.store.commit()
         return request
 
     async def list_requests(
@@ -391,29 +821,17 @@ class WorkflowService:
         action: str,
         now: datetime,
     ) -> JitGrantSessionBinding:
-        grant = await self.get_grant(jit_grant_id, tenant_id=tenant_id)
-        if grant is None:
-            raise PermissionError("JIT_GRANT_NOT_FOUND")
-        if grant.status is not JitGrantStatus.ACTIVE:
-            raise PermissionError(f"JIT_GRANT_NOT_ACTIVE:{grant.status}")
-        if grant.expires_at <= now:
-            grant.status = JitGrantStatus.EXPIRED
-            await self.store.save_grant(grant)
-            raise PermissionError("JIT_GRANT_EXPIRED")
-        if grant.subject_id != subject_id:
-            raise PermissionError("JIT_GRANT_SUBJECT_MISMATCH")
-        if grant.asset_id != asset_id:
-            raise PermissionError("JIT_GRANT_ASSET_MISMATCH")
-        if grant.account_id != account_id:
-            raise PermissionError("JIT_GRANT_ACCOUNT_MISMATCH")
-        if grant.protocol != protocol:
-            raise PermissionError("JIT_GRANT_PROTOCOL_MISMATCH")
-        if grant.action != action:
-            raise PermissionError("JIT_GRANT_ACTION_MISMATCH")
-        used_count = int(grant.constraints.get("used_count", 0))
-        max_uses = int(grant.constraints.get("max_uses", 1))
-        if used_count >= max_uses:
-            raise PermissionError("JIT_GRANT_USAGE_EXHAUSTED")
+        grant = await self.store.reserve_grant_for_session(
+            jit_grant_id=jit_grant_id,
+            subject_id=subject_id,
+            tenant_id=tenant_id,
+            asset_id=asset_id,
+            account_id=account_id,
+            protocol=protocol,
+            action=action,
+            now=now,
+        )
+        await self.store.commit()
         return JitGrantSessionBinding(
             jit_grant_id=grant.id,
             workflow_request_id=grant.workflow_request_id,
@@ -425,11 +843,6 @@ class WorkflowService:
         grant = await self.store.get_grant(jit_grant_id)
         if grant is None:
             raise PermissionError("JIT_GRANT_NOT_FOUND")
-        used_count = int(grant.constraints.get("used_count", 0)) + 1
-        grant.constraints["used_count"] = used_count
-        if used_count >= int(grant.constraints.get("max_uses", 1)):
-            grant.status = JitGrantStatus.USED
-        await self.store.save_grant(grant)
         request = await self.store.get_request(grant.workflow_request_id)
         if request is not None:
             await self._publish_grant("jit.grant.used", grant, request, session_id=session_id)
@@ -478,11 +891,14 @@ class WorkflowService:
         request: WorkflowRequestRecord,
         *,
         decision_reason: str = "",
+        actor: dict[str, Any] | None = None,
     ) -> None:
         await self.audit_sink.publish(
             {
                 "id": uuid.uuid4().hex,
                 "type": event_type,
+                "actor_id": str((actor or {}).get("id") or request.requester_id),
+                "actor_username": str((actor or {}).get("username") or request.requester_username),
                 "workflow_request_id": request.id,
                 "jit_grant_id": request.grant_id,
                 "tenant_id": request.tenant_id,
@@ -505,11 +921,14 @@ class WorkflowService:
         request: WorkflowRequestRecord,
         *,
         session_id: str = "",
+        actor: dict[str, Any] | None = None,
     ) -> None:
         await self.audit_sink.publish(
             {
                 "id": uuid.uuid4().hex,
                 "type": event_type,
+                "actor_id": str((actor or {}).get("id") or grant.subject_id),
+                "actor_username": str((actor or {}).get("username") or request.requester_username),
                 "workflow_request_id": request.id,
                 "jit_grant_id": grant.id,
                 "session_id": session_id,

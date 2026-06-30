@@ -4,18 +4,43 @@ from __future__ import annotations
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
+from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.audits.service import audit_service
 from app.api.sessions.schemas import SessionCloseRequest, SessionCreateRequest, SessionResponse
 from app.api.sessions.service import SessionGatewayService
+from app.core.database import get_db
 from app.core.deps import current_user
+from app.workflows.audit import WorkflowAuditSink
 
 router = APIRouter(prefix="/sessions", tags=["会话网关"])
 
 _session_gateway_service = SessionGatewayService()
+_workflow_audit_sink = WorkflowAuditSink(audit_service)
 
 
-def get_session_gateway_service() -> SessionGatewayService:
+def get_session_revoker() -> SessionGatewayService:
     return _session_gateway_service
+
+
+def get_session_gateway_service(db: AsyncSession = Depends(get_db)) -> SessionGatewayService:
+    from app.api.workflows.service import SQLAlchemyWorkflowStore, WorkflowService
+
+    workflow_service = WorkflowService(
+        store=SQLAlchemyWorkflowStore(db),
+        audit_sink=_workflow_audit_sink,
+        session_revoker=_session_gateway_service,
+    )
+    return SessionGatewayService(
+        policy_client=_session_gateway_service.policy_client,
+        token_store=_session_gateway_service.token_store,
+        connector_scheduler=_session_gateway_service.connector_scheduler,
+        session_store=_session_gateway_service.session_store,
+        audit_sink=_workflow_audit_sink,
+        jit_grant_client=workflow_service,
+        now=_session_gateway_service.now,
+        session_id_factory=_session_gateway_service.session_id_factory,
+    )
 
 
 def get_request_client_ip(request: Request) -> tuple[str, str]:

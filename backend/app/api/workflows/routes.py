@@ -4,7 +4,10 @@ from __future__ import annotations
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, status
+from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.audits.service import audit_service
+from app.api.sessions.routes import get_session_revoker
 from app.api.workflows.schemas import (
     JitGrantListResponse,
     JitGrantResponse,
@@ -15,16 +18,22 @@ from app.api.workflows.schemas import (
     WorkflowRequestResponse,
     WorkflowRevokeRequest,
 )
-from app.api.workflows.service import WorkflowService
+from app.api.workflows.service import SQLAlchemyWorkflowStore, WorkflowService
+from app.core.database import get_db
 from app.core.deps import current_user
+from app.workflows.audit import WorkflowAuditSink
 
 router = APIRouter(prefix="/workflows", tags=["Workflow/JIT"])
 
-_workflow_service = WorkflowService()
+_workflow_audit_sink = WorkflowAuditSink(audit_service)
 
 
-def get_workflow_service() -> WorkflowService:
-    return _workflow_service
+def get_workflow_service(db: AsyncSession = Depends(get_db)) -> WorkflowService:
+    return WorkflowService(
+        store=SQLAlchemyWorkflowStore(db),
+        audit_sink=_workflow_audit_sink,
+        session_revoker=get_session_revoker(),
+    )
 
 
 @router.post(
@@ -86,6 +95,7 @@ async def submit_workflow_request(
             request_id,
             actor_id=str(user["id"]),
             tenant_id=str(user.get("tenant_id", "default")),
+            actor=user,
         )
     except PermissionError as exc:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
