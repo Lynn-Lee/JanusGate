@@ -251,6 +251,16 @@ class WorkflowService:
             issued_at=now,
             expires_at=now + timedelta(seconds=min(grant_ttl_seconds, request.requested_ttl_seconds)),
             max_session_ttl_seconds=min(grant_ttl_seconds, request.requested_ttl_seconds),
+            constraints={
+                "subject_id": request.requester_id,
+                "asset_id": request.asset_id,
+                "account_id": request.account_id,
+                "protocol": request.protocol,
+                "action": request.action,
+                "usage": "single-use",
+                "max_uses": 1,
+                "used_count": 0,
+            },
         )
         request.decided_at = now
         request.expires_at = grant.expires_at

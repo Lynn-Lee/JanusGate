@@ -107,6 +107,16 @@ async def test_workflow_submit_and_approve_creates_active_jit_grant() -> None:
     assert grant.account_id == "root"
     assert grant.protocol == "ssh"
     assert grant.action == "session.connect"
+    assert grant.constraints == {
+        "subject_id": "user-1",
+        "asset_id": "asset-1",
+        "account_id": "root",
+        "protocol": "ssh",
+        "action": "session.connect",
+        "usage": "single-use",
+        "max_uses": 1,
+        "used_count": 0,
+    }
     assert [event["type"] for event in audit.events] == [
         "workflow.request.created",
         "workflow.request.submitted",

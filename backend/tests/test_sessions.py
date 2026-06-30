@@ -11,6 +11,7 @@ from app.api.sessions.service import (
     ConnectionToken,
     InMemorySessionStore,
     JitGrantSessionBinding,
+    PolicyDecisionServiceClient,
     SessionGatewayService,
     SessionStatus,
 )
@@ -22,6 +23,8 @@ from app.api.workflows.service import (
 )
 from app.core.deps import current_user
 from app.main import app
+from app.policy.decision import PolicyDecisionService
+from app.policy.schemas import PolicyRule
 
 
 class FakePolicyClient:
@@ -259,6 +262,17 @@ async def test_create_session_binds_valid_jit_grant_and_marks_it_used() -> None:
     assert jit_grant_client.validated[0]["action"] == "session.connect"
     assert jit_grant_client.bound_sessions == [("grant-1", session.id)]
     assert policy.requests[0]["context"]["jit_grant_id"] == "grant-1"
+    assert policy.requests[0]["context"]["account_id"] == "account-1"
+    assert policy.requests[0]["context"]["protocol"] == "ssh"
+    assert policy.requests[0]["approval"] == {
+        "status": "approved",
+        "grant_id": "grant-1",
+        "workflow_request_id": "wr-1",
+        "expires_at": jit_grant_client.validated[0]["now"] + timedelta(minutes=30),
+        "constraints": {
+            "usage": "single-use",
+        },
+    }
     assert audit.events[-1]["jit_grant_id"] == "grant-1"
 
 
@@ -335,6 +349,72 @@ async def test_real_workflow_grant_is_consumed_once_and_revoke_closes_bound_sess
     assert session.status is SessionStatus.CLOSED
     assert audit.events[-1]["type"] == "session.revoked_by_jit_grant"
     assert audit.events[-1]["jit_grant_id"] == "grant-1"
+
+
+@pytest.mark.asyncio
+async def test_session_gateway_can_authorize_real_workflow_grant_through_policy_service() -> None:
+    now = datetime.now(UTC)
+    workflow_service = WorkflowService(
+        store=InMemoryWorkflowStore(),
+        now=lambda: now,
+        request_id_factory=lambda: "wr-1",
+        grant_id_factory=lambda: "grant-1",
+    )
+    requester = {"id": "user-1", "username": "alice", "tenant_id": "tenant-1"}
+    approver = {
+        "id": "approver-1",
+        "username": "bob",
+        "tenant_id": "tenant-1",
+        "permissions": ["workflow:approve"],
+    }
+    await workflow_service.create_request(
+        actor=requester,
+        asset_id="asset-1",
+        account_id="account-1",
+        protocol="ssh",
+        action="session.connect",
+        reason="临时排障",
+        requested_ttl_seconds=1800,
+        metadata={},
+    )
+    await workflow_service.submit_request("wr-1", actor_id="user-1", tenant_id="tenant-1")
+    await workflow_service.approve_request(
+        "wr-1",
+        actor=approver,
+        decision_reason="允许排障",
+        grant_ttl_seconds=1800,
+    )
+
+    policy_client = PolicyDecisionServiceClient(
+        PolicyDecisionService(
+            rules=[
+                PolicyRule(
+                    id="workflow-jit",
+                    subject_ids=["user-1"],
+                    actions=["session.connect"],
+                    resource_ids=["asset-1"],
+                    tenant_id="tenant-1",
+                    require_approval=True,
+                )
+            ]
+        )
+    )
+    session_service, _policy, _token_store, _audit = build_service(jit_grant_client=workflow_service)
+    session_service.policy_client = policy_client
+
+    session = await session_service.create_session(
+        subject_id="user-1",
+        tenant_id="tenant-1",
+        asset_id="asset-1",
+        account_id="account-1",
+        protocol="ssh",
+        connection_token="token-1",
+        client_ip="203.0.113.10",
+        jit_grant_id="grant-1",
+    )
+
+    assert session.status is SessionStatus.ACTIVE
+    assert session.workflow_request_id == "wr-1"
 
 
 @pytest.mark.asyncio

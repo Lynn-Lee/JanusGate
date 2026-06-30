@@ -13,6 +13,9 @@ from typing import Any, Protocol
 
 from pydantic import BaseModel, Field
 
+from app.policy.decision import PolicyDecisionService
+from app.policy.schemas import ApprovalState, PolicyDecisionRequest, ResourceRef, SubjectRef
+
 
 class SessionStatus(StrEnum):
     REQUESTED = "requested"
@@ -122,6 +125,37 @@ class DenyAllPolicyClient:
             "ttl_seconds": 0,
             "obligations": [],
         }
+
+
+class PolicyDecisionServiceClient:
+    """Adapter from Session Gateway's dict contract into PolicyDecisionService."""
+
+    def __init__(self, service: PolicyDecisionService) -> None:
+        self.service = service
+
+    async def evaluate(self, request: dict[str, Any]) -> dict[str, Any]:
+        subject = request.get("subject", {})
+        resource = request.get("resource", {})
+        approval = request.get("approval")
+        response = self.service.evaluate(
+            PolicyDecisionRequest(
+                subject=SubjectRef(
+                    id=str(subject.get("id", "")),
+                    type=str(subject.get("type", "user")),
+                    tenant_id=str(subject.get("tenant_id", "default")),
+                ),
+                action=str(request.get("action", "")),
+                resource=ResourceRef(
+                    id=str(resource.get("id") or resource.get("asset_id", "")),
+                    type=str(resource.get("type", "asset")),
+                    tenant_id=str(resource.get("tenant_id", "default")),
+                ),
+                context=dict(request.get("context", {})),
+                approval=ApprovalState(**approval) if isinstance(approval, dict) else None,
+                connector_trusted=bool(request.get("connector_trusted", False)),
+            )
+        )
+        return response.model_dump(mode="json")
 
 
 class EmptyConnectionTokenStore:
@@ -254,11 +288,22 @@ class SessionGatewayService:
             await self._publish("session.failed", session, reason_code=reason_code)
             raise
 
+        approval = None
+        if grant_binding is not None:
+            approval = {
+                "status": "approved",
+                "grant_id": grant_binding.jit_grant_id,
+                "workflow_request_id": grant_binding.workflow_request_id,
+                "expires_at": grant_binding.expires_at,
+                "constraints": grant_binding.constraints,
+            }
         decision = await self.policy_client.evaluate(
             {
-                "subject": {"id": subject_id, "tenant_id": tenant_id},
+                "subject": {"id": subject_id, "type": "user", "tenant_id": tenant_id},
                 "action": "session.connect",
                 "resource": {
+                    "id": asset_id,
+                    "type": "asset",
                     "asset_id": asset_id,
                     "account_id": account_id,
                     "protocol": protocol,
@@ -268,10 +313,14 @@ class SessionGatewayService:
                     "connection_token": connection_token,
                     "client_ip": client_ip,
                     "client_ip_source": client_ip_source,
+                    "account_id": account_id,
+                    "protocol": protocol,
                     "jit_grant_id": jit_grant_id,
                     "workflow_request_id": session.workflow_request_id,
                     "jit_grant_constraints": grant_binding.constraints if grant_binding else {},
                 },
+                "approval": approval,
+                "connector_trusted": True,
             }
         )
         if decision.get("decision") != "allow":

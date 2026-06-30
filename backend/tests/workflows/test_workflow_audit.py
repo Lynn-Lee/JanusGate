@@ -4,7 +4,7 @@ from app.api.audits.schemas import AuditEvent
 from app.api.audits.service import audit_service
 from app.core.deps import current_user
 from app.main import app
-from app.workflows.audit import WORKFLOW_AUDIT_EVENTS, emit_workflow_audit_event
+from app.workflows.audit import WORKFLOW_AUDIT_EVENTS, WorkflowAuditSink, emit_workflow_audit_event
 
 
 def _system_actor() -> dict[str, object]:
@@ -140,3 +140,39 @@ def test_session_revoked_by_jit_grant_event_reaches_siem_payload():
     assert event.metadata["cookie"] == "***REDACTED***"
     assert delivered_events[0].metadata == event.metadata
     assert "plain-cookie" not in str(delivered_events[0].metadata)
+
+
+async def test_workflow_audit_sink_bridges_service_events_to_audit_service():
+    delivered_events: list[AuditEvent] = []
+
+    class CaptureSiemClient:
+        async def deliver(self, event: AuditEvent) -> None:
+            delivered_events.append(event)
+
+    original_siem_client = audit_service._siem_client
+    audit_service._siem_client = CaptureSiemClient()
+    sink = WorkflowAuditSink(audit_service)
+    try:
+        await sink.publish(
+            {
+                "type": "workflow.request.approved",
+                "workflow_request_id": "wr_sink",
+                "jit_grant_id": "grant_sink",
+                "tenant_id": "tenant-a",
+                "requester_id": "user-1",
+                "asset_id": "asset-1",
+                "account_id": "root",
+                "protocol": "ssh",
+                "action": "session.connect",
+                "status": "approved",
+                "decision_reason": "approved",
+            }
+        )
+        ignored = await sink.publish({"type": "session.active", "tenant_id": "tenant-a"})
+    finally:
+        audit_service._siem_client = original_siem_client
+
+    assert ignored is None
+    assert delivered_events[-1].event_type == "workflow.request.approved"
+    assert delivered_events[-1].metadata["workflow_request_id"] == "wr_sink"
+    assert delivered_events[-1].metadata["jit_grant_id"] == "grant_sink"
