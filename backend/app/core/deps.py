@@ -4,6 +4,7 @@ FastAPI 公共 Depends 依赖：用户认证 + 权限校验。
 """
 import hmac
 from collections.abc import AsyncGenerator, Callable
+from datetime import UTC, datetime
 from typing import Any
 
 from fastapi import Depends, HTTPException, status
@@ -44,14 +45,15 @@ async def current_user(
     except Exception:
         raise _UNAUTHORIZED from None
 
-    if payload.get("type") != "access":
+    if payload.get("type") != "access" or payload.get("requires_2fa"):
         raise _UNAUTHORIZED
 
-    jti = payload.get("jti", "")
-    if jti:
-        blacklisted = await redis.get(f"jwt:blacklist:{jti}")
-        if blacklisted:
-            raise _UNAUTHORIZED
+    jti = payload.get("jti")
+    if not jti:
+        raise _UNAUTHORIZED
+    blacklisted = await redis.get(f"jwt:blacklist:{jti}")
+    if blacklisted:
+        raise _UNAUTHORIZED
 
     user_id = payload.get("sub")
     if not user_id:
@@ -60,6 +62,11 @@ async def current_user(
     result = await db.execute(select(User).where(User.id == int(user_id)))
     db_user = result.scalar_one_or_none()
     if not db_user or not db_user.is_active:
+        raise _UNAUTHORIZED
+
+    issued_at = _coerce_timestamp(payload.get("iat"))
+    password_changed_at = _coerce_datetime(getattr(db_user, "password_changed_at", None))
+    if not issued_at or (password_changed_at and issued_at < password_changed_at):
         raise _UNAUTHORIZED
 
     return {
@@ -81,3 +88,19 @@ def require_permission(perm: str) -> Callable[[dict[str, Any]], Any]:
 
 def timing_safe_compare(a: str, b: str) -> bool:
     return hmac.compare_digest(a.encode(), b.encode())
+
+
+def _coerce_timestamp(value: Any) -> datetime | None:
+    if isinstance(value, (int, float)):
+        return datetime.fromtimestamp(value, UTC)
+    if isinstance(value, datetime):
+        return _coerce_datetime(value)
+    return None
+
+
+def _coerce_datetime(value: Any) -> datetime | None:
+    if not isinstance(value, datetime):
+        return None
+    if value.tzinfo is None:
+        return value.replace(tzinfo=UTC)
+    return value.astimezone(UTC)

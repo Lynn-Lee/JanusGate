@@ -40,6 +40,9 @@ class Settings(BaseSettings):
     RATE_LIMIT_LOGIN_PER_MINUTE: int = 5
     RATE_LIMIT_GLOBAL_PER_MINUTE: int = 120
 
+    # ── Assets ──
+    ASSET_TEST_CONNECTION_ALLOWLIST: list[str] = []
+
     @model_validator(mode="after")
     def enforce_secrets(self) -> "Settings":
         if not self.SECRET_KEY or len(self.SECRET_KEY) < 32:

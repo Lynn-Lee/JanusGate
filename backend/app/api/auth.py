@@ -1,13 +1,20 @@
 """认证 API 路由。"""
+from datetime import UTC, datetime
 from typing import Any, cast
 
 from fastapi import APIRouter, Depends, HTTPException, status
+from redis.asyncio import Redis
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
-from app.core.deps import current_user
-from app.core.security import create_access_token, create_refresh_token, decode_token
+from app.core.deps import current_user, get_redis
+from app.core.security import (
+    create_access_token,
+    create_mfa_token,
+    create_refresh_token,
+    decode_token,
+)
 from app.models.user import User
 from app.schemas.auth import (
     ChangePasswordRequest,
@@ -33,9 +40,7 @@ async def login(data: LoginRequest, db: AsyncSession = Depends(get_db)) -> Token
     if user.totp_enabled:
         return TokenResponse(
             requires_2fa=True,
-            two_fa_token=create_access_token(
-                {"sub": str(user.id), "username": user.username, "requires_2fa": True}
-            ),
+            two_fa_token=create_mfa_token({"sub": str(user.id), "username": user.username}),
         )
 
     token_data = {"sub": str(user.id), "username": user.username}
@@ -47,14 +52,22 @@ async def login(data: LoginRequest, db: AsyncSession = Depends(get_db)) -> Token
 
 @router.post("/login/2fa", response_model=TokenResponse)
 async def login_2fa(
-    data: Login2FARequest, db: AsyncSession = Depends(get_db)
+    data: Login2FARequest,
+    db: AsyncSession = Depends(get_db),
+    redis: Redis = Depends(get_redis),
 ) -> TokenResponse:
     try:
         payload = decode_token(data.two_fa_token)
     except Exception:
         raise HTTPException(status_code=401, detail="2FA 凭证无效或已过期") from None
-    if not payload.get("requires_2fa"):
+    if payload.get("type") != "mfa" or not payload.get("requires_2fa"):
         raise HTTPException(status_code=401, detail="非法的 2FA 凭证")
+    jti = cast(str | None, payload.get("jti"))
+    if not jti:
+        raise HTTPException(status_code=401, detail="非法的 2FA 凭证")
+    consumed_key = f"mfa:challenge:consumed:{jti}"
+    if not await redis.set(consumed_key, "1", ex=300, nx=True):
+        raise HTTPException(status_code=401, detail="2FA 凭证无效或已过期")
     user_id = int(payload["sub"])
     result = await db.execute(select(User).where(User.id == user_id))
     user = result.scalar_one_or_none()
@@ -71,7 +84,9 @@ async def login_2fa(
 
 @router.post("/token/refresh", response_model=TokenResponse)
 async def refresh_token_endpoint(
-    refresh_token: str, db: AsyncSession = Depends(get_db)
+    refresh_token: str,
+    db: AsyncSession = Depends(get_db),
+    redis: Redis = Depends(get_redis),
 ) -> TokenResponse:
     try:
         payload = decode_token(refresh_token)
@@ -79,11 +94,20 @@ async def refresh_token_endpoint(
         raise HTTPException(status_code=401, detail="refresh_token 无效或已过期") from None
     if payload.get("type") != "refresh":
         raise HTTPException(status_code=401, detail="非法的 token 类型")
+    jti = cast(str | None, payload.get("jti"))
+    if not jti:
+        raise HTTPException(status_code=401, detail="refresh_token 无效或已过期")
+    if await redis.get(f"jwt:blacklist:{jti}"):
+        raise HTTPException(status_code=401, detail="refresh_token 无效或已过期")
     user_id = cast(str, payload.get("sub"))
     result = await db.execute(select(User).where(cast(Any, User.id) == int(user_id)))
     user = result.scalar_one_or_none()
     if not user or not user.is_active:
         raise HTTPException(status_code=401, detail="用户不存在或已被禁用")
+    issued_at = _coerce_timestamp(payload.get("iat"))
+    password_changed_at = _coerce_datetime(user.password_changed_at)
+    if not issued_at or (password_changed_at and issued_at < password_changed_at):
+        raise HTTPException(status_code=401, detail="refresh_token 无效或已过期")
     token_data = {"sub": str(user.id), "username": user.username}
     return TokenResponse(
         access_token=create_access_token(token_data),
@@ -166,3 +190,19 @@ async def create_api_key(
     db: AsyncSession = Depends(get_db),
 ) -> dict[str, Any]:
     return await AuthService.create_api_key(db, user["id"], data.name)
+
+
+def _coerce_timestamp(value: Any) -> datetime | None:
+    if isinstance(value, (int, float)):
+        return datetime.fromtimestamp(value, UTC)
+    if isinstance(value, datetime):
+        return _coerce_datetime(value)
+    return None
+
+
+def _coerce_datetime(value: Any) -> datetime | None:
+    if not isinstance(value, datetime):
+        return None
+    if value.tzinfo is None:
+        return value.replace(tzinfo=UTC)
+    return value.astimezone(UTC)

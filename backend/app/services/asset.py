@@ -1,4 +1,5 @@
 """资产服务：CRUD + 连接测试。"""
+import asyncio
 import ipaddress
 import socket
 from typing import Any
@@ -8,22 +9,45 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.asset import Asset
 
-_PRIVATE_RANGES = [
-    ipaddress.ip_network("10.0.0.0/8"),
-    ipaddress.ip_network("172.16.0.0/12"),
-    ipaddress.ip_network("192.168.0.0/16"),
-    ipaddress.ip_network("127.0.0.0/8"),
-    ipaddress.ip_network("169.254.0.0/16"),
-    ipaddress.ip_network("0.0.0.0/8"),
-]
-
 
 def _is_private_ip(address: str) -> bool:
     try:
         ip = ipaddress.ip_address(address)
-        return any(ip in net for net in _PRIVATE_RANGES)
+        return (
+            ip.is_private
+            or ip.is_loopback
+            or ip.is_link_local
+            or ip.is_multicast
+            or ip.is_reserved
+            or ip.is_unspecified
+        )
     except ValueError:
         return False
+
+
+def _resolve_public_targets(address: str, port: int) -> list[tuple[str, int]]:
+    infos = socket.getaddrinfo(address, port, type=socket.SOCK_STREAM)
+    targets: list[tuple[str, int]] = []
+    for info in infos:
+        resolved_ip = str(info[4][0])
+        if _is_private_ip(resolved_ip):
+            raise ValueError("SSRF protection: private/internal IP blocked")
+        targets.append((resolved_ip, int(info[4][1])))
+    return targets
+
+
+def _connect_to_any_target(
+    targets: list[tuple[str, int]], timeout: float
+) -> socket.socket:
+    last_error: Exception | None = None
+    for target in targets:
+        try:
+            return socket.create_connection(target, timeout=timeout)
+        except Exception as exc:  # pragma: no cover - exercised through final error path
+            last_error = exc
+    if last_error:
+        raise last_error
+    raise socket.gaierror("no address resolved")
 
 
 class AssetService:
@@ -80,8 +104,11 @@ class AssetService:
         if _is_private_ip(address):
             return {"reachable": False, "error": "SSRF protection: private/internal IP blocked"}
         try:
-            sock = socket.create_connection((address, port), timeout=timeout)
+            targets = await asyncio.to_thread(_resolve_public_targets, address, port)
+            sock = await asyncio.to_thread(_connect_to_any_target, targets, timeout)
             sock.close()
             return {"reachable": True, "error": ""}
+        except ValueError as e:
+            return {"reachable": False, "error": str(e)}
         except Exception as e:
             return {"reachable": False, "error": str(e)}
