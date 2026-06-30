@@ -254,3 +254,74 @@ def test_policy_denies_approved_state_without_valid_grant_identity():
 
     assert result.decision == PolicyDecision.DENY
     assert result.reason_code == "APPROVAL_GRANT_REQUIRED"
+
+
+def test_policy_denies_approved_grant_with_empty_constraints():
+    service = PolicyDecisionService(
+        rules=[
+            PolicyRule(
+                id="rule-approval",
+                subject_ids=["user-1"],
+                actions=["session.connect"],
+                resource_ids=["asset-1"],
+                tenant_id="tenant-a",
+                require_approval=True,
+            )
+        ]
+    )
+
+    result = service.evaluate(
+        _request(
+            action="session.connect",
+            approval=ApprovalState(
+                status="approved",
+                grant_id="grant-1",
+                workflow_request_id="wr-1",
+                expires_at=datetime.now(UTC) + timedelta(minutes=10),
+                constraints={},
+            ),
+        )
+    )
+
+    assert result.decision == PolicyDecision.DENY
+    assert result.reason_code == "APPROVAL_CONSTRAINT_MISMATCH"
+
+
+def test_policy_denies_approved_grant_missing_required_binding_constraint():
+    service = PolicyDecisionService(
+        rules=[
+            PolicyRule(
+                id="rule-approval",
+                subject_ids=["user-1"],
+                actions=["session.connect"],
+                resource_ids=["asset-1"],
+                tenant_id="tenant-a",
+                require_approval=True,
+            )
+        ]
+    )
+
+    result = service.evaluate(
+        _request(
+            action="session.connect",
+            approval=ApprovalState(
+                status="approved",
+                grant_id="grant-1",
+                workflow_request_id="wr-1",
+                expires_at=datetime.now(UTC) + timedelta(minutes=10),
+                constraints={
+                    "subject_id": "user-1",
+                    "asset_id": "asset-1",
+                    "account_id": "root",
+                    "protocol": "ssh",
+                    # action is intentionally missing and must fail closed.
+                    "usage": "single-use",
+                    "max_uses": 1,
+                    "used_count": 0,
+                },
+            ),
+        )
+    )
+
+    assert result.decision == PolicyDecision.DENY
+    assert result.reason_code == "APPROVAL_CONSTRAINT_MISMATCH"

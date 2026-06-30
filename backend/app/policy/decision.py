@@ -116,21 +116,15 @@ class PolicyDecisionService:
         if request.approval is None:
             return False
         constraints = request.approval.constraints
-        if not constraints:
-            return True
-
         expected: dict[str, str] = {
             "subject_id": request.subject.id,
             "asset_id": request.resource.id,
+            "account_id": str(request.context.get("account_id", "")),
+            "protocol": str(request.context.get("protocol", "")),
             "action": request.action,
         }
-        for context_key in ("account_id", "protocol"):
-            if context_key in request.context:
-                expected[context_key] = str(request.context[context_key])
 
-        return all(
-            str(constraints[key]) == value for key, value in expected.items() if key in constraints
-        )
+        return all(str(constraints.get(key, "")) == value for key, value in expected.items())
 
     def _allow_obligations(
         self, rule: PolicyRule, request: PolicyDecisionRequest
