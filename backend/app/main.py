@@ -12,6 +12,9 @@ from fastapi.middleware.gzip import GZipMiddleware
 
 from app.api import assets, auth, sessions
 from app.api.audits.routes import router as audits_router
+from app.api.sessions.routes import get_session_gateway_service
+from app.api.workflows.routes import get_workflow_service
+from app.api.workflows.routes import router as workflows_router
 from app.core.config import settings
 from app.core.database import engine
 from app.core.exceptions import register_exception_handlers
@@ -43,9 +46,15 @@ app.add_middleware(
 
 register_exception_handlers(app)
 
+_workflow_service = get_workflow_service()
+_session_gateway_service = get_session_gateway_service()
+_session_gateway_service.jit_grant_client = _workflow_service
+_workflow_service.session_revoker = _session_gateway_service
+
 app.include_router(auth.router, prefix="/api/v1")
 app.include_router(assets.router, prefix="/api/v1")
 app.include_router(sessions.router, prefix="/api/v1")
+app.include_router(workflows_router, prefix="/api/v1")
 app.include_router(audits_router)
 
 

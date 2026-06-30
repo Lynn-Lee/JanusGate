@@ -47,6 +47,7 @@ class ConnectionToken(BaseModel):
 class SessionRecord(BaseModel):
     id: str
     subject_id: str
+    tenant_id: str = "default"
     asset_id: str
     account_id: str
     connector_id: str = ""
@@ -57,6 +58,8 @@ class SessionRecord(BaseModel):
     connection_url: str = ""
     client_ip: str = ""
     client_ip_source: str = ""
+    workflow_request_id: str = ""
+    jit_grant_id: str = ""
     created_at: datetime
     updated_at: datetime
     closed_at: datetime | None = None
@@ -82,6 +85,32 @@ class ConnectorScheduler(Protocol):
 class AuditSink(Protocol):
     async def publish(self, event: dict[str, Any]) -> None:
         """Publish session lifecycle events for the audit module."""
+
+
+class JitGrantSessionBinding(BaseModel):
+    jit_grant_id: str
+    workflow_request_id: str
+    expires_at: datetime
+    constraints: dict[str, Any] = Field(default_factory=dict)
+
+
+class JitGrantClient(Protocol):
+    async def validate_for_session(
+        self,
+        *,
+        jit_grant_id: str,
+        subject_id: str,
+        tenant_id: str,
+        asset_id: str,
+        account_id: str,
+        protocol: str,
+        action: str,
+        now: datetime,
+    ) -> JitGrantSessionBinding:
+        """Validate a grant for one session creation attempt."""
+
+    async def mark_session_bound(self, *, jit_grant_id: str, session_id: str) -> None:
+        """Mark a grant as bound/used after a session is active."""
 
 
 class DenyAllPolicyClient:
@@ -113,6 +142,25 @@ class NoopAuditSink:
         return None
 
 
+class NoopJitGrantClient:
+    async def validate_for_session(
+        self,
+        *,
+        jit_grant_id: str,
+        subject_id: str,
+        tenant_id: str,
+        asset_id: str,
+        account_id: str,
+        protocol: str,
+        action: str,
+        now: datetime,
+    ) -> JitGrantSessionBinding:
+        raise PermissionError("JIT_GRANT_CLIENT_NOT_CONFIGURED")
+
+    async def mark_session_bound(self, *, jit_grant_id: str, session_id: str) -> None:
+        raise PermissionError("JIT_GRANT_CLIENT_NOT_CONFIGURED")
+
+
 class InMemorySessionStore:
     def __init__(self) -> None:
         self._sessions: dict[str, SessionRecord] = {}
@@ -124,6 +172,13 @@ class InMemorySessionStore:
     async def get(self, session_id: str) -> SessionRecord | None:
         return self._sessions.get(session_id)
 
+    async def list_by_jit_grant(self, jit_grant_id: str) -> list[SessionRecord]:
+        return [
+            session
+            for session in self._sessions.values()
+            if session.jit_grant_id == jit_grant_id
+        ]
+
 
 class SessionGatewayService:
     def __init__(
@@ -134,6 +189,7 @@ class SessionGatewayService:
         connector_scheduler: ConnectorScheduler | None = None,
         session_store: InMemorySessionStore | None = None,
         audit_sink: AuditSink | None = None,
+        jit_grant_client: JitGrantClient | None = None,
         now: Callable[[], datetime] | None = None,
         session_id_factory: Callable[[], str] | None = None,
     ) -> None:
@@ -142,6 +198,7 @@ class SessionGatewayService:
         self.connector_scheduler = connector_scheduler or NoopConnectorScheduler()
         self.session_store = session_store or InMemorySessionStore()
         self.audit_sink = audit_sink or NoopAuditSink()
+        self.jit_grant_client = jit_grant_client or NoopJitGrantClient()
         self.now = now or (lambda: datetime.now(UTC))
         self.session_id_factory = session_id_factory or (lambda: uuid.uuid4().hex)
 
@@ -149,41 +206,71 @@ class SessionGatewayService:
         self,
         *,
         subject_id: str,
+        tenant_id: str = "default",
         asset_id: str,
         account_id: str,
         protocol: str,
         connection_token: str,
         client_ip: str = "",
         client_ip_source: str = "direct",
+        jit_grant_id: str = "",
     ) -> SessionRecord:
         now = self.now()
         session = SessionRecord(
             id=self.session_id_factory(),
             subject_id=subject_id,
+            tenant_id=tenant_id,
             asset_id=asset_id,
             account_id=account_id,
             protocol=protocol,
             connection_token_id=connection_token,
             client_ip=client_ip,
             client_ip_source=client_ip_source,
+            jit_grant_id=jit_grant_id,
             created_at=now,
             updated_at=now,
         )
         await self._publish("session.requested", session)
 
+        grant_binding: JitGrantSessionBinding | None = None
+        try:
+            if jit_grant_id:
+                grant_binding = await self.jit_grant_client.validate_for_session(
+                    jit_grant_id=jit_grant_id,
+                    subject_id=subject_id,
+                    tenant_id=tenant_id,
+                    asset_id=asset_id,
+                    account_id=account_id,
+                    protocol=protocol,
+                    action="session.connect",
+                    now=now,
+                )
+                session.workflow_request_id = grant_binding.workflow_request_id
+        except Exception as exc:
+            reason_code = str(exc)
+            self._transition(session, SessionStatus.FAILED)
+            session.failure_reason = reason_code
+            await self.session_store.save(session)
+            await self._publish("session.failed", session, reason_code=reason_code)
+            raise
+
         decision = await self.policy_client.evaluate(
             {
-                "subject": {"id": subject_id},
+                "subject": {"id": subject_id, "tenant_id": tenant_id},
                 "action": "session.connect",
                 "resource": {
                     "asset_id": asset_id,
                     "account_id": account_id,
                     "protocol": protocol,
+                    "tenant_id": tenant_id,
                 },
                 "context": {
                     "connection_token": connection_token,
                     "client_ip": client_ip,
                     "client_ip_source": client_ip_source,
+                    "jit_grant_id": jit_grant_id,
+                    "workflow_request_id": session.workflow_request_id,
+                    "jit_grant_constraints": grant_binding.constraints if grant_binding else {},
                 },
             }
         )
@@ -208,6 +295,11 @@ class SessionGatewayService:
             session.connector_session_id = dispatch_result.get("connector_session_id", "")
             session.connection_url = dispatch_result.get("connection_url", "")
             self._transition(session, SessionStatus.ACTIVE)
+            if jit_grant_id:
+                await self.jit_grant_client.mark_session_bound(
+                    jit_grant_id=jit_grant_id,
+                    session_id=session.id,
+                )
             await self.session_store.save(session)
             await self._publish("session.active", session)
             return session
@@ -240,6 +332,27 @@ class SessionGatewayService:
         await self._publish("session.closed", session, reason_code=reason)
         return session
 
+    async def revoke_sessions_by_jit_grant(self, jit_grant_id: str, reason: str) -> list[str]:
+        sessions = await self.session_store.list_by_jit_grant(jit_grant_id)
+        revoked_session_ids: list[str] = []
+        for session in sessions:
+            if session.status not in {
+                SessionStatus.AUTHORIZED,
+                SessionStatus.CONNECTING,
+                SessionStatus.ACTIVE,
+            }:
+                continue
+            if session.status is SessionStatus.AUTHORIZED:
+                self._transition(session, SessionStatus.CLOSED)
+            else:
+                self._transition(session, SessionStatus.CLOSING)
+                self._transition(session, SessionStatus.CLOSED)
+            session.closed_at = self.now()
+            await self.session_store.save(session)
+            await self._publish("session.revoked_by_jit_grant", session, reason_code=reason)
+            revoked_session_ids.append(session.id)
+        return revoked_session_ids
+
     def _validate_token(self, token: ConnectionToken, session: SessionRecord, now: datetime) -> None:
         if token.expires_at <= now:
             raise ValueError("CONNECTION_TOKEN_EXPIRED")
@@ -271,9 +384,12 @@ class SessionGatewayService:
             "type": event_type,
             "session_id": session.id,
             "subject_id": session.subject_id,
+            "tenant_id": session.tenant_id,
             "asset_id": session.asset_id,
             "account_id": session.account_id,
             "connector_id": session.connector_id,
+            "workflow_request_id": session.workflow_request_id,
+            "jit_grant_id": session.jit_grant_id,
             "status": session.status.value,
             "reason_code": reason_code,
             "client_ip": session.client_ip,

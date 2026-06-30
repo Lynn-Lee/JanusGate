@@ -11,6 +11,7 @@ class SessionCreateRequest(BaseModel):
     account_id: str = Field(min_length=1)
     protocol: str = Field(min_length=1, max_length=32)
     connection_token: str = Field(min_length=1)
+    jit_grant_id: str = Field(default="", max_length=64)
 
 
 class SessionCloseRequest(BaseModel):
@@ -25,6 +26,8 @@ class SessionResponse(BaseModel):
     protocol: str
     status: SessionStatus
     connection_url: str
+    workflow_request_id: str
+    jit_grant_id: str
     created_at: str
     updated_at: str
     closed_at: str | None = None
@@ -40,6 +43,8 @@ class SessionResponse(BaseModel):
             protocol=session.protocol,
             status=session.status,
             connection_url=session.connection_url,
+            workflow_request_id=session.workflow_request_id,
+            jit_grant_id=session.jit_grant_id,
             created_at=session.created_at.isoformat(),
             updated_at=session.updated_at.isoformat(),
             closed_at=session.closed_at.isoformat() if session.closed_at else None,
