@@ -66,7 +66,7 @@ async def login_2fa(
     if not jti:
         raise HTTPException(status_code=401, detail="非法的 2FA 凭证")
     consumed_key = f"mfa:challenge:consumed:{jti}"
-    if await redis.get(consumed_key):
+    if not await redis.set(consumed_key, "1", ex=300, nx=True):
         raise HTTPException(status_code=401, detail="2FA 凭证无效或已过期")
     user_id = int(payload["sub"])
     result = await db.execute(select(User).where(User.id == user_id))
@@ -75,7 +75,6 @@ async def login_2fa(
         raise HTTPException(status_code=401, detail="用户不存在或已被禁用")
     if not await AuthService.verify_totp(db, user.id, data.totp_code):
         raise HTTPException(status_code=400, detail="TOTP 验证码错误")
-    await redis.set(consumed_key, "1", ex=300)
     token_data = {"sub": str(user.id), "username": user.username, "2fa_verified": True}
     return TokenResponse(
         access_token=create_access_token(token_data),

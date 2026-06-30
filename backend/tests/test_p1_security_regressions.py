@@ -52,8 +52,18 @@ class FakeRedis:
     async def get(self, key: str) -> str | None:
         return self.values.get(key)
 
-    async def set(self, key: str, value: str, ex: int | None = None) -> None:
+    async def set(self, key: str, value: str, ex: int | None = None, nx: bool = False) -> bool:
+        if nx and key in self.values:
+            return False
         self.values[key] = value
+        return True
+
+
+class RaceyRedis(FakeRedis):
+    """Simulate concurrent consumers where a pre-check GET may be stale."""
+
+    async def get(self, key: str) -> str | None:
+        return None
 
 
 @pytest.fixture(autouse=True)
@@ -155,6 +165,30 @@ def test_mfa_challenge_token_is_single_use(monkeypatch: pytest.MonkeyPatch) -> N
     assert second.status_code == 401
 
 
+def test_mfa_challenge_token_consume_is_atomic(monkeypatch: pytest.MonkeyPatch) -> None:
+    mfa_user = user(totp_enabled=True)
+    install_auth_dependencies(mfa_user, RaceyRedis())
+
+    async def verify_totp(_db: Any, _user_id: int, _code: str) -> bool:
+        return True
+
+    monkeypatch.setattr(AuthService, "verify_totp", verify_totp)
+    challenge = create_mfa_token({"sub": "1", "username": "alice"})
+
+    with TestClient(app) as client:
+        first = client.post(
+            "/api/v1/auth/login/2fa",
+            json={"two_fa_token": challenge, "totp_code": "123456"},
+        )
+        second = client.post(
+            "/api/v1/auth/login/2fa",
+            json={"two_fa_token": challenge, "totp_code": "123456"},
+        )
+
+    assert first.status_code == 200
+    assert second.status_code == 401
+
+
 def test_blacklisted_refresh_token_is_rejected() -> None:
     token = create_refresh_token({"sub": "1", "username": "alice"})
     payload = decode_token(token)
@@ -225,3 +259,39 @@ async def test_connection_blocks_hostnames_that_resolve_to_private_ips(monkeypat
     result = await AssetService.test_connection("metadata.internal", 80)
 
     assert result == {"reachable": False, "error": "SSRF protection: private/internal IP blocked"}
+
+
+@pytest.mark.asyncio
+async def test_connection_uses_validated_resolved_ip_without_second_dns_lookup(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    targets: list[tuple[str, int]] = []
+
+    class FakeSocket:
+        def close(self) -> None:
+            return None
+
+    monkeypatch.setattr(
+        asset_service_module.socket,
+        "getaddrinfo",
+        lambda *_args, **_kwargs: [
+            (
+                asset_service_module.socket.AF_INET,
+                asset_service_module.socket.SOCK_STREAM,
+                0,
+                "",
+                ("8.8.8.8", 443),
+            )
+        ],
+    )
+
+    def fake_create_connection(target: tuple[str, int], timeout: float) -> FakeSocket:
+        targets.append(target)
+        return FakeSocket()
+
+    monkeypatch.setattr(asset_service_module.socket, "create_connection", fake_create_connection)
+
+    result = await AssetService.test_connection("public.example.test", 443)
+
+    assert result == {"reachable": True, "error": ""}
+    assert targets == [("8.8.8.8", 443)]

@@ -25,12 +25,29 @@ def _is_private_ip(address: str) -> bool:
         return False
 
 
-def _resolves_to_private_ip(address: str, port: int) -> bool:
-    try:
-        infos = socket.getaddrinfo(address, port, type=socket.SOCK_STREAM)
-    except socket.gaierror:
-        return False
-    return any(_is_private_ip(str(info[4][0])) for info in infos)
+def _resolve_public_targets(address: str, port: int) -> list[tuple[str, int]]:
+    infos = socket.getaddrinfo(address, port, type=socket.SOCK_STREAM)
+    targets: list[tuple[str, int]] = []
+    for info in infos:
+        resolved_ip = str(info[4][0])
+        if _is_private_ip(resolved_ip):
+            raise ValueError("SSRF protection: private/internal IP blocked")
+        targets.append((resolved_ip, int(info[4][1])))
+    return targets
+
+
+def _connect_to_any_target(
+    targets: list[tuple[str, int]], timeout: float
+) -> socket.socket:
+    last_error: Exception | None = None
+    for target in targets:
+        try:
+            return socket.create_connection(target, timeout=timeout)
+        except Exception as exc:  # pragma: no cover - exercised through final error path
+            last_error = exc
+    if last_error:
+        raise last_error
+    raise socket.gaierror("no address resolved")
 
 
 class AssetService:
@@ -84,11 +101,14 @@ class AssetService:
     async def test_connection(
         address: str, port: int, timeout: float = 5.0
     ) -> dict[str, Any]:
-        if _is_private_ip(address) or _resolves_to_private_ip(address, port):
+        if _is_private_ip(address):
             return {"reachable": False, "error": "SSRF protection: private/internal IP blocked"}
         try:
-            sock = await asyncio.to_thread(socket.create_connection, (address, port), timeout=timeout)
+            targets = await asyncio.to_thread(_resolve_public_targets, address, port)
+            sock = await asyncio.to_thread(_connect_to_any_target, targets, timeout)
             sock.close()
             return {"reachable": True, "error": ""}
+        except ValueError as e:
+            return {"reachable": False, "error": str(e)}
         except Exception as e:
             return {"reachable": False, "error": str(e)}
