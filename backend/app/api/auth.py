@@ -1,4 +1,6 @@
 """认证 API 路由。"""
+from typing import Any, cast
+
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -23,7 +25,7 @@ router = APIRouter(prefix="/auth", tags=["认证"])
 
 
 @router.post("/login", response_model=TokenResponse)
-async def login(data: LoginRequest, db: AsyncSession = Depends(get_db)):
+async def login(data: LoginRequest, db: AsyncSession = Depends(get_db)) -> TokenResponse:
     user = await AuthService.authenticate(db, data.username, data.password)
     if not user:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="用户名或密码错误")
@@ -44,7 +46,9 @@ async def login(data: LoginRequest, db: AsyncSession = Depends(get_db)):
 
 
 @router.post("/login/2fa", response_model=TokenResponse)
-async def login_2fa(data: Login2FARequest, db: AsyncSession = Depends(get_db)):
+async def login_2fa(
+    data: Login2FARequest, db: AsyncSession = Depends(get_db)
+) -> TokenResponse:
     try:
         payload = decode_token(data.two_fa_token)
     except Exception:
@@ -66,15 +70,17 @@ async def login_2fa(data: Login2FARequest, db: AsyncSession = Depends(get_db)):
 
 
 @router.post("/token/refresh", response_model=TokenResponse)
-async def refresh_token_endpoint(refresh_token: str, db: AsyncSession = Depends(get_db)):
+async def refresh_token_endpoint(
+    refresh_token: str, db: AsyncSession = Depends(get_db)
+) -> TokenResponse:
     try:
         payload = decode_token(refresh_token)
     except Exception:
         raise HTTPException(status_code=401, detail="refresh_token 无效或已过期") from None
     if payload.get("type") != "refresh":
         raise HTTPException(status_code=401, detail="非法的 token 类型")
-    user_id = payload.get("sub")
-    result = await db.execute(select(User).where(User.id == int(user_id)))
+    user_id = cast(str, payload.get("sub"))
+    result = await db.execute(select(User).where(cast(Any, User.id) == int(user_id)))
     user = result.scalar_one_or_none()
     if not user or not user.is_active:
         raise HTTPException(status_code=401, detail="用户不存在或已被禁用")
@@ -86,7 +92,9 @@ async def refresh_token_endpoint(refresh_token: str, db: AsyncSession = Depends(
 
 
 @router.get("/me", response_model=UserMeResponse)
-async def get_me(user: dict = Depends(current_user), db: AsyncSession = Depends(get_db)):
+async def get_me(
+    user: dict[str, Any] = Depends(current_user), db: AsyncSession = Depends(get_db)
+) -> UserMeResponse:
     result = await db.execute(select(User).where(User.id == user["id"]))
     db_user = result.scalar_one_or_none()
     if not db_user:
@@ -102,7 +110,9 @@ async def get_me(user: dict = Depends(current_user), db: AsyncSession = Depends(
 
 
 @router.post("/2fa/setup", response_model=TwoFASetupResponse)
-async def setup_2fa(user: dict = Depends(current_user), db: AsyncSession = Depends(get_db)):
+async def setup_2fa(
+    user: dict[str, Any] = Depends(current_user), db: AsyncSession = Depends(get_db)
+) -> TwoFASetupResponse:
     try:
         result = await AuthService.setup_totp(db, user["id"])
     except ValueError as e:
@@ -111,7 +121,11 @@ async def setup_2fa(user: dict = Depends(current_user), db: AsyncSession = Depen
 
 
 @router.post("/2fa/verify", response_model=dict)
-async def verify_2fa(data: TwoFAVerifyRequest, user: dict = Depends(current_user), db: AsyncSession = Depends(get_db)):
+async def verify_2fa(
+    data: TwoFAVerifyRequest,
+    user: dict[str, Any] = Depends(current_user),
+    db: AsyncSession = Depends(get_db),
+) -> dict[str, str]:
     try:
         await AuthService.enable_totp(db, user["id"], data.totp_code)
     except ValueError as e:
@@ -120,7 +134,11 @@ async def verify_2fa(data: TwoFAVerifyRequest, user: dict = Depends(current_user
 
 
 @router.post("/2fa/disable", response_model=dict)
-async def disable_2fa(data: TwoFAVerifyRequest, user: dict = Depends(current_user), db: AsyncSession = Depends(get_db)):
+async def disable_2fa(
+    data: TwoFAVerifyRequest,
+    user: dict[str, Any] = Depends(current_user),
+    db: AsyncSession = Depends(get_db),
+) -> dict[str, str]:
     try:
         await AuthService.disable_totp(db, user["id"], data.totp_code)
     except ValueError as e:
@@ -129,7 +147,11 @@ async def disable_2fa(data: TwoFAVerifyRequest, user: dict = Depends(current_use
 
 
 @router.post("/password/change", response_model=dict)
-async def change_password(data: ChangePasswordRequest, user: dict = Depends(current_user), db: AsyncSession = Depends(get_db)):
+async def change_password(
+    data: ChangePasswordRequest,
+    user: dict[str, Any] = Depends(current_user),
+    db: AsyncSession = Depends(get_db),
+) -> dict[str, str]:
     try:
         await AuthService.change_password(db, user["id"], data.old_password, data.new_password)
     except ValueError as e:
@@ -138,5 +160,9 @@ async def change_password(data: ChangePasswordRequest, user: dict = Depends(curr
 
 
 @router.post("/apikeys", response_model=dict)
-async def create_api_key(data: CreateApiKeyRequest, user: dict = Depends(current_user), db: AsyncSession = Depends(get_db)):
+async def create_api_key(
+    data: CreateApiKeyRequest,
+    user: dict[str, Any] = Depends(current_user),
+    db: AsyncSession = Depends(get_db),
+) -> dict[str, Any]:
     return await AuthService.create_api_key(db, user["id"], data.name)
