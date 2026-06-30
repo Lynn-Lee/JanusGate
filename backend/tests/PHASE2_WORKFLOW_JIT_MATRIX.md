@@ -1,7 +1,7 @@
 # Phase 2 Workflow/JIT 测试矩阵与验收门禁
 
-基线文档：`docs/architecture/06-phase2-workflow-jit-prd-architecture.md`  
-适用任务：#t30，配合 #t25-#t29 的实现和回归验证。  
+基线文档：`docs/architecture/06-phase2-workflow-jit-prd-architecture.md`
+适用任务：#t30，配合 #t25-#t29 的实现和回归验证。
 角色分工：QA 维护矩阵、门禁和放行结论；Tester 负责落地 pytest/API 契约/安全回归执行；模块 owner 负责实现缺陷修复与可测性补强。
 
 ## 发布门禁
