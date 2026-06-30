@@ -42,13 +42,14 @@ docker compose down -v
 
 ## 3. Helm 部署
 
-生产或测试集群不要把真实密钥写入 Git。推荐先创建 Kubernetes Secret：
+生产或测试集群不要把真实密钥或含用户名/密码的数据库 DSN 写入 Git、ConfigMap 或普通 values 文件。推荐先创建 Kubernetes Secret：
 
 ```bash
 kubectl create namespace janusgate
 kubectl create secret generic janusgate-backend-secret \
   -n janusgate \
   --from-literal=SECRET_KEY="$(python -c 'import secrets; print(secrets.token_hex(32))')" \
+  --from-literal=DATABASE_URL="postgresql+asyncpg://janusgate:${JANUSGATE_DB_PASSWORD}@postgresql:5432/janusgate" \
   --from-literal=JWT_ALGORITHM="HS256" \
   --from-literal=ACCESS_TOKEN_EXPIRE_MINUTES="30" \
   --from-literal=REFRESH_TOKEN_EXPIRE_DAYS="7"
@@ -62,7 +63,6 @@ helm upgrade --install janusgate deploy/helm/janusgate \
   --set image.repository=ghcr.io/lynn-lee/janusgate-backend \
   --set image.tag=0.1.0 \
   --set secret.existingSecret=janusgate-backend-secret \
-  --set config.databaseUrl='postgresql+asyncpg://janusgate:REDACTED@postgresql:5432/janusgate' \
   --set config.redisUrl='redis://redis-master:6379/0'
 ```
 
@@ -98,6 +98,6 @@ curl -fsS http://localhost:8000/health
 
 - `.env`、真实 Helm values、Kubernetes Secret 明文不得提交仓库。
 - 本地开发通过 `.env` 注入；Compose 使用 `${VAR:?message}` 对关键变量 fail-closed。
-- Kubernetes 通过 Secret/ConfigMap 注入；共享环境优先使用 `secret.existingSecret`。
+- Kubernetes 通过 Secret/ConfigMap 注入；`DATABASE_URL`、`SECRET_KEY`、JWT 配置必须来自 Secret，不能放入 ConfigMap 或普通 values 文件；共享环境优先使用 `secret.existingSecret`。
 - CI 不依赖生产密钥；依赖扫描和镜像构建不得输出 token、数据库密码或 JWT secret。
 - backend 镜像以非 root 用户运行，并启用 no-new-privileges/read-only root filesystem（Compose/Helm 环境）。

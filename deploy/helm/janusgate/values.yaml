@@ -37,7 +37,6 @@ service:
 config:
   appEnv: production
   logLevel: INFO
-  databaseUrl: postgresql+asyncpg://janusgate:change-me@postgresql:5432/janusgate
   redisUrl: redis://redis-master:6379/0
   corsOrigins: '["https://janusgate.example.com"]'
   rateLimitLoginPerMinute: "5"
@@ -45,8 +44,11 @@ config:
 
 secret:
   # Do not commit real values. Prefer existingSecret in shared environments.
+  # existingSecret must provide: SECRET_KEY, DATABASE_URL, JWT_ALGORITHM,
+  # ACCESS_TOKEN_EXPIRE_MINUTES, REFRESH_TOKEN_EXPIRE_DAYS.
   existingSecret: ""
   secretKey: ""
+  databaseUrl: ""
   jwtAlgorithm: HS256
   accessTokenExpireMinutes: "30"
   refreshTokenExpireDays: "7"
