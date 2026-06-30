@@ -32,20 +32,6 @@ async def list_assets(
     ]
 
 
-@router.get("/{asset_id}", response_model=AssetResponse)
-async def get_asset(
-    asset_id: int, db: AsyncSession = Depends(get_db), _user: dict[str, Any] = Depends(current_user)
-) -> AssetResponse:
-    asset = await AssetService.get_asset(db, asset_id)
-    if not asset:
-        raise HTTPException(404, "资产不存在")
-    return AssetResponse(
-        id=asset.id, name=asset.name, address=asset.address, platform_id=asset.platform_id,
-        port=asset.port, username=asset.username, is_active=asset.is_active,
-        description=asset.description, created_at=asset.created_at.isoformat() if asset.created_at else "",
-    )
-
-
 @router.post("/", response_model=AssetResponse)
 async def create_asset(
     data: AssetCreate, db: AsyncSession = Depends(get_db), _user: dict[str, Any] = Depends(current_user)
@@ -102,3 +88,17 @@ async def list_platforms(
         )
         for p in platforms
     ]
+
+
+@router.get("/{asset_id}", response_model=AssetResponse)
+async def get_asset(
+    asset_id: int, db: AsyncSession = Depends(get_db), _user: dict[str, Any] = Depends(current_user)
+) -> AssetResponse:
+    asset = await AssetService.get_asset(db, asset_id)
+    if not asset:
+        raise HTTPException(404, "资产不存在")
+    return AssetResponse(
+        id=asset.id, name=asset.name, address=asset.address, platform_id=asset.platform_id,
+        port=asset.port, username=asset.username, is_active=asset.is_active,
+        description=asset.description, created_at=asset.created_at.isoformat() if asset.created_at else "",
+    )
