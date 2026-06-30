@@ -1,4 +1,5 @@
 """Schemas for Connector API v2."""
+
 from datetime import UTC, datetime
 from enum import StrEnum
 

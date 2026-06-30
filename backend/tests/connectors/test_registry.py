@@ -157,6 +157,7 @@ def test_expired_enrollment_token_is_rejected():
             )
         )
 
+
 def test_enrollment_token_bound_to_fingerprint_rejects_mismatch():
     registry = ConnectorRegistry(
         store=InMemoryConnectorStore(),

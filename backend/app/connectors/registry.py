@@ -1,4 +1,5 @@
 """Connector registry and short-lived token issuance."""
+
 from __future__ import annotations
 
 import secrets
@@ -17,8 +18,7 @@ from app.policy.schemas import PolicyDecision, PolicyDecisionResponse
 
 
 class PolicyEvaluator(Protocol):
-    def evaluate(self, request: dict[str, Any]) -> PolicyDecisionResponse:
-        ...
+    def evaluate(self, request: dict[str, Any]) -> PolicyDecisionResponse: ...
 
 
 @dataclass
@@ -88,7 +88,9 @@ class ConnectorRegistry:
         if isinstance(enrollment_tokens, dict):
             return enrollment_tokens
         return {
-            token: ConnectorEnrollmentToken(value=token, expires_at=datetime.max.replace(tzinfo=UTC))
+            token: ConnectorEnrollmentToken(
+                value=token, expires_at=datetime.max.replace(tzinfo=UTC)
+            )
             for token in enrollment_tokens
         }
 
@@ -126,7 +128,10 @@ class ConnectorRegistry:
         if policy_result.decision != PolicyDecision.ALLOW:
             raise ValueError("POLICY_DENIED")
 
-        ttl = min(policy_result.ttl_seconds or 60, policy_result.obligations.get("max_session_ttl_seconds", 60))
+        ttl = min(
+            policy_result.ttl_seconds or 60,
+            policy_result.obligations.get("max_session_ttl_seconds", 60),
+        )
         return ConnectionToken(
             connector_id=connector.id,
             token=f"jgt_{secrets.token_urlsafe(32)}",
