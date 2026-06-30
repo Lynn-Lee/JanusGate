@@ -1,4 +1,5 @@
 """Deny-by-default policy decision service."""
+
 from __future__ import annotations
 
 from datetime import UTC, datetime
@@ -48,7 +49,7 @@ class PolicyDecisionService:
                 decision=PolicyDecision.ALLOW,
                 reason_code="POLICY_ALLOWED",
                 trace=trace,
-                obligations={"max_session_ttl_seconds": rule.max_session_ttl_seconds},
+                obligations=self._allow_obligations(rule, request),
                 ttl_seconds=rule.max_session_ttl_seconds,
             )
 
@@ -87,22 +88,78 @@ class PolicyDecisionService:
         if rule.require_approval:
             if request.approval is None:
                 trace.append("approval_required_but_missing")
-                return self._deny("APPROVAL_REQUIRED", trace)
+                return self._deny(
+                    "APPROVAL_REQUIRED",
+                    trace,
+                    obligations={
+                        "workflow_required": True,
+                        "approval_use_type": rule.approval_use_type,
+                        "approval_max_uses": rule.approval_max_uses,
+                    },
+                )
             if request.approval.is_expired(datetime.now(UTC)):
                 trace.append("approval_expired")
                 return self._deny("APPROVAL_EXPIRED", trace)
             if not request.approval.is_approved_now(datetime.now(UTC)):
                 trace.append(f"approval_not_approved:{request.approval.status}")
                 return self._deny("APPROVAL_REQUIRED", trace)
+            if not request.approval.grant_id or not request.approval.workflow_request_id:
+                trace.append("approval_grant_identity_missing")
+                return self._deny("APPROVAL_GRANT_REQUIRED", trace)
+            if not self._approval_constraints_match(request):
+                trace.append("approval_constraints_mismatch")
+                return self._deny("APPROVAL_CONSTRAINT_MISMATCH", trace)
 
         return None
 
-    def _deny(self, reason_code: str, trace: list[str]) -> PolicyDecisionResponse:
+    def _approval_constraints_match(self, request: PolicyDecisionRequest) -> bool:
+        if request.approval is None:
+            return False
+        constraints = request.approval.constraints
+        context_account_id = request.context.get("account_id")
+        context_protocol = request.context.get("protocol")
+        if not context_account_id or not context_protocol:
+            return False
+
+        expected: dict[str, str] = {
+            "subject_id": request.subject.id,
+            "asset_id": request.resource.id,
+            "account_id": str(context_account_id),
+            "protocol": str(context_protocol),
+            "action": request.action,
+        }
+
+        return all(str(constraints.get(key, "")) == value for key, value in expected.items())
+
+    def _allow_obligations(
+        self, rule: PolicyRule, request: PolicyDecisionRequest
+    ) -> dict[str, object]:
+        obligations: dict[str, object] = {"max_session_ttl_seconds": rule.max_session_ttl_seconds}
+        if rule.require_approval and request.approval is not None:
+            constraints = request.approval.constraints
+            obligations.update(
+                {
+                    "workflow_required": True,
+                    "jit_grant_id": request.approval.grant_id,
+                    "workflow_request_id": request.approval.workflow_request_id,
+                    "grant_usage": constraints.get("usage", rule.approval_use_type),
+                    "grant_max_uses": constraints.get("max_uses", rule.approval_max_uses),
+                    "grant_used_count": constraints.get("used_count", 0),
+                }
+            )
+        return obligations
+
+    def _deny(
+        self,
+        reason_code: str,
+        trace: list[str],
+        obligations: dict[str, object] | None = None,
+    ) -> PolicyDecisionResponse:
         return self._response(
             decision=PolicyDecision.DENY,
             reason_code=reason_code,
             trace=trace,
-            obligations={},
+            obligations=obligations or {},
             ttl_seconds=0,
         )
 
@@ -111,7 +168,7 @@ class PolicyDecisionService:
         decision: PolicyDecision,
         reason_code: str,
         trace: list[str],
-        obligations: dict[str, int],
+        obligations: dict[str, object],
         ttl_seconds: int,
     ) -> PolicyDecisionResponse:
         return PolicyDecisionResponse(
