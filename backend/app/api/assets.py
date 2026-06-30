@@ -5,6 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import settings
 from app.core.database import get_db
 from app.core.deps import require_permission
 from app.models.asset import Platform
@@ -56,8 +57,19 @@ async def delete_asset(
 
 @router.post("/test-connection")
 async def test_connection(
-    address: str, port: int = 22, _user: dict[str, Any] = Depends(require_permission("assets:test"))
+    asset_id: int | None = None,
+    address: str | None = None,
+    port: int = 22,
+    db: AsyncSession = Depends(get_db),
+    _user: dict[str, Any] = Depends(require_permission("assets:test")),
 ) -> dict[str, Any]:
+    if asset_id is not None:
+        asset = await AssetService.get_asset(db, asset_id)
+        if not asset or not asset.is_active:
+            raise HTTPException(404, "资产不存在")
+        return await AssetService.test_connection(asset.address, asset.port)
+    if not address or address not in settings.ASSET_TEST_CONNECTION_ALLOWLIST:
+        raise HTTPException(400, "连接测试目标必须是已登记资产或显式 allowlist")
     return await AssetService.test_connection(address, port)
 
 
@@ -102,4 +114,3 @@ async def get_asset(
         port=asset.port, username=asset.username, is_active=asset.is_active,
         description=asset.description, created_at=asset.created_at.isoformat() if asset.created_at else "",
     )
-

@@ -9,7 +9,12 @@ from fastapi.testclient import TestClient
 
 from app.core.database import get_db
 from app.core.deps import current_user, get_redis
-from app.core.security import create_access_token, create_refresh_token, decode_token
+from app.core.security import (
+    create_access_token,
+    create_mfa_token,
+    create_refresh_token,
+    decode_token,
+)
 from app.main import app
 from app.models.user import User
 from app.services import asset as asset_service_module
@@ -46,6 +51,9 @@ class FakeRedis:
 
     async def get(self, key: str) -> str | None:
         return self.values.get(key)
+
+    async def set(self, key: str, value: str, ex: int | None = None) -> None:
+        self.values[key] = value
 
 
 @pytest.fixture(autouse=True)
@@ -123,6 +131,41 @@ def test_access_token_issued_before_password_change_is_rejected() -> None:
     assert response.status_code == 401
 
 
+def test_mfa_challenge_token_is_single_use(monkeypatch: pytest.MonkeyPatch) -> None:
+    mfa_user = user(totp_enabled=True)
+    install_auth_dependencies(mfa_user, FakeRedis())
+
+    async def verify_totp(_db: Any, _user_id: int, _code: str) -> bool:
+        return True
+
+    monkeypatch.setattr(AuthService, "verify_totp", verify_totp)
+    challenge = create_mfa_token({"sub": "1", "username": "alice"})
+
+    with TestClient(app) as client:
+        first = client.post(
+            "/api/v1/auth/login/2fa",
+            json={"two_fa_token": challenge, "totp_code": "123456"},
+        )
+        second = client.post(
+            "/api/v1/auth/login/2fa",
+            json={"two_fa_token": challenge, "totp_code": "123456"},
+        )
+
+    assert first.status_code == 200
+    assert second.status_code == 401
+
+
+def test_blacklisted_refresh_token_is_rejected() -> None:
+    token = create_refresh_token({"sub": "1", "username": "alice"})
+    payload = decode_token(token)
+    install_auth_dependencies(user(), FakeRedis({f"jwt:blacklist:{payload['jti']}": "1"}))
+
+    with TestClient(app) as client:
+        response = client.post("/api/v1/auth/token/refresh", params={"refresh_token": token})
+
+    assert response.status_code == 401
+
+
 def test_refresh_token_issued_before_password_change_is_rejected() -> None:
     token = create_refresh_token({"sub": "1", "username": "alice"})
     install_auth_dependencies(user(password_changed_at=datetime.now(UTC) + timedelta(seconds=1)))
@@ -152,6 +195,23 @@ def test_asset_routes_require_asset_permissions() -> None:
     assert list_response.status_code == 403
     assert platform_response.status_code == 403
     assert connection_response.status_code == 403
+
+
+def test_test_connection_rejects_arbitrary_address_not_in_allowlist() -> None:
+    app.dependency_overrides[current_user] = lambda: {
+        "id": 1,
+        "username": "alice",
+        "permissions": ["assets:test"],
+    }
+    app.dependency_overrides[get_db] = lambda: FakeDB()
+
+    with TestClient(app) as client:
+        response = client.post(
+            "/api/v1/assets/test-connection",
+            params={"address": "8.8.8.8", "port": 443},
+        )
+
+    assert response.status_code == 400
 
 
 @pytest.mark.asyncio
