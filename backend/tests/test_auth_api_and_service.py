@@ -11,7 +11,7 @@ from fastapi.testclient import TestClient
 
 from app.api import auth as auth_api
 from app.core.database import get_db
-from app.core.deps import current_user, require_permission
+from app.core.deps import current_user, get_redis, require_permission
 from app.core.security import create_access_token, create_refresh_token
 from app.main import app
 from app.models.user import ApiKey, User
@@ -63,12 +63,17 @@ class FakeDB:
 
 
 class FakeRedis:
-    def __init__(self, value: str | None = None) -> None:
+    def __init__(self, value: str | None = None, set_result: bool = True) -> None:
         self.value = value
+        self.set_result = set_result
 
     async def get(self, key: str) -> str | None:
         self.last_key = key
         return self.value
+
+    async def set(self, key: str, value: str, *, ex: int, nx: bool) -> bool:
+        self.last_set = (key, value, ex, nx)
+        return self.set_result
 
 
 def user(**overrides: Any) -> User:
@@ -96,6 +101,12 @@ def clear_dependency_overrides() -> None:
 
 def install_db(fake_db: FakeDB) -> None:
     app.dependency_overrides[get_db] = lambda: fake_db
+
+
+def install_redis(fake_redis: FakeRedis | None = None) -> FakeRedis:
+    redis = fake_redis or FakeRedis()
+    app.dependency_overrides[get_redis] = lambda: redis
+    return redis
 
 
 def install_user(payload: dict[str, Any] | None = None) -> None:
@@ -141,7 +152,7 @@ def test_login_returns_access_and_refresh_tokens(monkeypatch: pytest.MonkeyPatch
 def test_login_requires_2fa_when_totp_is_enabled(monkeypatch: pytest.MonkeyPatch) -> None:
     install_db(FakeDB())
     monkeypatch.setattr(AuthService, "authenticate", async_value(user(totp_enabled=True)))
-    monkeypatch.setattr(auth_api, "create_access_token", lambda payload: "two-fa-token" if payload.get("requires_2fa") else "unexpected")
+    monkeypatch.setattr(auth_api, "create_mfa_token", lambda payload: f"mfa:{payload['sub']}")
 
     with TestClient(app) as client:
         response = client.post(
@@ -151,7 +162,7 @@ def test_login_requires_2fa_when_totp_is_enabled(monkeypatch: pytest.MonkeyPatch
 
     assert response.status_code == 200
     assert response.json()["requires_2fa"] is True
-    assert response.json()["two_fa_token"] == "two-fa-token"
+    assert response.json()["two_fa_token"] == "mfa:1"
     assert response.json()["access_token"] == ""
 
 
@@ -171,7 +182,8 @@ def test_login_rejects_bad_credentials(monkeypatch: pytest.MonkeyPatch) -> None:
 
 def test_login_2fa_exchanges_valid_challenge_for_session_tokens(monkeypatch: pytest.MonkeyPatch) -> None:
     install_db(FakeDB(ScalarResult(user(totp_enabled=True))))
-    monkeypatch.setattr(auth_api, "decode_token", lambda _token: {"sub": "1", "requires_2fa": True})
+    redis = install_redis()
+    monkeypatch.setattr(auth_api, "decode_token", lambda _token: {"sub": "1", "type": "mfa", "jti": "mfa-jti", "requires_2fa": True})
     monkeypatch.setattr(AuthService, "verify_totp", async_value(True))
     monkeypatch.setattr(auth_api, "create_access_token", lambda payload: f"access:{payload['2fa_verified']}")
     monkeypatch.setattr(auth_api, "create_refresh_token", lambda payload: f"refresh:{payload['sub']}")
@@ -185,11 +197,13 @@ def test_login_2fa_exchanges_valid_challenge_for_session_tokens(monkeypatch: pyt
     assert response.status_code == 200
     assert response.json()["access_token"] == "access:True"
     assert response.json()["refresh_token"] == "refresh:1"
+    assert redis.last_set == ("mfa:challenge:consumed:mfa-jti", "1", 300, True)
 
 
 def test_login_2fa_rejects_invalid_challenge_and_bad_totp(monkeypatch: pytest.MonkeyPatch) -> None:
     install_db(FakeDB(ScalarResult(user(totp_enabled=True))))
-    monkeypatch.setattr(auth_api, "decode_token", lambda _token: {"sub": "1", "requires_2fa": False})
+    install_redis()
+    monkeypatch.setattr(auth_api, "decode_token", lambda _token: {"sub": "1", "type": "access", "jti": "not-mfa", "requires_2fa": False})
 
     with TestClient(app) as client:
         response = client.post(
@@ -201,7 +215,8 @@ def test_login_2fa_rejects_invalid_challenge_and_bad_totp(monkeypatch: pytest.Mo
     assert response.json()["detail"] == "非法的 2FA 凭证"
 
     install_db(FakeDB(ScalarResult(user(totp_enabled=True))))
-    monkeypatch.setattr(auth_api, "decode_token", lambda _token: {"sub": "1", "requires_2fa": True})
+    install_redis()
+    monkeypatch.setattr(auth_api, "decode_token", lambda _token: {"sub": "1", "type": "mfa", "jti": "mfa-jti", "requires_2fa": True})
     monkeypatch.setattr(AuthService, "verify_totp", async_value(False))
 
     with TestClient(app) as client:
@@ -216,6 +231,7 @@ def test_login_2fa_rejects_invalid_challenge_and_bad_totp(monkeypatch: pytest.Mo
 
 def test_refresh_token_endpoint_rejects_access_token_and_disabled_user(monkeypatch: pytest.MonkeyPatch) -> None:
     install_db(FakeDB())
+    install_redis()
     monkeypatch.setattr(auth_api, "decode_token", lambda _token: {"type": "access", "sub": "1"})
 
     with TestClient(app) as client:
@@ -225,7 +241,8 @@ def test_refresh_token_endpoint_rejects_access_token_and_disabled_user(monkeypat
     assert response.json()["detail"] == "非法的 token 类型"
 
     install_db(FakeDB(ScalarResult(user(is_active=False))))
-    monkeypatch.setattr(auth_api, "decode_token", lambda _token: {"type": "refresh", "sub": "1"})
+    install_redis()
+    monkeypatch.setattr(auth_api, "decode_token", lambda _token: {"type": "refresh", "sub": "1", "jti": "refresh-jti", "iat": datetime.now(UTC)})
 
     with TestClient(app) as client:
         response = client.post("/api/v1/auth/token/refresh", params={"refresh_token": "refresh-token"})
@@ -236,7 +253,8 @@ def test_refresh_token_endpoint_rejects_access_token_and_disabled_user(monkeypat
 
 def test_refresh_token_endpoint_issues_new_token_pair(monkeypatch: pytest.MonkeyPatch) -> None:
     install_db(FakeDB(ScalarResult(user())))
-    monkeypatch.setattr(auth_api, "decode_token", lambda _token: {"type": "refresh", "sub": "1"})
+    install_redis()
+    monkeypatch.setattr(auth_api, "decode_token", lambda _token: {"type": "refresh", "sub": "1", "jti": "refresh-jti", "iat": datetime.now(UTC)})
     monkeypatch.setattr(auth_api, "create_access_token", lambda payload: f"new-access:{payload['username']}")
     monkeypatch.setattr(auth_api, "create_refresh_token", lambda payload: f"new-refresh:{payload['sub']}")
 

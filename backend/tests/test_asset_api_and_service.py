@@ -70,7 +70,7 @@ def clear_dependency_overrides() -> None:
 
 def install_auth_and_db(fake_db: FakeDB | None = None) -> FakeDB:
     db = fake_db or FakeDB()
-    app.dependency_overrides[current_user] = lambda: {"id": 1, "username": "alice"}
+    app.dependency_overrides[current_user] = lambda: {"id": 1, "username": "alice", "permissions": ["assets:read", "assets:write", "assets:test"]}
     app.dependency_overrides[get_db] = lambda: db
     return db
 
@@ -140,13 +140,8 @@ def test_asset_crud_api_contract(monkeypatch: pytest.MonkeyPatch) -> None:
     assert delete_missing_response.status_code == 404
 
 
-def test_asset_test_connection_api_blocks_private_targets(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_asset_test_connection_api_rejects_unregistered_direct_targets() -> None:
     install_auth_and_db()
-    monkeypatch.setattr(
-        AssetService,
-        "test_connection",
-        async_call(lambda address, port: {"reachable": False, "error": f"blocked {address}:{port}"}),
-    )
 
     with TestClient(app) as client:
         response = client.post(
@@ -154,8 +149,8 @@ def test_asset_test_connection_api_blocks_private_targets(monkeypatch: pytest.Mo
             params={"address": "127.0.0.1", "port": 22},
         )
 
-    assert response.status_code == 200
-    assert response.json() == {"reachable": False, "error": "blocked 127.0.0.1:22"}
+    assert response.status_code == 400
+    assert response.json()["detail"] == "连接测试目标必须是已登记资产或显式 allowlist"
 
 
 def test_platform_api_create_and_list_contract() -> None:
