@@ -1,4 +1,5 @@
 """Schemas for JanusGate policy decisions."""
+
 from datetime import UTC, datetime
 from enum import StrEnum
 from typing import Any, Literal
@@ -34,8 +35,13 @@ class ResourceRef(BaseModel):
 class ApprovalState(BaseModel):
     """Approval/JIT state attached to a decision request."""
 
-    status: Literal["not_required", "pending", "approved", "denied", "revoked", "expired"] = "not_required"
+    status: Literal["not_required", "pending", "approved", "denied", "revoked", "expired"] = (
+        "not_required"
+    )
     expires_at: datetime | None = None
+    grant_id: str = ""
+    workflow_request_id: str = ""
+    constraints: dict[str, Any] = Field(default_factory=dict)
 
     def is_approved_now(self, now: datetime | None = None) -> bool:
         current = now or datetime.now(UTC)
@@ -82,6 +88,8 @@ class PolicyRule(BaseModel):
     require_mfa: bool = False
     require_approval: bool = False
     max_session_ttl_seconds: int = 900
+    approval_use_type: Literal["single-use", "limited-use"] = "single-use"
+    approval_max_uses: int = 1
 
     def matches(self, request: PolicyDecisionRequest) -> bool:
         return (
