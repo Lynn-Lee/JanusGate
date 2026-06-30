@@ -138,13 +138,20 @@ class InMemoryWorkflowStore:
     async def get_grant(self, grant_id: str) -> JitGrantRecord | None:
         return self._grants.get(grant_id)
 
-    async def list_active_grants(self, *, tenant_id: str, now: datetime) -> list[JitGrantRecord]:
+    async def list_active_grants(
+        self,
+        *,
+        tenant_id: str,
+        now: datetime,
+        subject_id: str | None = None,
+    ) -> list[JitGrantRecord]:
         return [
             grant
             for grant in self._grants.values()
             if grant.tenant_id == tenant_id
             and grant.status is JitGrantStatus.ACTIVE
             and grant.expires_at > now
+            and (subject_id is None or grant.subject_id == subject_id)
         ]
 
     def clear(self) -> None:
@@ -288,8 +295,12 @@ class WorkflowService:
     ) -> WorkflowRequestRecord:
         request = await self._get_request_for_tenant(request_id, str(actor.get("tenant_id", "default")))
         actor_id = str(actor["id"])
-        can_revoke = request.requester_id == actor_id or "workflow:approve" in actor.get("permissions", [])
-        if not can_revoke:
+        permissions = actor.get("permissions", [])
+        can_revoke_pending = (
+            request.status is WorkflowRequestStatus.PENDING and request.requester_id == actor_id
+        )
+        can_revoke_granted = "workflow:approve" in permissions or "workflow:admin" in permissions
+        if not (can_revoke_pending or can_revoke_granted):
             raise PermissionError("WORKFLOW_REVOKE_NOT_ALLOWED")
         self._transition(request, WorkflowRequestStatus.REVOKED)
         request.revoked_at = self.now()
@@ -333,9 +344,17 @@ class WorkflowService:
         return grant
 
     async def list_active_grants(self, *, actor: dict[str, Any]) -> list[JitGrantRecord]:
+        permissions = actor.get("permissions", [])
+        tenant_scope_permissions = {"workflow:approve", "workflow:audit", "workflow:admin"}
+        subject_id = (
+            None
+            if any(permission in permissions for permission in tenant_scope_permissions)
+            else str(actor["id"])
+        )
         return await self.store.list_active_grants(
             tenant_id=str(actor.get("tenant_id", "default")),
             now=self.now(),
+            subject_id=subject_id,
         )
 
     async def validate_for_session(
