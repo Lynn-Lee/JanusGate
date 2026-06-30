@@ -35,12 +35,14 @@ async def create_session(
     try:
         session = await service.create_session(
             subject_id=str(user["id"]),
+            tenant_id=str(user.get("tenant_id", "default")),
             asset_id=data.asset_id,
             account_id=data.account_id,
             protocol=data.protocol,
             connection_token=data.connection_token,
             client_ip=client_ip,
             client_ip_source=client_ip_source,
+            jit_grant_id=data.jit_grant_id,
         )
     except PermissionError as exc:
         raise HTTPException(status_code=403, detail=str(exc)) from exc
