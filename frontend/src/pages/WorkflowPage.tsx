@@ -1,9 +1,10 @@
 import { Button, Card, Form, Input, InputNumber, Space, Table, Tag, Typography } from 'antd';
 import { useLocation, useNavigate } from 'react-router-dom';
+import { createSessionWithConnectionToken } from '../api/sessionTokens';
 import { useAuth } from '../auth/AuthContext';
 import { ErrorState, LoadingState } from '../components/StatusView';
 import { getErrorMessage, useApiData, useApiMessage, useSessionCache } from './pageUtils';
-import type { JitGrant, ListResponse, SessionRecord, WorkflowRequest } from './types';
+import type { JitGrant, ListResponse, WorkflowRequest } from './types';
 
 type WorkflowFormValues = {
   asset_id: string;
@@ -67,13 +68,7 @@ export function WorkflowPage() {
 
   const createSession = async (grant: JitGrant) => {
     try {
-      const session = await api.post<SessionRecord>('/api/v1/sessions/', {
-        asset_id: grant.asset_id,
-        account_id: grant.account_id,
-        protocol: grant.protocol,
-        connection_token: `jit-${grant.id}`,
-        jit_grant_id: grant.id
-      });
+      const session = await createSessionWithConnectionToken(api, grant);
       const next = [session, ...cache.read().filter((item) => item.id !== session.id)];
       cache.write(next);
       msg.success('会话已创建');

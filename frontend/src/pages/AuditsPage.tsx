@@ -5,12 +5,28 @@ import { ErrorState, LoadingState } from '../components/StatusView';
 import { useApiData } from './pageUtils';
 import type { AuditEvent, AuditListResponse } from './types';
 
-const redactedKeys = ['token', 'password', 'secret', 'connection_string', 'dsn'];
+export const auditMetadataRedactedKeys = [
+  'password',
+  'passwd',
+  'secret',
+  'token',
+  'access_token',
+  'refresh_token',
+  'api_key',
+  'private_key',
+  'authorization',
+  'cookie',
+  'credential',
+  'credentials',
+  'ssh_key',
+  'connection_string',
+  'dsn'
+];
 
-function safeMetadata(metadata: Record<string, unknown>) {
+export function safeMetadata(metadata: Record<string, unknown>) {
   return JSON.stringify(
     metadata,
-    (key, value) => (redactedKeys.some((item) => key.toLowerCase().includes(item)) ? '******' : value),
+    (key, value) => (auditMetadataRedactedKeys.some((item) => key.toLowerCase().includes(item)) ? '******' : value),
     2
   );
 }
