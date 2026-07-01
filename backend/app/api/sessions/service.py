@@ -18,6 +18,8 @@ from pydantic import BaseModel, Field
 from app.policy.decision import PolicyDecisionService
 from app.policy.schemas import ApprovalState, PolicyDecisionRequest, ResourceRef, SubjectRef
 
+EMPTY_ID = ""
+
 
 class SessionStatus(StrEnum):
     REQUESTED = "requested"
@@ -336,7 +338,7 @@ class SessionGatewayService:
         token_expires_at = min(now + _connection_token_ttl(), grant_expires_at)
         issue = await self.token_store.issue(
             ConnectionToken(
-                token_id="",
+                token_id=EMPTY_ID,
                 subject_id=subject_id,
                 tenant_id=tenant_id,
                 asset_id=asset_id,
@@ -373,7 +375,7 @@ class SessionGatewayService:
             asset_id=asset_id,
             account_id=account_id,
             protocol=protocol,
-            connection_token_id="",
+            connection_token_id=EMPTY_ID,
             client_ip=client_ip,
             client_ip_source=client_ip_source,
             jit_grant_id=jit_grant_id,
