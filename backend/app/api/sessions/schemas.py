@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from pydantic import BaseModel, Field
 
-from app.api.sessions.service import SessionRecord, SessionStatus
+from app.api.sessions.service import ConnectionTokenIssue, SessionRecord, SessionStatus
 
 
 class SessionCreateRequest(BaseModel):
@@ -12,6 +12,38 @@ class SessionCreateRequest(BaseModel):
     protocol: str = Field(min_length=1, max_length=32)
     connection_token: str = Field(min_length=1)
     jit_grant_id: str = Field(default="", max_length=64)
+
+
+class SessionConnectionTokenRequest(BaseModel):
+    jit_grant_id: str = Field(min_length=1, max_length=64)
+    asset_id: str = Field(min_length=1)
+    account_id: str = Field(min_length=1)
+    protocol: str = Field(min_length=1, max_length=32)
+    action: str = Field(default="session.connect", min_length=1, max_length=64)
+
+
+class SessionConnectionTokenResponse(BaseModel):
+    connection_token: str
+    expires_at: str
+    jit_grant_id: str
+    workflow_request_id: str
+    asset_id: str
+    account_id: str
+    protocol: str
+    action: str
+
+    @classmethod
+    def from_issue(cls, issue: ConnectionTokenIssue) -> SessionConnectionTokenResponse:
+        return cls(
+            connection_token=issue.connection_token,
+            expires_at=issue.expires_at.isoformat(),
+            jit_grant_id=issue.jit_grant_id,
+            workflow_request_id=issue.workflow_request_id,
+            asset_id=issue.asset_id,
+            account_id=issue.account_id,
+            protocol=issue.protocol,
+            action=issue.action,
+        )
 
 
 class SessionCloseRequest(BaseModel):
