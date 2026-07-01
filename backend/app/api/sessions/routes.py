@@ -14,15 +14,35 @@ from app.api.sessions.schemas import (
     SessionCreateRequest,
     SessionResponse,
 )
-from app.api.sessions.service import InMemoryConnectionTokenStore, SessionGatewayService
+from app.api.sessions.service import (
+    InMemoryConnectionTokenStore,
+    PolicyDecisionServiceClient,
+    SessionGatewayService,
+)
 from app.core.database import get_db
 from app.core.deps import current_user
+from app.policy.decision import PolicyDecisionService
+from app.policy.schemas import PolicyRule
 from app.workflows.audit import WorkflowAuditSink
 
 router = APIRouter(prefix="/sessions", tags=["会话网关"])
 
 _session_gateway_service = SessionGatewayService(token_store=InMemoryConnectionTokenStore())
 _workflow_audit_sink = WorkflowAuditSink(audit_service)
+_session_policy_client = PolicyDecisionServiceClient(
+    PolicyDecisionService(
+        rules=[
+            PolicyRule(
+                id="approved-jit-session",
+                subject_ids=["*"],
+                actions=["session.connect"],
+                resource_ids=["*"],
+                tenant_id="*",
+                require_approval=True,
+            )
+        ]
+    )
+)
 
 
 def get_session_revoker() -> SessionGatewayService:
@@ -38,7 +58,7 @@ def get_session_gateway_service(db: AsyncSession = Depends(get_db)) -> SessionGa
         session_revoker=_session_gateway_service,
     )
     return SessionGatewayService(
-        policy_client=_session_gateway_service.policy_client,
+        policy_client=_session_policy_client,
         token_store=_session_gateway_service.token_store,
         connector_scheduler=_session_gateway_service.connector_scheduler,
         session_store=_session_gateway_service.session_store,

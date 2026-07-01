@@ -241,6 +241,45 @@ async def test_create_session_denies_before_consuming_token_when_policy_denies()
 
 
 @pytest.mark.asyncio
+async def test_policy_deny_does_not_consume_real_single_use_jit_grant() -> None:
+    now = datetime(2026, 6, 29, 15, 0, tzinfo=UTC)
+    workflow_service = await build_approved_workflow_grant(now=now)
+    service = SessionGatewayService(
+        policy_client=FakePolicyClient("deny"),
+        token_store=InMemoryConnectionTokenStore(token_id_factory=lambda: "raw-connection-token"),
+        connector_scheduler=FakeConnectorScheduler(),
+        session_store=InMemorySessionStore(),
+        jit_grant_client=workflow_service,
+        now=lambda: now,
+    )
+    issued = await service.issue_connection_token(
+        subject_id="user-1",
+        tenant_id="default",
+        asset_id="asset-1",
+        account_id="account-1",
+        protocol="ssh",
+        jit_grant_id="grant-1",
+    )
+
+    with pytest.raises(PermissionError, match="POLICY_DENY"):
+        await service.create_session(
+            subject_id="user-1",
+            tenant_id="default",
+            asset_id="asset-1",
+            account_id="account-1",
+            protocol="ssh",
+            connection_token=issued.connection_token,
+            client_ip="203.0.113.10",
+            jit_grant_id="grant-1",
+        )
+
+    grant = await workflow_service.get_grant("grant-1", tenant_id="default")
+    assert grant is not None
+    assert grant.status is JitGrantStatus.ACTIVE
+    assert grant.constraints["used_count"] == 0
+
+
+@pytest.mark.asyncio
 async def test_create_session_rejects_expired_connection_token() -> None:
     service, _policy, _token_store, audit = build_service(
         expires_at=datetime(2026, 6, 29, 14, 59, tzinfo=UTC)
@@ -757,3 +796,59 @@ def test_session_api_uses_request_client_ip_not_spoofed_body_ip() -> None:
         assert audit.events[0]["client_ip_source"] == "request.client"
     finally:
         app.dependency_overrides.clear()
+
+
+def test_default_session_gateway_dependency_binds_real_policy_client() -> None:
+    service = get_session_gateway_service(object())  # type: ignore[arg-type]
+
+    assert isinstance(service.policy_client, PolicyDecisionServiceClient)
+
+
+@pytest.mark.asyncio
+async def test_default_jit_session_policy_allows_valid_approved_grant_context() -> None:
+    policy_client = PolicyDecisionServiceClient(
+        PolicyDecisionService(
+            rules=[
+                PolicyRule(
+                    id="approved-jit-session",
+                    subject_ids=["*"],
+                    actions=["session.connect"],
+                    resource_ids=["*"],
+                    tenant_id="*",
+                    require_approval=True,
+                )
+            ]
+        )
+    )
+
+    decision = await policy_client.evaluate(
+        {
+            "subject": {"id": "user-1", "type": "user", "tenant_id": "default"},
+            "action": "session.connect",
+            "resource": {"id": "asset-1", "type": "asset", "tenant_id": "default"},
+            "context": {
+                "account_id": "account-1",
+                "protocol": "ssh",
+            },
+            "approval": {
+                "status": "approved",
+                "grant_id": "grant-1",
+                "workflow_request_id": "wr-1",
+                    "expires_at": datetime.now(UTC) + timedelta(minutes=30),
+                "constraints": {
+                    "subject_id": "user-1",
+                    "asset_id": "asset-1",
+                    "account_id": "account-1",
+                    "protocol": "ssh",
+                    "action": "session.connect",
+                    "usage": "single-use",
+                    "max_uses": 1,
+                    "used_count": 0,
+                },
+            },
+            "connector_trusted": True,
+        }
+    )
+
+    assert decision["decision"] == "allow"
+    assert decision["reason_code"] == "POLICY_ALLOWED"

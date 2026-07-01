@@ -183,9 +183,14 @@ def test_login_rejects_bad_credentials(monkeypatch: pytest.MonkeyPatch) -> None:
 def test_login_2fa_exchanges_valid_challenge_for_session_tokens(monkeypatch: pytest.MonkeyPatch) -> None:
     install_db(FakeDB(ScalarResult(user(totp_enabled=True))))
     redis = install_redis()
+    issued_access_payloads: list[dict[str, Any]] = []
     monkeypatch.setattr(auth_api, "decode_token", lambda _token: {"sub": "1", "type": "mfa", "jti": "mfa-jti", "requires_2fa": True})
     monkeypatch.setattr(AuthService, "verify_totp", async_value(True))
-    monkeypatch.setattr(auth_api, "create_access_token", lambda payload: f"access:{payload['2fa_verified']}")
+    monkeypatch.setattr(
+        auth_api,
+        "create_access_token",
+        lambda payload: issued_access_payloads.append(payload) or f"access:{payload['2fa_verified']}",
+    )
     monkeypatch.setattr(auth_api, "create_refresh_token", lambda payload: f"refresh:{payload['sub']}")
 
     with TestClient(app) as client:
@@ -198,6 +203,7 @@ def test_login_2fa_exchanges_valid_challenge_for_session_tokens(monkeypatch: pyt
     assert response.json()["access_token"] == "access:True"
     assert response.json()["refresh_token"] == "refresh:1"
     assert redis.last_set == ("mfa:challenge:consumed:mfa-jti", "1", 300, True)
+    assert "assets:read" in issued_access_payloads[0]["permissions"]
 
 
 def test_login_2fa_rejects_invalid_challenge_and_bad_totp(monkeypatch: pytest.MonkeyPatch) -> None:

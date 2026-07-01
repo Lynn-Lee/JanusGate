@@ -93,11 +93,11 @@ class PolicyRule(BaseModel):
 
     def matches(self, request: PolicyDecisionRequest) -> bool:
         return (
-            request.subject.tenant_id == self.tenant_id
-            and request.resource.tenant_id == self.tenant_id
-            and request.subject.id in self.subject_ids
+            (self.tenant_id == "*" or request.subject.tenant_id == self.tenant_id)
+            and (self.tenant_id == "*" or request.resource.tenant_id == self.tenant_id)
+            and ("*" in self.subject_ids or request.subject.id in self.subject_ids)
             and request.action in self.actions
-            and request.resource.id in self.resource_ids
+            and ("*" in self.resource_ids or request.resource.id in self.resource_ids)
         )
 
 
