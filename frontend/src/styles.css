@@ -47,6 +47,11 @@ body,
   box-shadow: 0 24px 80px rgba(15, 23, 42, 0.14);
 }
 
+.jg-login-actions {
+  display: grid;
+  gap: 12px;
+}
+
 .jg-page-header {
   display: flex;
   justify-content: space-between;
