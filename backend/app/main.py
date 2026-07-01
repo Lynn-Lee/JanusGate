@@ -15,7 +15,7 @@ from app.api.audits.routes import router as audits_router
 from app.api.workflows.routes import router as workflows_router
 from app.core.config import settings
 from app.core.database import engine
-from app.core.exceptions import register_exception_handlers
+from app.core.exceptions import API_ERROR_RESPONSES, register_exception_handlers
 
 
 @asynccontextmanager
@@ -31,6 +31,7 @@ app = FastAPI(
     lifespan=lifespan,
     docs_url="/docs" if settings.APP_ENV == "development" else None,
     redoc_url="/redoc" if settings.APP_ENV == "development" else None,
+    responses=API_ERROR_RESPONSES,
 )
 
 app.add_middleware(GZipMiddleware, minimum_size=1000)
