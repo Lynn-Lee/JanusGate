@@ -1,6 +1,7 @@
 """Session Gateway lifecycle and API tests."""
 from __future__ import annotations
 
+import asyncio
 from datetime import UTC, datetime, timedelta
 
 import pytest
@@ -14,6 +15,7 @@ from app.api.sessions.service import (
     JitGrantSessionBinding,
     PolicyDecisionServiceClient,
     SessionGatewayService,
+    SessionRecord,
     SessionStatus,
 )
 from app.api.workflows.service import (
@@ -53,6 +55,17 @@ class FakeTokenStore:
         assert token_id == self.token.token_id
         self.consumed = True
         return self.token
+
+
+class MultiTokenStore:
+    def __init__(self, tokens: dict[str, ConnectionToken]) -> None:
+        self.tokens = tokens
+        self.consumed: list[str] = []
+
+    async def consume(self, token_id: str, now: datetime) -> ConnectionToken:
+        token = self.tokens.pop(token_id)
+        self.consumed.append(token_id)
+        return token
 
 
 class FakeConnectorScheduler:
@@ -112,6 +125,55 @@ class FakeJitGrantClient:
         )
 
     async def mark_session_bound(self, *, jit_grant_id: str, session_id: str) -> None:
+        self.bound_sessions.append((jit_grant_id, session_id))
+
+
+class ConcurrentSingleUseJitGrantClient:
+    def __init__(self, *, now: datetime) -> None:
+        self.now = now
+        self.validated = 0
+        self.used = False
+        self.bound_sessions: list[tuple[str, str]] = []
+        self._both_validated = asyncio.Event()
+
+    async def validate_for_session(
+        self,
+        *,
+        jit_grant_id: str,
+        subject_id: str,
+        tenant_id: str,
+        asset_id: str,
+        account_id: str,
+        protocol: str,
+        action: str,
+        now: datetime,
+    ) -> JitGrantSessionBinding:
+        if self.used:
+            raise PermissionError("JIT_GRANT_NOT_ACTIVE:used")
+        self.validated += 1
+        if self.validated == 2:
+            self._both_validated.set()
+        await asyncio.wait_for(self._both_validated.wait(), timeout=1)
+        return JitGrantSessionBinding(
+            jit_grant_id=jit_grant_id,
+            workflow_request_id="wr-1",
+            expires_at=self.now + timedelta(minutes=30),
+            constraints={
+                "subject_id": subject_id,
+                "asset_id": asset_id,
+                "account_id": account_id,
+                "protocol": protocol,
+                "action": action,
+                "usage": "single-use",
+                "max_uses": 1,
+                "used_count": 0,
+            },
+        )
+
+    async def mark_session_bound(self, *, jit_grant_id: str, session_id: str) -> None:
+        if self.used:
+            raise PermissionError("JIT_GRANT_NOT_ACTIVE:used")
+        self.used = True
         self.bound_sessions.append((jit_grant_id, session_id))
 
 
@@ -277,6 +339,74 @@ async def test_policy_deny_does_not_consume_real_single_use_jit_grant() -> None:
     assert grant is not None
     assert grant.status is JitGrantStatus.ACTIVE
     assert grant.constraints["used_count"] == 0
+
+
+@pytest.mark.asyncio
+async def test_concurrent_single_use_grant_allows_only_one_connector_dispatch() -> None:
+    now = datetime(2026, 6, 29, 15, 0, tzinfo=UTC)
+    jit_grant_client = ConcurrentSingleUseJitGrantClient(now=now)
+    scheduler = FakeConnectorScheduler()
+    token_store = MultiTokenStore(
+        {
+            "raw-token-1": ConnectionToken(
+                token_id="digest-1",
+                subject_id="user-1",
+                tenant_id="default",
+                asset_id="asset-1",
+                account_id="account-1",
+                connector_id="connector-1",
+                protocol="ssh",
+                jit_grant_id="grant-1",
+                expires_at=now + timedelta(minutes=5),
+            ),
+            "raw-token-2": ConnectionToken(
+                token_id="digest-2",
+                subject_id="user-1",
+                tenant_id="default",
+                asset_id="asset-1",
+                account_id="account-1",
+                connector_id="connector-1",
+                protocol="ssh",
+                jit_grant_id="grant-1",
+                expires_at=now + timedelta(minutes=5),
+            ),
+        }
+    )
+    session_ids = iter(["session-1", "session-2"])
+    service = SessionGatewayService(
+        policy_client=FakePolicyClient("allow"),
+        token_store=token_store,
+        connector_scheduler=scheduler,
+        session_store=InMemorySessionStore(),
+        jit_grant_client=jit_grant_client,
+        now=lambda: now,
+        session_id_factory=lambda: next(session_ids),
+    )
+
+    async def create(connection_token: str) -> object:
+        return await service.create_session(
+            subject_id="user-1",
+            tenant_id="default",
+            asset_id="asset-1",
+            account_id="account-1",
+            protocol="ssh",
+            connection_token=connection_token,
+            client_ip="203.0.113.10",
+            jit_grant_id="grant-1",
+        )
+
+    results = await asyncio.gather(
+        create("raw-token-1"),
+        create("raw-token-2"),
+        return_exceptions=True,
+    )
+
+    successes = [result for result in results if isinstance(result, SessionRecord)]
+    failures = [result for result in results if isinstance(result, PermissionError)]
+    assert len(successes) == 1
+    assert len(failures) == 1
+    assert str(failures[0]) == "JIT_GRANT_NOT_ACTIVE:used"
+    assert len(scheduler.dispatched) == 1
 
 
 @pytest.mark.asyncio

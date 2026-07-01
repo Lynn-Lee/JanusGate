@@ -451,6 +451,12 @@ class SessionGatewayService:
             session.connector_id = token.connector_id
             await self._publish("session.authorized", session)
 
+            if jit_grant_id:
+                await self.jit_grant_client.mark_session_bound(
+                    jit_grant_id=jit_grant_id,
+                    session_id=session.id,
+                )
+
             self._transition(session, SessionStatus.CONNECTING)
             await self._publish("session.connecting", session)
             dispatch_result = await self.connector_scheduler.dispatch(
@@ -460,11 +466,6 @@ class SessionGatewayService:
             session.connector_session_id = dispatch_result.get("connector_session_id", "")
             session.connection_url = dispatch_result.get("connection_url", "")
             self._transition(session, SessionStatus.ACTIVE)
-            if jit_grant_id:
-                await self.jit_grant_client.mark_session_bound(
-                    jit_grant_id=jit_grant_id,
-                    session_id=session.id,
-                )
             await self.session_store.save(session)
             await self._publish("session.active", session)
             return session
