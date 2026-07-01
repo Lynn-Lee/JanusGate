@@ -40,3 +40,18 @@ docker compose up -d
 ## License
 
 待定
+
+## Phase 3 前端控制台
+
+Phase 3 MVP 前端位于 `frontend/`，采用 React + TypeScript + Vite + Ant Design。当前范围按 `docs/architecture/08-phase3-mvp-prd-ia.md` 锁定为 6 个页面：登录、资产、会话、Workflow/JIT、审计日志、系统设置。
+
+```bash
+npm --prefix frontend install
+npm --prefix frontend run dev
+npm --prefix frontend run test
+npm --prefix frontend run typecheck
+npm --prefix frontend run lint
+npm --prefix frontend run build
+```
+
+开发服务默认代理 `/api` 和 `/health` 到 `http://127.0.0.1:8000`；也可通过 `VITE_API_BASE_URL` 指向独立后端。当前后端只暴露会话创建/关闭接口，尚无会话列表接口，因此前端会话页临时展示本控制台创建/关闭的本地会话缓存；后续后端提供列表后应替换为服务端数据源。

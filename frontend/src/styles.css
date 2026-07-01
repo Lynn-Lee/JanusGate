@@ -1,0 +1,91 @@
+html,
+body,
+#root {
+  min-height: 100%;
+  margin: 0;
+  background: #f3f6fb;
+}
+
+.jg-shell {
+  min-height: 100vh;
+}
+
+.jg-logo {
+  height: 64px;
+  display: flex;
+  align-items: center;
+  padding: 0 24px;
+  color: #fff;
+  font-weight: 700;
+  font-size: 18px;
+  letter-spacing: 0.02em;
+}
+
+.jg-header {
+  height: 72px;
+  padding: 0 24px;
+  background: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid #edf0f5;
+}
+
+.jg-content {
+  padding: 24px;
+}
+
+.jg-login-page {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  background: radial-gradient(circle at top left, rgba(37, 99, 235, 0.18), transparent 32%), #f3f6fb;
+}
+
+.jg-login-card {
+  width: min(440px, calc(100vw - 32px));
+  box-shadow: 0 24px 80px rgba(15, 23, 42, 0.14);
+}
+
+.jg-login-actions {
+  display: grid;
+  gap: 12px;
+}
+
+.jg-page-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px;
+  margin-bottom: 16px;
+}
+
+.jg-block {
+  margin-bottom: 16px;
+}
+
+.jg-card-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 16px;
+}
+
+.jg-page {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+@media (max-width: 800px) {
+  .jg-header {
+    height: auto;
+    padding: 16px;
+    align-items: flex-start;
+    gap: 12px;
+    flex-direction: column;
+  }
+
+  .jg-content {
+    padding: 16px;
+  }
+}

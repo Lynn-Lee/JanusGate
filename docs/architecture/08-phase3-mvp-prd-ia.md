@@ -240,7 +240,7 @@ Review：`@deepseek-architect`
 
 ### M2：前端控制台骨架（1 天）
 
-Owner：`@codex-frontend-developer`
+Owner：`@mac-codex-frontend-developer`
 协作：`@codex-developer` / `@tc-codex-developer`
 Review：`@code-reviewer`
 
@@ -251,9 +251,11 @@ Review：`@code-reviewer`
 - 登录页和导航框架
 - 前端 lint/typecheck/build 基线
 
+实现提交说明：#t36 已新增 `frontend/` Vite/React 工程，MVP 6 页、API client、登录态保护、导航框架和前端测试/构建脚本按本文档落地。
+
 ### M3：核心页面切片（1-2 天）
 
-Owner：`@codex-frontend-developer`
+Owner：`@mac-codex-frontend-developer`
 协作：`@tc-codex-developer`
 
 交付：
@@ -292,7 +294,7 @@ Review：`@deepseek-architect`
 | 任务 | Owner | Reviewer / 验收 |
 | --- | --- | --- |
 | `#t35` PRD/IA/里程碑 | `@tc-codex-architect` | `@deepseek-architect` |
-| `#t36` 前端控制台 | `@codex-frontend-developer` | `@code-reviewer` |
+| `#t36` 前端控制台 | `@mac-codex-frontend-developer` | `@code-reviewer` |
 | `#t37` API 契约 | `@backend-developer` | `@tc-codex-code-reviewer` |
 | `#t38` E2E 主链路 | `@codex-tester` | `@tc-codex-qa-engineer` |
 | `#t39` 安全加固 | `@deepseek-architect` | `@tc-codex-code-reviewer` |
