@@ -16,6 +16,7 @@ WORKFLOW_AUDIT_EVENTS = {
     "jit.grant.used",
     "jit.grant.expired",
     "jit.grant.revoked",
+    "session.connection_token.issued",
     "session.revoked_by_jit_grant",
 }
 
@@ -36,8 +37,8 @@ class WorkflowAuditSink:
         await emit_workflow_audit_event_async(
             self._audit_service,
             actor={
-                "id": event.get("actor_id") or event.get("requester_id") or "system",
-                "username": event.get("actor_username") or "system",
+                "id": event.get("actor_id") or event.get("requester_id") or event.get("subject_id") or "system",
+                "username": event.get("actor_username") or event.get("subject_username") or "system",
                 "tenant_id": event.get("tenant_id", "default"),
             },
             event_type=event_type,
@@ -53,6 +54,8 @@ class WorkflowAuditSink:
         if event_type.startswith("workflow.request."):
             return "workflow_request", str(event.get("workflow_request_id") or "unknown")
         if event_type.startswith("jit.grant."):
+            return "jit_grant", str(event.get("jit_grant_id") or "unknown")
+        if event_type == "session.connection_token.issued":
             return "jit_grant", str(event.get("jit_grant_id") or "unknown")
         if event_type == "session.revoked_by_jit_grant":
             return "session", str(event.get("session_id") or "unknown")

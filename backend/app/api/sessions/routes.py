@@ -7,16 +7,42 @@ from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.audits.service import audit_service
-from app.api.sessions.schemas import SessionCloseRequest, SessionCreateRequest, SessionResponse
-from app.api.sessions.service import SessionGatewayService
+from app.api.sessions.schemas import (
+    SessionCloseRequest,
+    SessionConnectionTokenRequest,
+    SessionConnectionTokenResponse,
+    SessionCreateRequest,
+    SessionResponse,
+)
+from app.api.sessions.service import (
+    InMemoryConnectionTokenStore,
+    PolicyDecisionServiceClient,
+    SessionGatewayService,
+)
 from app.core.database import get_db
 from app.core.deps import current_user
+from app.policy.decision import PolicyDecisionService
+from app.policy.schemas import PolicyRule
 from app.workflows.audit import WorkflowAuditSink
 
 router = APIRouter(prefix="/sessions", tags=["会话网关"])
 
-_session_gateway_service = SessionGatewayService()
+_session_gateway_service = SessionGatewayService(token_store=InMemoryConnectionTokenStore())
 _workflow_audit_sink = WorkflowAuditSink(audit_service)
+_session_policy_client = PolicyDecisionServiceClient(
+    PolicyDecisionService(
+        rules=[
+            PolicyRule(
+                id="approved-jit-session",
+                subject_ids=["*"],
+                actions=["session.connect"],
+                resource_ids=["*"],
+                tenant_id="*",
+                require_approval=True,
+            )
+        ]
+    )
+)
 
 
 def get_session_revoker() -> SessionGatewayService:
@@ -32,7 +58,7 @@ def get_session_gateway_service(db: AsyncSession = Depends(get_db)) -> SessionGa
         session_revoker=_session_gateway_service,
     )
     return SessionGatewayService(
-        policy_client=_session_gateway_service.policy_client,
+        policy_client=_session_policy_client,
         token_store=_session_gateway_service.token_store,
         connector_scheduler=_session_gateway_service.connector_scheduler,
         session_store=_session_gateway_service.session_store,
@@ -47,6 +73,33 @@ def get_request_client_ip(request: Request) -> tuple[str, str]:
     if request.client is None:
         return "", "request.client"
     return request.client.host, "request.client"
+
+
+@router.post(
+    "/connection-token",
+    response_model=SessionConnectionTokenResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+async def issue_connection_token(
+    data: SessionConnectionTokenRequest,
+    user: dict[str, Any] = Depends(current_user),
+    service: SessionGatewayService = Depends(get_session_gateway_service),
+) -> SessionConnectionTokenResponse:
+    try:
+        issue = await service.issue_connection_token(
+            subject_id=str(user["id"]),
+            tenant_id=str(user.get("tenant_id", "default")),
+            asset_id=data.asset_id,
+            account_id=data.account_id,
+            protocol=data.protocol,
+            action=data.action,
+            jit_grant_id=data.jit_grant_id,
+        )
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return SessionConnectionTokenResponse.from_issue(issue)
 
 
 @router.post("/", response_model=SessionResponse, status_code=status.HTTP_201_CREATED)

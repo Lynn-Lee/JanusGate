@@ -30,6 +30,20 @@ from app.services.auth import AuthService
 
 router = APIRouter(prefix="/auth", tags=["认证"])
 
+MVP_CONSOLE_PERMISSIONS = ("assets:read",)
+ADMIN_CONSOLE_PERMISSIONS = (
+    "admin",
+    "assets:read",
+    "assets:write",
+    "assets:test",
+    "audit:read",
+    "audit:write",
+    "sessions:connect",
+    "workflow:approve",
+    "workflow:audit",
+    "workflow:admin",
+)
+
 
 @router.post("/login", response_model=TokenResponse)
 async def login(data: LoginRequest, db: AsyncSession = Depends(get_db)) -> TokenResponse:
@@ -43,7 +57,7 @@ async def login(data: LoginRequest, db: AsyncSession = Depends(get_db)) -> Token
             two_fa_token=create_mfa_token({"sub": str(user.id), "username": user.username}),
         )
 
-    token_data = {"sub": str(user.id), "username": user.username}
+    token_data = _token_data_for_user(user)
     return TokenResponse(
         access_token=create_access_token(token_data),
         refresh_token=create_refresh_token(token_data),
@@ -75,7 +89,7 @@ async def login_2fa(
         raise HTTPException(status_code=401, detail="用户不存在或已被禁用")
     if not await AuthService.verify_totp(db, user.id, data.totp_code):
         raise HTTPException(status_code=400, detail="TOTP 验证码错误")
-    token_data = {"sub": str(user.id), "username": user.username, "2fa_verified": True}
+    token_data = _token_data_for_user(user, extra={"2fa_verified": True})
     return TokenResponse(
         access_token=create_access_token(token_data),
         refresh_token=create_refresh_token(token_data),
@@ -108,7 +122,7 @@ async def refresh_token_endpoint(
     password_changed_at = _coerce_datetime(user.password_changed_at)
     if not issued_at or (password_changed_at and issued_at < password_changed_at):
         raise HTTPException(status_code=401, detail="refresh_token 无效或已过期")
-    token_data = {"sub": str(user.id), "username": user.username}
+    token_data = _token_data_for_user(user)
     return TokenResponse(
         access_token=create_access_token(token_data),
         refresh_token=create_refresh_token(token_data),
@@ -206,3 +220,19 @@ def _coerce_datetime(value: Any) -> datetime | None:
     if value.tzinfo is None:
         return value.replace(tzinfo=UTC)
     return value.astimezone(UTC)
+
+
+def _token_data_for_user(user: User, *, extra: dict[str, Any] | None = None) -> dict[str, Any]:
+    permissions = (
+        list(ADMIN_CONSOLE_PERMISSIONS)
+        if user.is_superuser
+        else list(MVP_CONSOLE_PERMISSIONS)
+    )
+    token_data: dict[str, Any] = {
+        "sub": str(user.id),
+        "username": user.username,
+        "permissions": permissions,
+    }
+    if extra:
+        token_data.update(extra)
+    return token_data

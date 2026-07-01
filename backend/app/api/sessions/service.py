@@ -5,9 +5,11 @@ shared ORM/model owner area before persistence contracts are finalized.
 """
 from __future__ import annotations
 
+import hashlib
+import secrets
 import uuid
 from collections.abc import Callable
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from enum import StrEnum
 from typing import Any, Protocol
 
@@ -41,10 +43,28 @@ ALLOWED_TRANSITIONS: dict[SessionStatus, set[SessionStatus]] = {
 class ConnectionToken(BaseModel):
     token_id: str
     subject_id: str
+    tenant_id: str = ""
     asset_id: str
     account_id: str
+    protocol: str = ""
+    action: str = "session.connect"
+    jit_grant_id: str = ""
+    workflow_request_id: str = ""
     connector_id: str
     expires_at: datetime
+
+
+class ConnectionTokenIssue(BaseModel):
+    connection_token: str
+    expires_at: datetime
+    subject_id: str
+    tenant_id: str
+    asset_id: str
+    account_id: str
+    protocol: str
+    action: str
+    jit_grant_id: str
+    workflow_request_id: str
 
 
 class SessionRecord(BaseModel):
@@ -76,6 +96,9 @@ class PolicyDecisionClient(Protocol):
 
 
 class ConnectionTokenStore(Protocol):
+    async def issue(self, token: ConnectionToken) -> ConnectionTokenIssue:
+        """Store token metadata and return the raw short-lived token once."""
+
     async def consume(self, token_id: str, now: datetime) -> ConnectionToken:
         """Consume and return a short-lived connection token."""
 
@@ -98,6 +121,9 @@ class JitGrantSessionBinding(BaseModel):
 
 
 class JitGrantClient(Protocol):
+    async def get_grant(self, grant_id: str, *, tenant_id: str) -> Any | None:
+        """Return a grant snapshot without consuming it."""
+
     async def validate_for_session(
         self,
         *,
@@ -159,8 +185,51 @@ class PolicyDecisionServiceClient:
 
 
 class EmptyConnectionTokenStore:
+    async def issue(self, token: ConnectionToken) -> ConnectionTokenIssue:
+        raise ValueError("CONNECTION_TOKEN_STORE_NOT_CONFIGURED")
+
     async def consume(self, token_id: str, now: datetime) -> ConnectionToken:
         raise ValueError("CONNECTION_TOKEN_NOT_FOUND")
+
+
+class InMemoryConnectionTokenStore:
+    """Short-lived opaque connection token store.
+
+    The raw token is returned only to the caller. The store indexes metadata by
+    SHA-256 digest and removes entries on consume so frontend-created sessions
+    cannot replay the same connection token.
+    """
+
+    def __init__(self, *, token_id_factory: Callable[[], str] | None = None) -> None:
+        self._token_id_factory = token_id_factory or (lambda: f"jgt_{secrets.token_urlsafe(32)}")
+        self._tokens_by_digest: dict[str, ConnectionToken] = {}
+
+    async def issue(self, token: ConnectionToken) -> ConnectionTokenIssue:
+        raw_token = self._token_id_factory()
+        token_digest = self._digest(raw_token)
+        self._tokens_by_digest[token_digest] = token.model_copy(update={"token_id": token_digest})
+        return ConnectionTokenIssue(
+            connection_token=raw_token,
+            expires_at=token.expires_at,
+            subject_id=token.subject_id,
+            tenant_id=token.tenant_id,
+            asset_id=token.asset_id,
+            account_id=token.account_id,
+            protocol=token.protocol,
+            action=token.action,
+            jit_grant_id=token.jit_grant_id,
+            workflow_request_id=token.workflow_request_id,
+        )
+
+    async def consume(self, token_id: str, now: datetime) -> ConnectionToken:
+        token = self._tokens_by_digest.pop(self._digest(token_id), None)
+        if token is None:
+            raise ValueError("CONNECTION_TOKEN_NOT_FOUND")
+        return token
+
+    @staticmethod
+    def _digest(token_id: str) -> str:
+        return hashlib.sha256(token_id.encode("utf-8")).hexdigest()
 
 
 class NoopConnectorScheduler:
@@ -177,6 +246,9 @@ class NoopAuditSink:
 
 
 class NoopJitGrantClient:
+    async def get_grant(self, grant_id: str, *, tenant_id: str) -> Any | None:
+        return None
+
     async def validate_for_session(
         self,
         *,
@@ -236,6 +308,50 @@ class SessionGatewayService:
         self.now = now or (lambda: datetime.now(UTC))
         self.session_id_factory = session_id_factory or (lambda: uuid.uuid4().hex)
 
+    async def issue_connection_token(
+        self,
+        *,
+        subject_id: str,
+        tenant_id: str = "default",
+        asset_id: str,
+        account_id: str,
+        protocol: str,
+        jit_grant_id: str,
+        action: str = "session.connect",
+    ) -> ConnectionTokenIssue:
+        now = self.now()
+        grant = await self.jit_grant_client.get_grant(jit_grant_id, tenant_id=tenant_id)
+        if grant is None:
+            raise PermissionError("JIT_GRANT_NOT_FOUND")
+        self._validate_grant_snapshot_for_token(
+            grant,
+            subject_id=subject_id,
+            asset_id=asset_id,
+            account_id=account_id,
+            protocol=protocol,
+            action=action,
+            now=now,
+        )
+        grant_expires_at = _comparable_datetime(grant.expires_at, now)
+        token_expires_at = min(now + _connection_token_ttl(), grant_expires_at)
+        issue = await self.token_store.issue(
+            ConnectionToken(
+                token_id="",
+                subject_id=subject_id,
+                tenant_id=tenant_id,
+                asset_id=asset_id,
+                account_id=account_id,
+                protocol=protocol,
+                action=action,
+                jit_grant_id=jit_grant_id,
+                workflow_request_id=str(getattr(grant, "workflow_request_id", "")),
+                connector_id=str(getattr(grant, "connector_id", "default-connector")),
+                expires_at=token_expires_at,
+            )
+        )
+        await self._publish_connection_token_issued(issue)
+        return issue
+
     async def create_session(
         self,
         *,
@@ -257,7 +373,7 @@ class SessionGatewayService:
             asset_id=asset_id,
             account_id=account_id,
             protocol=protocol,
-            connection_token_id=connection_token,
+            connection_token_id="",
             client_ip=client_ip,
             client_ip_source=client_ip_source,
             jit_grant_id=jit_grant_id,
@@ -310,7 +426,6 @@ class SessionGatewayService:
                     "tenant_id": tenant_id,
                 },
                 "context": {
-                    "connection_token": connection_token,
                     "client_ip": client_ip,
                     "client_ip_source": client_ip_source,
                     "account_id": account_id,
@@ -331,9 +446,16 @@ class SessionGatewayService:
         try:
             token = await self.token_store.consume(connection_token, now)
             self._validate_token(token, session, now)
+            session.connection_token_id = token.token_id
             self._transition(session, SessionStatus.AUTHORIZED)
             session.connector_id = token.connector_id
             await self._publish("session.authorized", session)
+
+            if jit_grant_id:
+                await self.jit_grant_client.mark_session_bound(
+                    jit_grant_id=jit_grant_id,
+                    session_id=session.id,
+                )
 
             self._transition(session, SessionStatus.CONNECTING)
             await self._publish("session.connecting", session)
@@ -344,11 +466,6 @@ class SessionGatewayService:
             session.connector_session_id = dispatch_result.get("connector_session_id", "")
             session.connection_url = dispatch_result.get("connection_url", "")
             self._transition(session, SessionStatus.ACTIVE)
-            if jit_grant_id:
-                await self.jit_grant_client.mark_session_bound(
-                    jit_grant_id=jit_grant_id,
-                    session_id=session.id,
-                )
             await self.session_store.save(session)
             await self._publish("session.active", session)
             return session
@@ -405,14 +522,50 @@ class SessionGatewayService:
     def _validate_token(self, token: ConnectionToken, session: SessionRecord, now: datetime) -> None:
         if token.expires_at <= now:
             raise ValueError("CONNECTION_TOKEN_EXPIRED")
+        if token.tenant_id and token.tenant_id != session.tenant_id:
+            raise ValueError("CONNECTION_TOKEN_TENANT_MISMATCH")
         if token.subject_id != session.subject_id:
             raise ValueError("CONNECTION_TOKEN_SUBJECT_MISMATCH")
         if token.asset_id != session.asset_id:
             raise ValueError("CONNECTION_TOKEN_ASSET_MISMATCH")
         if token.account_id != session.account_id:
             raise ValueError("CONNECTION_TOKEN_ACCOUNT_MISMATCH")
+        if token.protocol and token.protocol != session.protocol:
+            raise ValueError("CONNECTION_TOKEN_PROTOCOL_MISMATCH")
+        if token.jit_grant_id and token.jit_grant_id != session.jit_grant_id:
+            raise ValueError("CONNECTION_TOKEN_JIT_GRANT_MISMATCH")
+        if token.action and token.action != "session.connect":
+            raise ValueError("CONNECTION_TOKEN_ACTION_MISMATCH")
         if not token.connector_id:
             raise ValueError("CONNECTION_TOKEN_CONNECTOR_MISSING")
+
+    def _validate_grant_snapshot_for_token(
+        self,
+        grant: Any,
+        *,
+        subject_id: str,
+        asset_id: str,
+        account_id: str,
+        protocol: str,
+        action: str,
+        now: datetime,
+    ) -> None:
+        status = _enum_value(getattr(grant, "status", ""))
+        if status != "active":
+            raise PermissionError(f"JIT_GRANT_NOT_ACTIVE:{status}")
+        expires_at = _comparable_datetime(grant.expires_at, now)
+        if expires_at <= now:
+            raise PermissionError("JIT_GRANT_EXPIRED")
+        if str(getattr(grant, "subject_id", "")) != subject_id:
+            raise PermissionError("JIT_GRANT_SUBJECT_MISMATCH")
+        if str(getattr(grant, "asset_id", "")) != asset_id:
+            raise PermissionError("JIT_GRANT_ASSET_MISMATCH")
+        if str(getattr(grant, "account_id", "")) != account_id:
+            raise PermissionError("JIT_GRANT_ACCOUNT_MISMATCH")
+        if str(getattr(grant, "protocol", "")) != protocol:
+            raise PermissionError("JIT_GRANT_PROTOCOL_MISMATCH")
+        if str(getattr(grant, "action", "")) != action:
+            raise PermissionError("JIT_GRANT_ACTION_MISMATCH")
 
     def _transition(self, session: SessionRecord, next_status: SessionStatus) -> None:
         allowed = ALLOWED_TRANSITIONS[session.status]
@@ -447,3 +600,35 @@ class SessionGatewayService:
         }
         session.audit_event_ids.append(event["id"])
         await self.audit_sink.publish(event)
+
+    async def _publish_connection_token_issued(self, issue: ConnectionTokenIssue) -> None:
+        await self.audit_sink.publish(
+            {
+                "id": uuid.uuid4().hex,
+                "type": "session.connection_token.issued",
+                "subject_id": issue.subject_id,
+                "tenant_id": issue.tenant_id,
+                "asset_id": issue.asset_id,
+                "account_id": issue.account_id,
+                "workflow_request_id": issue.workflow_request_id,
+                "jit_grant_id": issue.jit_grant_id,
+                "protocol": issue.protocol,
+                "action": issue.action,
+                "expires_at": issue.expires_at.isoformat(),
+                "occurred_at": self.now().isoformat(),
+            }
+        )
+
+
+def _connection_token_ttl() -> timedelta:
+    return timedelta(minutes=5)
+
+
+def _comparable_datetime(value: datetime, reference: datetime) -> datetime:
+    if value.tzinfo is None and reference.tzinfo is not None:
+        return value.replace(tzinfo=reference.tzinfo)
+    return value
+
+
+def _enum_value(value: Any) -> str:
+    return str(getattr(value, "value", value))

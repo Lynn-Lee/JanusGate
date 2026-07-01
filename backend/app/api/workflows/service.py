@@ -821,17 +821,18 @@ class WorkflowService:
         action: str,
         now: datetime,
     ) -> JitGrantSessionBinding:
-        grant = await self.store.reserve_grant_for_session(
-            jit_grant_id=jit_grant_id,
+        grant = await self.store.get_grant(jit_grant_id)
+        if grant is None or grant.tenant_id != tenant_id:
+            raise PermissionError("JIT_GRANT_NOT_FOUND")
+        _validate_grant_for_session(
+            grant,
             subject_id=subject_id,
-            tenant_id=tenant_id,
             asset_id=asset_id,
             account_id=account_id,
             protocol=protocol,
             action=action,
             now=now,
         )
-        await self.store.commit()
         return JitGrantSessionBinding(
             jit_grant_id=grant.id,
             workflow_request_id=grant.workflow_request_id,
@@ -843,6 +844,17 @@ class WorkflowService:
         grant = await self.store.get_grant(jit_grant_id)
         if grant is None:
             raise PermissionError("JIT_GRANT_NOT_FOUND")
+        grant = await self.store.reserve_grant_for_session(
+            jit_grant_id=jit_grant_id,
+            subject_id=grant.subject_id,
+            tenant_id=grant.tenant_id,
+            asset_id=grant.asset_id,
+            account_id=grant.account_id,
+            protocol=grant.protocol,
+            action=grant.action,
+            now=self.now(),
+        )
+        await self.store.commit()
         request = await self.store.get_request(grant.workflow_request_id)
         if request is not None:
             await self._publish_grant("jit.grant.used", grant, request, session_id=session_id)

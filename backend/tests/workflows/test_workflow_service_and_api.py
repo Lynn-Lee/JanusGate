@@ -209,7 +209,7 @@ async def test_session_gateway_dependency_uses_sqlalchemy_jit_client(session_fac
 
 
 @pytest.mark.asyncio
-async def test_single_use_grant_reservation_is_atomic_for_parallel_sessions(tmp_path) -> None:
+async def test_single_use_grant_binding_is_atomic_for_parallel_sessions(tmp_path) -> None:
     engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path / 'workflow.db'}")
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
@@ -249,10 +249,13 @@ async def test_single_use_grant_reservation_is_atomic_for_parallel_sessions(tmp_
                 grant_ttl_seconds=1800,
             )
 
-        async def reserve() -> object:
+        async def bind(session_id: str) -> object:
             async with session_factory() as session:
-                service = WorkflowService(store=SQLAlchemyWorkflowStore(session))
-                return await service.validate_for_session(
+                service = WorkflowService(
+                    store=SQLAlchemyWorkflowStore(session),
+                    now=lambda: datetime(2026, 6, 30, 12, 1, tzinfo=UTC),
+                )
+                binding = await service.validate_for_session(
                     jit_grant_id=approved.grant_id,
                     subject_id="user-1",
                     tenant_id="tenant-1",
@@ -262,8 +265,10 @@ async def test_single_use_grant_reservation_is_atomic_for_parallel_sessions(tmp_
                     action="session.connect",
                     now=datetime(2026, 6, 30, 12, 1, tzinfo=UTC),
                 )
+                await service.mark_session_bound(jit_grant_id=binding.jit_grant_id, session_id=session_id)
+                return binding
 
-        results = await asyncio.gather(reserve(), reserve(), return_exceptions=True)
+        results = await asyncio.gather(bind("session-1"), bind("session-2"), return_exceptions=True)
 
         successes = [result for result in results if not isinstance(result, Exception)]
         failures = [result for result in results if isinstance(result, PermissionError)]
