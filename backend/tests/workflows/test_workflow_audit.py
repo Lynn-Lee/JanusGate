@@ -37,6 +37,7 @@ def test_workflow_audit_event_catalog_covers_phase2_state_changes():
         "jit.grant.used",
         "jit.grant.expired",
         "jit.grant.revoked",
+        "session.connection_token.issued",
         "session.revoked_by_jit_grant",
     }
     assert expected_events == WORKFLOW_AUDIT_EVENTS
@@ -176,3 +177,40 @@ async def test_workflow_audit_sink_bridges_service_events_to_audit_service():
     assert delivered_events[-1].event_type == "workflow.request.approved"
     assert delivered_events[-1].metadata["workflow_request_id"] == "wr_sink"
     assert delivered_events[-1].metadata["jit_grant_id"] == "grant_sink"
+
+
+async def test_connection_token_issued_event_reaches_audit_without_plain_token():
+    delivered_events: list[AuditEvent] = []
+
+    class CaptureSiemClient:
+        async def deliver(self, event: AuditEvent) -> None:
+            delivered_events.append(event)
+
+    original_siem_client = audit_service._siem_client
+    audit_service._siem_client = CaptureSiemClient()
+    sink = WorkflowAuditSink(audit_service)
+    try:
+        await sink.publish(
+            {
+                "type": "session.connection_token.issued",
+                "tenant_id": "tenant-a",
+                "subject_id": "user-1",
+                "workflow_request_id": "wr_token",
+                "jit_grant_id": "grant_token",
+                "asset_id": "asset-1",
+                "account_id": "root",
+                "protocol": "ssh",
+                "action": "session.connect",
+                "expires_at": "2026-07-01T12:25:00+00:00",
+            }
+        )
+    finally:
+        audit_service._siem_client = original_siem_client
+
+    event = delivered_events[-1]
+    assert event.event_type == "session.connection_token.issued"
+    assert event.resource_type == "jit_grant"
+    assert event.resource_id == "grant_token"
+    assert event.metadata["workflow_request_id"] == "wr_token"
+    assert event.metadata["jit_grant_id"] == "grant_token"
+    assert "connection_token" not in event.metadata

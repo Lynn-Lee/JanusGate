@@ -1,6 +1,6 @@
 # JanusGate API Contract
 
-更新时间：2026-07-01  
+更新时间：2026-07-01
 范围：Phase 3 MVP 前端/后端联调契约。
 
 ## Session connection token（#t42）
