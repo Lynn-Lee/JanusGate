@@ -351,6 +351,9 @@ async def test_current_user_returns_active_user_and_rejects_disabled_user() -> N
         "id": 1,
         "username": "alice",
         "tenant_id": "default",
+        "organization_id": None,
+        "team_id": None,
+        "project_id": None,
         "permissions": ["assets:read"],
     }
 

@@ -72,7 +72,10 @@ async def current_user(
     return {
         "id": db_user.id,
         "username": db_user.username,
-        "tenant_id": db_user.tenant_id if hasattr(db_user, "tenant_id") else "default",
+        "tenant_id": getattr(db_user, "tenant_id", None) or "default",
+        "organization_id": getattr(db_user, "organization_id", None),
+        "team_id": getattr(db_user, "team_id", None),
+        "project_id": getattr(db_user, "project_id", None),
         "permissions": payload.get("permissions", []),
     }
 

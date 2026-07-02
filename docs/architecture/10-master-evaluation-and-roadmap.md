@@ -56,7 +56,7 @@ JanusGate 定位为**面向企业和云原生环境的策略驱动 PAM / 零信�
 | Phase 1：基础重构基线 | ✅ 完成 | FastAPI 后端 + 安全基座 + 核心领域模型 + CI/CD |
 | Phase 2：Workflow/JIT 审批流 | ✅ 完成 | JIT 申请/审批/Grant + Policy/Session/Audit 接入 |
 | **Phase 3：产品化 MVP** | **✅ MVP Go** | 前端控制台 + E2E 主链路 + 部署收口 + QA Go/No-Go |
-| Phase 4：企业级能力增强 | 下一步 | 多租户 + 凭据轮换 + SSH CA + 会话录制 |
+| Phase 4：企业级能力增强 | 进行中 | 多租户 + 凭据轮换 + SSH CA + 会话录制 |
 | Phase 5：生产化与商业化 | 待启动 | 高可用 + 合规报表 + 性能压测 + 文档站 |
 
 ### 1.4 第一闭环
@@ -239,7 +239,7 @@ JumpServer 上游在 2026-06-26 → 07-01 期间进行了重大技术栈升级�
 
 ### 4.4 残余风险与待增强
 
-1. **多租户**：当前 tenant_id 字段存在但无 UI 和组织/团队/项目级隔离 enforcement，作为 Phase 4 #t42 下一步
+1. **多租户**：Phase 4 #t42 已建立后端 Organization/Team/Project 模型与 `scoped_select()` 租户过滤基座；组织/团队/项目管理 API、UI 与更细粒度策略绑定仍待后续切片
 2. **策略持久化**：当前 PolicyDecisionService 为内存规则，需接入持久化策略
 3. **Connector 生产级信任链**：mTLS / attestation / key rotation 待 Phase 4
 4. **Vault 生产级后端**：当前为内存 AES-GCM，KMS/HSM/云 Vault 待 Phase 4
@@ -623,7 +623,7 @@ User ──┬── WorkflowRequest ──── JitGrant
 
 | 任务 ID | 任务 | Owner | 范围 | 优先级 |
 |---------|------|-------|------|--------|
-| **#t42** | 多租户与组织/团队/项目维度权限 | architect + backend | Organization/Team/Project 模型 + DB 层隔离 enforcement + UI | 高 |
+| **#t42** | 多租户与组织/团队/项目维度权限 | architect + backend | 后端 Organization/Team/Project 模型 + DB 层 `tenant_id` scope helper 已完成；管理 API、UI 与细粒度策略绑定待后续切片 | 高 |
 | **#t43** | 资产账号托管与凭据轮换 | backend | Account 模型 + CredentialRotation 调度 + 双写迁移 + 回滚 | 高 |
 | **#t44** | SSH CA / 临时证书 | backend + security | SshCertificateAuthority + 签发/撤销 + 资产信任配置 | 高 |
 | **#t45** | 连接器/边缘网关架构 | architect + backend | mTLS + attestation + key rotation + heartbeat + Connector SDK | 高 |

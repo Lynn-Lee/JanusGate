@@ -231,6 +231,7 @@ def _token_data_for_user(user: User, *, extra: dict[str, Any] | None = None) -> 
     token_data: dict[str, Any] = {
         "sub": str(user.id),
         "username": user.username,
+        "tenant_id": getattr(user, "tenant_id", None) or "default",
         "permissions": permissions,
     }
     if extra:
