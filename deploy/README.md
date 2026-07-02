@@ -11,6 +11,11 @@ GitHub Actions 工作流位于 `.github/workflows/ci.yml`，当前包含：
 - `pytest`：后端单元测试与 smoke 测试
 - `bandit -q -r app`：应用代码安全扫描
 - `pip-audit --skip-editable`：依赖漏洞扫描
+- `npm ci`：前端依赖按 lockfile 可复现安装
+- `npm run lint`：前端 ESLint 检查
+- `npm run typecheck`：前端 TypeScript 类型检查
+- `npm test -- --run`：前端 Vitest 组件/API smoke 测试
+- `npm run build`：前端生产构建检查
 - Docker Buildx：构建 backend 镜像；仅 `v*` tag 会推送到 GHCR
 - `helm lint deploy/helm/janusgate`：Helm chart 基础校验
 
