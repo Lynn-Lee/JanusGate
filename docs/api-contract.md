@@ -2,7 +2,7 @@
 
 > 面向 #t36 前端控制台、#t38 E2E smoke 和 #t41 QA 门禁。本文件记录当前后端稳定契约，后续新增 API 默认沿用。
 
-更新时间：2026-07-02
+更新时间：2026-07-03
 范围：Phase 3 MVP 前端/后端联调契约，以及 Phase 4 多租户增量契约。
 
 ## 基础约定
@@ -188,6 +188,77 @@
 | 403 | `TENANT_SCOPE_VIOLATION` | Organization 或 Team ID 已被其他租户占用 |
 | 403 | `缺少权限: admin` | 当前用户不能创建团队 |
 | 404 | `ORGANIZATION_NOT_FOUND` | 指定组织不存在 |
+
+### GET `/api/v1/tenancy/projects`
+
+用途：返回当前登录用户可见的 Project 列表。
+
+鉴权：需要登录态；`admin` 或 `tenancy:read` 权限可访问。后端使用当前用户 `tenant_id` 和 `app.tenancy.scope.scoped_select()` 过滤，不接受前端传入 tenant。
+
+响应 `200`：
+
+```json
+{
+  "items": [
+    {
+      "id": "project-a",
+      "tenant_id": "tenant-a",
+      "organization_id": "org-a",
+      "team_id": "team-a",
+      "name": "Production",
+      "status": "active"
+    }
+  ],
+  "total": 1
+}
+```
+
+安全语义：
+
+- 跨租户 Project 不出现在响应中。
+- 非 admin 用户若绑定了 `project_id`，只返回该用户可见项目；若未绑定项目但绑定了 `team_id` 或 `organization_id`，按对应维度继续收敛。
+- 未授权用户返回 `403` 的统一错误响应。
+
+### POST `/api/v1/tenancy/projects`
+
+用途：在当前用户租户内、指定 Organization 与可选 Team 下创建 Project。
+
+鉴权：需要登录态和 `admin` 权限；后端使用当前用户 `tenant_id` 写入，不接受前端传入 tenant。
+
+请求体：
+
+```json
+{
+  "id": "project-a",
+  "organization_id": "org-a",
+  "team_id": "team-a",
+  "name": "Production",
+  "status": "active"
+}
+```
+
+响应 `201`：
+
+```json
+{
+  "id": "project-a",
+  "tenant_id": "tenant-a",
+  "organization_id": "org-a",
+  "team_id": "team-a",
+  "name": "Production",
+  "status": "active"
+}
+```
+
+错误码：
+
+| HTTP | detail | 说明 |
+| --- | --- | --- |
+| 400 | `PROJECT_ALREADY_EXISTS` | 当前租户内 Project ID 已存在 |
+| 403 | `TENANT_SCOPE_VIOLATION` | Organization、Team 或 Project ID 被其他租户占用，或 Team 不属于指定 Organization |
+| 403 | `缺少权限: admin` | 当前用户不能创建项目 |
+| 404 | `ORGANIZATION_NOT_FOUND` | 指定组织不存在 |
+| 404 | `TEAM_NOT_FOUND` | 指定团队不存在 |
 
 ## Session connection token（#t42）
 

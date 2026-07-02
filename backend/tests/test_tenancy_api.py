@@ -43,6 +43,7 @@ def install_user(
     permissions: list[str],
     organization_id: str | None = None,
     team_id: str | None = None,
+    project_id: str | None = None,
 ) -> None:
     app.dependency_overrides[current_user] = lambda: {
         "id": "user-1",
@@ -50,6 +51,7 @@ def install_user(
         "tenant_id": tenant_id,
         "organization_id": organization_id,
         "team_id": team_id,
+        "project_id": project_id,
         "permissions": permissions,
     }
 
@@ -178,6 +180,115 @@ async def test_tenancy_create_team_rejects_cross_tenant_organization(
         response = client.post(
             "/api/v1/tenancy/teams",
             json={"id": "team-a", "organization_id": "org-a", "name": "Ops"},
+        )
+
+    assert response.status_code == 403
+    assert response.json()["code"] == "TENANT_SCOPE_VIOLATION"
+
+
+@pytest.mark.asyncio
+async def test_tenancy_project_api_is_tenant_and_project_scoped(
+    session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    install_db(session_factory)
+
+    with TestClient(app) as client:
+        install_user(tenant_id="tenant-a", permissions=["admin"])
+        client.post(
+            "/api/v1/tenancy/organizations",
+            json={"id": "org-a", "name": "Tenant A Ops"},
+        )
+        client.post(
+            "/api/v1/tenancy/teams",
+            json={"id": "team-a", "organization_id": "org-a", "name": "Ops"},
+        )
+        create_response = client.post(
+            "/api/v1/tenancy/projects",
+            json={
+                "id": "project-a",
+                "organization_id": "org-a",
+                "team_id": "team-a",
+                "name": "Production",
+            },
+        )
+        client.post(
+            "/api/v1/tenancy/projects",
+            json={
+                "id": "project-b",
+                "organization_id": "org-a",
+                "name": "Security Lab",
+            },
+        )
+
+        install_user(
+            tenant_id="tenant-a",
+            permissions=["tenancy:read"],
+            organization_id="org-a",
+            team_id="team-a",
+            project_id="project-a",
+        )
+        scoped_list = client.get("/api/v1/tenancy/projects")
+
+        install_user(tenant_id="tenant-b", permissions=["admin"])
+        tenant_b_list = client.get("/api/v1/tenancy/projects")
+
+    assert create_response.status_code == 201
+    assert create_response.json() == {
+        "id": "project-a",
+        "tenant_id": "tenant-a",
+        "organization_id": "org-a",
+        "team_id": "team-a",
+        "name": "Production",
+        "status": "active",
+    }
+    assert scoped_list.status_code == 200
+    assert scoped_list.json() == {
+        "items": [
+            {
+                "id": "project-a",
+                "tenant_id": "tenant-a",
+                "organization_id": "org-a",
+                "team_id": "team-a",
+                "name": "Production",
+                "status": "active",
+            }
+        ],
+        "total": 1,
+    }
+    assert tenant_b_list.status_code == 200
+    assert tenant_b_list.json() == {"items": [], "total": 0}
+
+
+@pytest.mark.asyncio
+async def test_tenancy_create_project_rejects_cross_tenant_team(
+    session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    install_db(session_factory)
+
+    with TestClient(app) as client:
+        install_user(tenant_id="tenant-a", permissions=["admin"])
+        client.post(
+            "/api/v1/tenancy/organizations",
+            json={"id": "org-a", "name": "Tenant A Ops"},
+        )
+        client.post(
+            "/api/v1/tenancy/teams",
+            json={"id": "team-a", "organization_id": "org-a", "name": "Ops"},
+        )
+
+        install_user(tenant_id="tenant-b", permissions=["admin"])
+        client.post(
+            "/api/v1/tenancy/organizations",
+            json={"id": "org-b", "name": "Tenant B Ops"},
+        )
+        response = client.post(
+            "/api/v1/tenancy/projects",
+            json={
+                "id": "project-b",
+                "organization_id": "org-b",
+                "team_id": "team-a",
+                "name": "Production",
+            },
         )
 
     assert response.status_code == 403

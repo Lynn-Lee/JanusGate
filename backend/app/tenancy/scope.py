@@ -37,8 +37,15 @@ def scoped_select[T](model: type[T], actor_scope: ActorScope) -> Select[tuple[T]
         return statement
 
     model_id = getattr(model, "id", None)
-    if actor_scope.project_ids and model.__name__ == "Project" and model_id is not None:
-        statement = statement.where(model_id.in_(actor_scope.project_ids))
+    if model.__name__ == "Project":
+        if actor_scope.project_ids and model_id is not None:
+            statement = statement.where(model_id.in_(actor_scope.project_ids))
+        elif actor_scope.team_ids and (team_id := getattr(model, "team_id", None)) is not None:
+            statement = statement.where(team_id.in_(actor_scope.team_ids))
+        elif actor_scope.organization_ids and (
+            organization_id := getattr(model, "organization_id", None)
+        ) is not None:
+            statement = statement.where(organization_id.in_(actor_scope.organization_ids))
     elif actor_scope.team_ids and model.__name__ == "Team" and model_id is not None:
         statement = statement.where(model_id.in_(actor_scope.team_ids))
     elif actor_scope.organization_ids and model.__name__ == "Organization" and model_id is not None:

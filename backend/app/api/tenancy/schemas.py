@@ -36,3 +36,25 @@ class TeamResponse(BaseModel):
 class TeamListResponse(BaseModel):
     items: list[TeamResponse]
     total: int
+
+
+class ProjectCreate(BaseModel):
+    id: str = Field(min_length=1, max_length=64)
+    organization_id: str = Field(min_length=1, max_length=64)
+    team_id: str | None = Field(default=None, min_length=1, max_length=64)
+    name: str = Field(min_length=1, max_length=120)
+    status: str = Field(default="active", max_length=20)
+
+
+class ProjectResponse(BaseModel):
+    id: str
+    tenant_id: str
+    organization_id: str
+    team_id: str | None
+    name: str
+    status: str
+
+
+class ProjectListResponse(BaseModel):
+    items: list[ProjectResponse]
+    total: int
