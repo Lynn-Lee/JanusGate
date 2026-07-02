@@ -125,6 +125,70 @@
 | 403 | `TENANT_SCOPE_VIOLATION` | 组织 ID 已被其他租户占用 |
 | 403 | `缺少权限: admin` | 当前用户不能创建组织 |
 
+### GET `/api/v1/tenancy/teams`
+
+用途：返回当前登录用户可见的 Team 列表。
+
+鉴权：需要登录态；`admin` 或 `tenancy:read` 权限可访问。后端使用当前用户 `tenant_id` 和 `app.tenancy.scope.scoped_select()` 过滤，不接受前端传入 tenant。
+
+响应 `200`：
+
+```json
+{
+  "items": [
+    {
+      "id": "team-a",
+      "tenant_id": "tenant-a",
+      "organization_id": "org-a",
+      "name": "Ops"
+    }
+  ],
+  "total": 1
+}
+```
+
+安全语义：
+
+- 跨租户 Team 不出现在响应中。
+- 非 admin 用户若绑定了 `team_id`，只返回该用户可见团队。
+- 未授权用户返回 `403` 的统一错误响应。
+
+### POST `/api/v1/tenancy/teams`
+
+用途：在当前用户租户内、指定 Organization 下创建 Team。
+
+鉴权：需要登录态和 `admin` 权限；后端使用当前用户 `tenant_id` 写入，不接受前端传入 tenant。
+
+请求体：
+
+```json
+{
+  "id": "team-a",
+  "organization_id": "org-a",
+  "name": "Ops"
+}
+```
+
+响应 `201`：
+
+```json
+{
+  "id": "team-a",
+  "tenant_id": "tenant-a",
+  "organization_id": "org-a",
+  "name": "Ops"
+}
+```
+
+错误码：
+
+| HTTP | detail | 说明 |
+| --- | --- | --- |
+| 400 | `TEAM_ALREADY_EXISTS` | 当前租户内 Team ID 已存在 |
+| 403 | `TENANT_SCOPE_VIOLATION` | Organization 或 Team ID 已被其他租户占用 |
+| 403 | `缺少权限: admin` | 当前用户不能创建团队 |
+| 404 | `ORGANIZATION_NOT_FOUND` | 指定组织不存在 |
+
 ## Session connection token（#t42）
 
 前端创建会话前必须先向后端换取真实 `connection_token`，不得在前端伪造 token。
