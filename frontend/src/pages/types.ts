@@ -96,3 +96,26 @@ export type AuditEvent = {
 };
 
 export type AuditListResponse = { items: AuditEvent[]; total: number; limit: number; offset: number };
+
+export type Organization = {
+  id: string;
+  tenant_id: string;
+  name: string;
+  status: string;
+};
+
+export type Team = {
+  id: string;
+  tenant_id: string;
+  organization_id: string;
+  name: string;
+};
+
+export type Project = {
+  id: string;
+  tenant_id: string;
+  organization_id: string;
+  team_id: string | null;
+  name: string;
+  status: string;
+};
