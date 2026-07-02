@@ -62,6 +62,16 @@
 
 ## Phase 4 Tenancy API（#t42）
 
+### PolicyRule 组织/团队/项目绑定
+
+策略决策请求的 `resource` 可携带 `organization_id`、`team_id`、`project_id`。`PolicyRule` 可通过 `organization_ids`、`team_ids`、`project_ids` 将规则绑定到对应资源维度；列表为空表示不限制该维度，列表包含 `*` 表示该维度通配。
+
+安全语义：
+
+- 规则声明了某一维度绑定时，资源必须携带对应 ID 且 ID 必须命中绑定列表。
+- 资源维度缺失或不匹配时，该规则不匹配，最终按 deny-by-default 返回 `NO_MATCHING_POLICY`。
+- 租户仍由 `tenant_id` 独立约束；组织/团队/项目维度不能放宽跨租户访问。
+
 ### GET `/api/v1/tenancy/organizations`
 
 用途：返回当前登录用户可见的 Organization 列表。
