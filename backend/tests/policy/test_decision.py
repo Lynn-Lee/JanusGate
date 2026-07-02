@@ -364,3 +364,82 @@ def test_policy_denies_when_request_context_missing_binding_fields_even_if_const
 
     assert result.decision == PolicyDecision.DENY
     assert result.reason_code == "APPROVAL_CONSTRAINT_MISMATCH"
+
+
+def test_policy_allows_rule_bound_to_matching_project_scope():
+    service = PolicyDecisionService(
+        rules=[
+            PolicyRule(
+                id="rule-project-scope",
+                subject_ids=["user-1"],
+                actions=["asset.connect"],
+                resource_ids=["asset-1"],
+                tenant_id="tenant-a",
+                project_ids=["project-a"],
+            )
+        ]
+    )
+
+    result = service.evaluate(
+        _request(
+            resource=ResourceRef(
+                id="asset-1",
+                type="ssh_asset",
+                tenant_id="tenant-a",
+                project_id="project-a",
+            )
+        )
+    )
+
+    assert result.decision == PolicyDecision.ALLOW
+    assert result.reason_code == "POLICY_ALLOWED"
+
+
+def test_policy_denies_rule_bound_to_different_project_scope():
+    service = PolicyDecisionService(
+        rules=[
+            PolicyRule(
+                id="rule-project-scope",
+                subject_ids=["user-1"],
+                actions=["asset.connect"],
+                resource_ids=["asset-1"],
+                tenant_id="tenant-a",
+                project_ids=["project-a"],
+            )
+        ]
+    )
+
+    result = service.evaluate(
+        _request(
+            resource=ResourceRef(
+                id="asset-1",
+                type="ssh_asset",
+                tenant_id="tenant-a",
+                project_id="project-b",
+            )
+        )
+    )
+
+    assert result.decision == PolicyDecision.DENY
+    assert result.reason_code == "NO_MATCHING_POLICY"
+    assert "rule:rule-project-scope:not_matched" in result.explain_trace
+
+
+def test_policy_denies_project_bound_rule_when_resource_scope_is_missing():
+    service = PolicyDecisionService(
+        rules=[
+            PolicyRule(
+                id="rule-project-scope",
+                subject_ids=["user-1"],
+                actions=["asset.connect"],
+                resource_ids=["asset-1"],
+                tenant_id="tenant-a",
+                project_ids=["project-a"],
+            )
+        ]
+    )
+
+    result = service.evaluate(_request())
+
+    assert result.decision == PolicyDecision.DENY
+    assert result.reason_code == "NO_MATCHING_POLICY"

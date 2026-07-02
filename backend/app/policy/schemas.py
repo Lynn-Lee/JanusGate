@@ -29,6 +29,9 @@ class ResourceRef(BaseModel):
     id: str
     type: str
     tenant_id: str = "default"
+    organization_id: str = ""
+    team_id: str = ""
+    project_id: str = ""
     labels: dict[str, str] = Field(default_factory=dict)
 
 
@@ -87,6 +90,9 @@ class PolicyRule(BaseModel):
     tenant_id: str = "default"
     require_mfa: bool = False
     require_approval: bool = False
+    organization_ids: list[str] = Field(default_factory=list)
+    team_ids: list[str] = Field(default_factory=list)
+    project_ids: list[str] = Field(default_factory=list)
     max_session_ttl_seconds: int = 900
     approval_use_type: Literal["single-use", "limited-use"] = "single-use"
     approval_max_uses: int = 1
@@ -98,7 +104,15 @@ class PolicyRule(BaseModel):
             and ("*" in self.subject_ids or request.subject.id in self.subject_ids)
             and request.action in self.actions
             and ("*" in self.resource_ids or request.resource.id in self.resource_ids)
+            and self._scope_matches(self.organization_ids, request.resource.organization_id)
+            and self._scope_matches(self.team_ids, request.resource.team_id)
+            and self._scope_matches(self.project_ids, request.resource.project_id)
         )
+
+    def _scope_matches(self, allowed_ids: list[str], resource_scope_id: str) -> bool:
+        if not allowed_ids:
+            return True
+        return "*" in allowed_ids or resource_scope_id in allowed_ids
 
 
 class PolicyDecisionResponse(BaseModel):
