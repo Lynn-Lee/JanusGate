@@ -55,3 +55,10 @@ npm --prefix frontend run build
 ```
 
 开发服务默认代理 `/api` 和 `/health` 到 `http://127.0.0.1:8000`；也可通过 `VITE_API_BASE_URL` 指向独立后端。会话页通过 `GET /api/v1/sessions/` 读取后端记录的当前用户会话，Workflow/JIT 页创建会话前会先换取真实短期 `connection_token`。
+
+Phase 3 API-level 主链路 smoke 可在后端运行：
+
+```bash
+cd backend
+pytest -q tests/test_phase3_api_smoke.py
+```

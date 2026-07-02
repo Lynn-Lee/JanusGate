@@ -239,7 +239,7 @@ JumpServer 上游在 2026-06-26 → 07-01 期间进行了重大技术栈升级�
 
 ### 4.4 残余风险与待增强
 
-1. **Phase 3 Go/No-Go 证据包**：6 页面与 server-backed session list 已进入代码基线，仍需完整 E2E / Docker / Helm / QA 证据收口
+1. **Phase 3 Go/No-Go 证据包**：6 页面、server-backed session list 与 API-level 主链路 smoke 已进入代码基线，仍需 Docker / Helm / QA 证据收口
 2. **策略持久化**：当前 PolicyDecisionService 为内存规则，需接入持久化策略
 3. **Connector 生产级信任链**：mTLS / attestation / key rotation 待 Phase 4
 4. **Vault 生产级后端**：当前为内存 AES-GCM，KMS/HSM/云 Vault 待 Phase 4
@@ -576,7 +576,7 @@ User ──┬── WorkflowRequest ──── JitGrant
 | **#t35** | PRD / IA / 里程碑计划 | architect | `08-phase3-mvp-prd-ia.md` | ✅ 完成 |
 | **#t36** | 前端控制台骨架 | frontend-engineer | `frontend/` 工程 + 路由/Layout/API client + 登录页 + 导航 + server-backed sessions page | ✅ 完成 |
 | **#t37** | API 契约补齐 | backend-engineer | `docs/api-contract.md` + OpenAPI ErrorResponse | ✅ 完成 |
-| **#t38** | E2E 主链路联调 | qa-engineer | API-level smoke + Docker/CI 环境 smoke | 🔄 进行中 |
+| **#t38** | E2E 主链路联调 | qa-engineer | `backend/tests/test_phase3_api_smoke.py` API-level smoke + Docker/CI 环境 smoke | 🔄 API-level smoke 完成，Docker/CI smoke 待补 |
 | **#t39** | 安全加固与威胁模型复核 | security-auditor | OAuth2/OIDC SSL + next_url + 凭据落盘 + HMAC 签名 + SSRF + 脱敏回归 + 密码策略 | 🔄 进行中 |
 | **#t40** | DevOps 收口 | devops-engineer | Docker/Compose/Helm 验证 + CI 门禁 + 发布回滚 | 🔄 进行中 |
 | **#t41** | QA Go/No-Go | qa-engineer | 验收矩阵 + 覆盖率门禁 + Go/No-Go 证据包 | 待 #t38 |
@@ -588,14 +588,14 @@ User ──┬── WorkflowRequest ──── JitGrant
 | M1：PRD/IA/API 契约锁定 | 0.5 天 | ✅ 完成 |
 | M2：前端控制台骨架 | 1 天 | frontend/ 工程 + 登录页 + 导航 |
 | M3：核心页面切片 | 1-2 天 | Assets/Sessions/Workflow/Audits/Settings 页面 |
-| M4：端到端联调与部署收口 | 1-2 天 | E2E 主链路 + Docker/Compose/Helm + QA 证据 |
+| M4：端到端联调与部署收口 | 1-2 天 | API-level 主链路 smoke 已补；Docker/Compose/Helm + QA 证据待补 |
 | M5：Phase 3 关闭 | 0.5 天 | 收口报告 + 看板关闭 + Phase 4 范围建议 |
 
 #### 11.1.4 验收标准
 
 **产品验收**：
 - 6 个 MVP 页面均可访问
-- E2E 主链路完整跑通
+- API-level 主链路 smoke 可重复跑通；浏览器/环境级 E2E 待 Docker/CI smoke 收口
 - 用户能明确看到申请/审批/grant/会话状态
 - 审计页能追踪主链路关键事件
 
