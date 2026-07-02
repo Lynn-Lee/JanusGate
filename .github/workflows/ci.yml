@@ -160,6 +160,9 @@ jobs:
       - name: Validate Docker Compose config
         run: docker compose config
 
+      - name: Run Phase 3 Compose health smoke
+        run: scripts/phase3-compose-health-smoke.sh
+
   helm-lint:
     name: Helm chart lint
     runs-on: ubuntu-24.04

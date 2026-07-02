@@ -23,7 +23,7 @@ from app.workflows.audit import WorkflowAuditSink
 
 
 def test_phase3_api_smoke_runs_jit_session_revoke_audit_chain() -> None:
-    now = datetime(2026, 7, 2, 9, 30, tzinfo=UTC)
+    now = datetime.now(UTC)
     audit_sink = WorkflowAuditSink(audit_service)
     workflow_service = WorkflowService(
         store=InMemoryWorkflowStore(),
@@ -121,7 +121,7 @@ def test_phase3_api_smoke_runs_jit_session_revoke_audit_chain() -> None:
                     "connection_token": raw_token,
                 },
             )
-            assert session.status_code == 201
+            assert session.status_code == 201, session.text
             assert session.json()["id"] == "session-smoke-1"
             assert session.json()["status"] == "active"
 

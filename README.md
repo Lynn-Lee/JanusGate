@@ -63,4 +63,4 @@ cd backend
 pytest -q tests/test_phase3_api_smoke.py
 ```
 
-CI 已包含 Phase 3 部署 smoke 门禁：`docker compose config` 校验 Compose 配置可渲染，`helm lint` 与 `helm template` 校验 Helm chart 可 lint/render。真实 Docker/Compose `/health` 环境 smoke 仍需在可用容器环境中执行。
+CI 已包含 Phase 3 部署 smoke 门禁：`docker compose config` 校验 Compose 配置可渲染，`scripts/phase3-compose-health-smoke.sh` 启动 backend 及其依赖并请求 `http://localhost:8000/health`，`helm lint` 与 `helm template` 校验 Helm chart 可 lint/render。Compose health smoke 脚本退出时会清理本轮容器和卷。

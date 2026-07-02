@@ -19,6 +19,7 @@ GitHub Actions 工作流位于 `.github/workflows/ci.yml`，当前包含：
 - Docker Buildx：构建 backend 镜像；仅 `v*` tag 会推送到 GHCR
 - `helm lint deploy/helm/janusgate`：Helm chart 基础校验
 - `docker compose config`：Compose 配置渲染 smoke，验证关键环境变量 fail-closed 约束可被 CI 测试值满足
+- `scripts/phase3-compose-health-smoke.sh`：启动 Compose backend 及依赖并请求 `/health`，退出时清理本轮容器和卷
 - `helm template janusgate deploy/helm/janusgate`：Helm chart 渲染 smoke，防止只通过 lint 但模板输出损坏
 
 安全边界：工作流只使用 `GITHUB_TOKEN` 在 release tag 场景推送 GHCR；不会读取或打印业务密钥。CI 中的 `SECRET_KEY` 是一次性测试值，不用于部署。
@@ -34,6 +35,14 @@ python -c 'import secrets; print(secrets.token_hex(32))'
 docker compose up --build -d
 curl -fsS http://localhost:8000/health
 ```
+
+Phase 3 部署 smoke 可直接运行：
+
+```bash
+scripts/phase3-compose-health-smoke.sh
+```
+
+脚本默认使用 `COMPOSE_PROJECT_NAME=janusgate-phase3-smoke`，适合 CI 或一次性本地验证；如未提供 `.env`，脚本会创建一次性测试 env 文件并在退出时删除。Compose 默认只发布 backend `8000`，PostgreSQL/Redis 仅在 Compose 网络内暴露，避免与本机数据库或缓存端口冲突。
 
 停止并保留数据：
 
