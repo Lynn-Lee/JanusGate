@@ -18,6 +18,8 @@ GitHub Actions 工作流位于 `.github/workflows/ci.yml`，当前包含：
 - `npm run build`：前端生产构建检查
 - Docker Buildx：构建 backend 镜像；仅 `v*` tag 会推送到 GHCR
 - `helm lint deploy/helm/janusgate`：Helm chart 基础校验
+- `docker compose config`：Compose 配置渲染 smoke，验证关键环境变量 fail-closed 约束可被 CI 测试值满足
+- `helm template janusgate deploy/helm/janusgate`：Helm chart 渲染 smoke，防止只通过 lint 但模板输出损坏
 
 安全边界：工作流只使用 `GITHUB_TOKEN` 在 release tag 场景推送 GHCR；不会读取或打印业务密钥。CI 中的 `SECRET_KEY` 是一次性测试值，不用于部署。
 

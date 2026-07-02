@@ -138,6 +138,28 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
+  deploy-smoke:
+    name: Phase 3 deploy smoke
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    needs: [backend-quality, frontend-quality]
+    env:
+      POSTGRES_PASSWORD: janusgate-ci-postgres
+      SECRET_KEY: ci-secret-key-ci-secret-key-ci-secret-key-32
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Write CI Compose env file
+        run: |
+          {
+            echo "POSTGRES_PASSWORD=${POSTGRES_PASSWORD}"
+            echo "SECRET_KEY=${SECRET_KEY}"
+          } > .env
+
+      - name: Validate Docker Compose config
+        run: docker compose config
+
   helm-lint:
     name: Helm chart lint
     runs-on: ubuntu-24.04
@@ -153,3 +175,6 @@ jobs:
 
       - name: Lint JanusGate chart
         run: helm lint deploy/helm/janusgate
+
+      - name: Render JanusGate chart
+        run: helm template janusgate deploy/helm/janusgate
