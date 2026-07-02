@@ -8,13 +8,16 @@ from app.api.tenancy.schemas import (
     OrganizationCreate,
     OrganizationListResponse,
     OrganizationResponse,
+    ProjectCreate,
+    ProjectListResponse,
+    ProjectResponse,
     TeamCreate,
     TeamListResponse,
     TeamResponse,
 )
 from app.core.database import get_db
 from app.core.deps import current_user
-from app.models.tenancy import Organization, Team
+from app.models.tenancy import Organization, Project, Team
 from app.tenancy.scope import actor_scope_from_user, scoped_select
 
 router = APIRouter(prefix="/tenancy", tags=["多租户"])
@@ -127,6 +130,67 @@ async def create_team(
     return _team_response(team)
 
 
+@router.get("/projects", response_model=ProjectListResponse)
+async def list_projects(
+    db: AsyncSession = Depends(get_db),
+    user: dict[str, Any] = Depends(current_user),
+) -> ProjectListResponse:
+    _require_tenancy_permission(user, "tenancy:read")
+    result = await db.execute(scoped_select(Project, actor_scope_from_user(user)))
+    projects = result.scalars().all()
+    items = [_project_response(project) for project in projects]
+    return ProjectListResponse(items=items, total=len(items))
+
+
+@router.post(
+    "/projects",
+    response_model=ProjectResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+async def create_project(
+    data: ProjectCreate,
+    db: AsyncSession = Depends(get_db),
+    user: dict[str, Any] = Depends(current_user),
+) -> ProjectResponse:
+    if "admin" not in user.get("permissions", []):
+        raise HTTPException(status_code=403, detail="缺少权限: admin")
+
+    tenant_id = str(user.get("tenant_id") or "default")
+    organization = await db.get(Organization, data.organization_id)
+    if organization is not None and organization.tenant_id != tenant_id:
+        raise HTTPException(status_code=403, detail="TENANT_SCOPE_VIOLATION")
+    if organization is None:
+        raise HTTPException(status_code=404, detail="ORGANIZATION_NOT_FOUND")
+
+    if data.team_id is not None:
+        team = await db.get(Team, data.team_id)
+        if team is not None and (
+            team.tenant_id != tenant_id or team.organization_id != data.organization_id
+        ):
+            raise HTTPException(status_code=403, detail="TENANT_SCOPE_VIOLATION")
+        if team is None:
+            raise HTTPException(status_code=404, detail="TEAM_NOT_FOUND")
+
+    existing = await db.get(Project, data.id)
+    if existing is not None and existing.tenant_id != tenant_id:
+        raise HTTPException(status_code=403, detail="TENANT_SCOPE_VIOLATION")
+    if existing is not None:
+        raise HTTPException(status_code=400, detail="PROJECT_ALREADY_EXISTS")
+
+    project = Project(
+        id=data.id,
+        tenant_id=tenant_id,
+        organization_id=data.organization_id,
+        team_id=data.team_id,
+        name=data.name,
+        status=data.status,
+    )
+    db.add(project)
+    await db.commit()
+    await db.refresh(project)
+    return _project_response(project)
+
+
 def _require_tenancy_permission(user: dict[str, Any], permission: str) -> None:
     permissions = user.get("permissions", [])
     if "admin" in permissions or permission in permissions:
@@ -140,4 +204,15 @@ def _team_response(team: Team) -> TeamResponse:
         tenant_id=team.tenant_id,
         organization_id=team.organization_id,
         name=team.name,
+    )
+
+
+def _project_response(project: Project) -> ProjectResponse:
+    return ProjectResponse(
+        id=project.id,
+        tenant_id=project.tenant_id,
+        organization_id=project.organization_id,
+        team_id=project.team_id,
+        name=project.name,
+        status=project.status,
     )
