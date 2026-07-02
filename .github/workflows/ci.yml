@@ -55,7 +55,7 @@ jobs:
           SECRET_KEY: ci-secret-key-ci-secret-key-ci-secret-key-32
           DATABASE_URL: postgresql+asyncpg://janusgate:janusgate@localhost:5432/janusgate
           REDIS_URL: redis://localhost:6379/0
-        run: pytest
+        run: pytest --cov=app --cov-report=term-missing --cov-fail-under=80
 
       - name: Bandit security scan
         run: bandit -q -r app

@@ -55,8 +55,8 @@ JanusGate 定位为**面向企业和云原生环境的策略驱动 PAM / 零信�
 | Phase 0：评估与重构决策 | ✅ 完成 | 本文档 + 00-09 系列文档 |
 | Phase 1：基础重构基线 | ✅ 完成 | FastAPI 后端 + 安全基座 + 核心领域模型 + CI/CD |
 | Phase 2：Workflow/JIT 审批流 | ✅ 完成 | JIT 申请/审批/Grant + Policy/Session/Audit 接入 |
-| **Phase 3：产品化 MVP** | **🔄 进行中** | 前端控制台 + E2E 主链路 + 部署收口 |
-| Phase 4：企业级能力增强 | 待启动 | 多租户 + 凭据轮换 + SSH CA + 会话录制 |
+| **Phase 3：产品化 MVP** | **✅ MVP Go** | 前端控制台 + E2E 主链路 + 部署收口 + QA Go/No-Go |
+| Phase 4：企业级能力增强 | 下一步 | 多租户 + 凭据轮换 + SSH CA + 会话录制 |
 | Phase 5：生产化与商业化 | 待启动 | 高可用 + 合规报表 + 性能压测 + 文档站 |
 
 ### 1.4 第一闭环
@@ -239,14 +239,13 @@ JumpServer 上游在 2026-06-26 → 07-01 期间进行了重大技术栈升级�
 
 ### 4.4 残余风险与待增强
 
-1. **Phase 3 Go/No-Go 证据包**：6 页面、server-backed session list、API-level 主链路 smoke、CI Compose/Helm 渲染门禁与 Compose `/health` smoke 已进入代码基线，仍需 QA 证据收口
+1. **多租户**：当前 tenant_id 字段存在但无 UI 和组织/团队/项目级隔离 enforcement，作为 Phase 4 #t42 下一步
 2. **策略持久化**：当前 PolicyDecisionService 为内存规则，需接入持久化策略
 3. **Connector 生产级信任链**：mTLS / attestation / key rotation 待 Phase 4
 4. **Vault 生产级后端**：当前为内存 AES-GCM，KMS/HSM/云 Vault 待 Phase 4
 5. **Session 持久化与真实通道**：当前为内存 store，真实 Connector 接入待 Phase 4
 6. **审计投递可靠性**：SIEM 投递失败不阻断，需补可靠队列/重试/死信
 7. **运行时安全**：镜像签名、SBOM、漏洞扫描门禁待 Phase 5
-8. **多租户**：当前 tenant_id 字段存在但无 UI 和隔离 enforcement
 
 ---
 
@@ -577,9 +576,9 @@ User ──┬── WorkflowRequest ──── JitGrant
 | **#t36** | 前端控制台骨架 | frontend-engineer | `frontend/` 工程 + 路由/Layout/API client + 登录页 + 导航 + server-backed sessions page | ✅ 完成 |
 | **#t37** | API 契约补齐 | backend-engineer | `docs/api-contract.md` + OpenAPI ErrorResponse | ✅ 完成 |
 | **#t38** | E2E 主链路联调 | qa-engineer | `backend/tests/test_phase3_api_smoke.py` API-level smoke + Docker/CI 环境 smoke | ✅ API-level smoke + CI deploy config/render smoke + Compose `/health` smoke 完成 |
-| **#t39** | 安全加固与威胁模型复核 | security-auditor | OAuth2/OIDC SSL + next_url + 凭据落盘 + HMAC 签名 + SSRF + 脱敏回归 + 密码策略 | 🔄 进行中 |
+| **#t39** | 安全加固与威胁模型复核 | security-auditor | Phase 3 安全验收矩阵已由 `docs/qa/phase3-go-no-go.md` 和安全回归测试收口；OAuth/OIDC 等未启用能力留作 Phase 4+ 威胁模型复核 | ✅ Phase 3 收口 |
 | **#t40** | DevOps 收口 | devops-engineer | Docker/Compose/Helm 验证 + CI 门禁 + 发布回滚 | ✅ CI Compose config + Helm lint/template + Compose `/health` smoke 已补 |
-| **#t41** | QA Go/No-Go | qa-engineer | 验收矩阵 + 覆盖率门禁 + Go/No-Go 证据包 | 下一步 |
+| **#t41** | QA Go/No-Go | qa-engineer | `docs/qa/phase3-go-no-go.md` 验收矩阵 + CI 覆盖率门禁 + Go/No-Go 证据包 | ✅ 完成 |
 
 #### 11.1.3 里程碑
 
@@ -588,14 +587,14 @@ User ──┬── WorkflowRequest ──── JitGrant
 | M1：PRD/IA/API 契约锁定 | 0.5 天 | ✅ 完成 |
 | M2：前端控制台骨架 | 1 天 | frontend/ 工程 + 登录页 + 导航 |
 | M3：核心页面切片 | 1-2 天 | Assets/Sessions/Workflow/Audits/Settings 页面 |
-| M4：端到端联调与部署收口 | 1-2 天 | API-level 主链路 smoke + CI Compose/Helm 渲染门禁 + Compose `/health` smoke 已补；QA 证据待补 |
-| M5：Phase 3 关闭 | 0.5 天 | 收口报告 + 看板关闭 + Phase 4 范围建议 |
+| M4：端到端联调与部署收口 | 1-2 天 | ✅ API-level 主链路 smoke + CI Compose/Helm 渲染门禁 + Compose `/health` smoke + QA Go/No-Go 证据包 |
+| M5：Phase 3 关闭 | 0.5 天 | ✅ Phase 3 收口证据 + Phase 4 范围建议 |
 
 #### 11.1.4 验收标准
 
 **产品验收**：
 - 6 个 MVP 页面均可访问
-- API-level 主链路 smoke 可重复跑通；CI deploy config/render smoke 已覆盖 Compose 与 Helm 静态渲染；Compose `/health` smoke 可重复执行；浏览器/环境级 E2E 待 QA 证据包收口
+- API-level 主链路 smoke 可重复跑通；CI deploy config/render smoke 已覆盖 Compose 与 Helm 静态渲染；Compose `/health` smoke 可重复执行；QA Go/No-Go 证据包已收口
 - 用户能明确看到申请/审批/grant/会话状态
 - 审计页能追踪主链路关键事件
 
