@@ -133,6 +133,43 @@
 
 后端会再次走 JIT grant reserve/consume、PolicyDecisionService 和 connection token consume/绑定校验；任一环节不匹配都拒绝创建会话。
 
+### GET `/api/v1/sessions/`
+
+用途：返回当前登录用户、当前租户下的会话列表，供 Phase 3 会话页展示状态、关闭会话和跳转审计追踪。
+
+鉴权：需要登录态；后端使用当前用户 `id` 与 `tenant_id` 过滤，不接受前端传 subject/tenant。
+
+响应 `200`：
+
+```json
+{
+  "items": [
+    {
+      "id": "session-1",
+      "asset_id": "asset-1",
+      "account_id": "root",
+      "connector_id": "connector-1",
+      "protocol": "ssh",
+      "status": "active",
+      "connection_url": "wss://connector.example/sessions/session-1",
+      "workflow_request_id": "wr-1",
+      "jit_grant_id": "grant-1",
+      "created_at": "2026-07-01T12:25:00+00:00",
+      "updated_at": "2026-07-01T12:25:00+00:00",
+      "closed_at": null,
+      "audit_event_ids": ["audit-1"]
+    }
+  ],
+  "total": 1
+}
+```
+
+安全语义：
+
+- 只返回当前用户自己的会话；其他 subject 的会话不得出现在响应中。
+- 只返回当前租户会话；跨租户数据 fail-closed 为空集合。
+- 列表按 `created_at` 倒序，便于控制台优先展示最新会话。
+
 ## 前端解析建议
 
 1. 先读 `code` 做流程判断；业务码优先于 HTTP 状态。

@@ -239,7 +239,7 @@ JumpServer 上游在 2026-06-26 → 07-01 期间进行了重大技术栈升级�
 
 ### 4.4 残余风险与待增强
 
-1. **前端控制台**：尚未实现（Phase 3 核心交付）
+1. **Phase 3 Go/No-Go 证据包**：6 页面与 server-backed session list 已进入代码基线，仍需完整 E2E / Docker / Helm / QA 证据收口
 2. **策略持久化**：当前 PolicyDecisionService 为内存规则，需接入持久化策略
 3. **Connector 生产级信任链**：mTLS / attestation / key rotation 待 Phase 4
 4. **Vault 生产级后端**：当前为内存 AES-GCM，KMS/HSM/云 Vault 待 Phase 4
@@ -574,11 +574,11 @@ User ──┬── WorkflowRequest ──── JitGrant
 | 任务 ID | 任务 | Owner | 交付物 | 状态 |
 |---------|------|-------|--------|------|
 | **#t35** | PRD / IA / 里程碑计划 | architect | `08-phase3-mvp-prd-ia.md` | ✅ 完成 |
-| **#t36** | 前端控制台骨架 | frontend-engineer | `frontend/` 工程 + 路由/Layout/API client + 登录页 + 导航 | 🔄 进行中 |
+| **#t36** | 前端控制台骨架 | frontend-engineer | `frontend/` 工程 + 路由/Layout/API client + 登录页 + 导航 + server-backed sessions page | ✅ 完成 |
 | **#t37** | API 契约补齐 | backend-engineer | `docs/api-contract.md` + OpenAPI ErrorResponse | ✅ 完成 |
-| **#t38** | E2E 主链路联调 | qa-engineer | API-level smoke + Docker/CI 环境 smoke | 待 #t36 |
+| **#t38** | E2E 主链路联调 | qa-engineer | API-level smoke + Docker/CI 环境 smoke | 🔄 进行中 |
 | **#t39** | 安全加固与威胁模型复核 | security-auditor | OAuth2/OIDC SSL + next_url + 凭据落盘 + HMAC 签名 + SSRF + 脱敏回归 + 密码策略 | 🔄 进行中 |
-| **#t40** | DevOps 收口 | devops-engineer | Docker/Compose/Helm 验证 + CI 门禁 + 发布回滚 | 待 #t36 |
+| **#t40** | DevOps 收口 | devops-engineer | Docker/Compose/Helm 验证 + CI 门禁 + 发布回滚 | 🔄 进行中 |
 | **#t41** | QA Go/No-Go | qa-engineer | 验收矩阵 + 覆盖率门禁 + Go/No-Go 证据包 | 待 #t38 |
 
 #### 11.1.3 里程碑

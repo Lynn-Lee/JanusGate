@@ -1,23 +1,21 @@
 import { Button, Card, Space, Table, Tag, Typography } from 'antd';
-import { useAuth } from '../auth/AuthContext';
-import { useApiMessage, useSessionCache, getErrorMessage } from './pageUtils';
-import type { SessionRecord } from './types';
 import { useState } from 'react';
+import { useAuth } from '../auth/AuthContext';
+import { ErrorState, LoadingState } from '../components/StatusView';
+import { getErrorMessage, useApiData, useApiMessage } from './pageUtils';
+import type { ListResponse, SessionRecord } from './types';
 
 export function SessionsPage() {
   const { api } = useAuth();
-  const { read, write } = useSessionCache();
-  const [sessions, setSessions] = useState<SessionRecord[]>(read);
+  const sessions = useApiData(() => api.get<ListResponse<SessionRecord>>('/api/v1/sessions/'), []);
   const [closing, setClosing] = useState('');
   const msg = useApiMessage();
 
   const closeSession = async (session: SessionRecord) => {
     setClosing(session.id);
     try {
-      const updated = await api.post<SessionRecord>(`/api/v1/sessions/${session.id}/close`, { reason: 'console_requested' });
-      const next = sessions.map((item) => (item.id === updated.id ? updated : item));
-      setSessions(next);
-      write(next);
+      await api.post<SessionRecord>(`/api/v1/sessions/${session.id}/close`, { reason: 'console_requested' });
+      sessions.reload();
       msg.success('会话已关闭');
     } catch (err) {
       msg.error(getErrorMessage(err));
@@ -31,13 +29,16 @@ export function SessionsPage() {
       <div className="jg-page-header">
         <div>
           <Typography.Title level={2}>会话列表</Typography.Title>
-          <Typography.Text type="secondary">展示本控制台创建的会话，并提供关闭与审计追踪入口。</Typography.Text>
+          <Typography.Text type="secondary">展示后端记录的当前用户会话，并提供关闭与审计追踪入口。</Typography.Text>
         </div>
       </div>
       <Card>
+        {sessions.loading ? <LoadingState /> : null}
+        {sessions.error ? <ErrorState message={sessions.error} onRetry={sessions.reload} /> : null}
         <Table
           rowKey="id"
-          dataSource={sessions}
+          loading={sessions.loading}
+          dataSource={sessions.data?.items ?? []}
           locale={{ emptyText: '当前尚无会话。请在 Workflow/JIT 页面使用 active grant 创建会话。' }}
           columns={[
             { title: '会话 ID', dataIndex: 'id', ellipsis: true },

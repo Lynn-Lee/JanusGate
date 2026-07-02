@@ -836,6 +836,51 @@ def test_session_api_create_and_close_routes() -> None:
         app.dependency_overrides.clear()
 
 
+def test_session_api_lists_only_current_user_sessions() -> None:
+    service, _policy, _token_store, _audit = build_service()
+
+    app.dependency_overrides[current_user] = lambda: {
+        "id": "user-1",
+        "username": "alice",
+        "tenant_id": "default",
+        "permissions": ["sessions:connect"],
+    }
+    app.dependency_overrides[get_session_gateway_service] = lambda: service
+    try:
+        with TestClient(app) as client:
+            create_response = client.post(
+                "/api/v1/sessions/",
+                json={
+                    "asset_id": "asset-1",
+                    "account_id": "account-1",
+                    "protocol": "ssh",
+                    "connection_token": "token-1",
+                },
+            )
+            assert create_response.status_code == 201
+
+            list_response = client.get("/api/v1/sessions/")
+
+            assert list_response.status_code == 200
+            payload = list_response.json()
+            assert payload["total"] == 1
+            assert payload["items"][0]["id"] == create_response.json()["id"]
+
+        app.dependency_overrides[current_user] = lambda: {
+            "id": "user-2",
+            "username": "bob",
+            "tenant_id": "default",
+            "permissions": ["sessions:connect"],
+        }
+        with TestClient(app) as client:
+            other_user_response = client.get("/api/v1/sessions/")
+
+        assert other_user_response.status_code == 200
+        assert other_user_response.json() == {"items": [], "total": 0}
+    finally:
+        app.dependency_overrides.clear()
+
+
 def test_session_api_issues_real_connection_token_for_frontend() -> None:
     now = datetime(2026, 6, 29, 15, 0, tzinfo=UTC)
 

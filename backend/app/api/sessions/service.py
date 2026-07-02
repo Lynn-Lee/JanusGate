@@ -287,6 +287,14 @@ class InMemorySessionStore:
             if session.jit_grant_id == jit_grant_id
         ]
 
+    async def list_by_subject(self, *, subject_id: str, tenant_id: str) -> list[SessionRecord]:
+        sessions = [
+            session
+            for session in self._sessions.values()
+            if session.subject_id == subject_id and session.tenant_id == tenant_id
+        ]
+        return sorted(sessions, key=lambda session: session.created_at, reverse=True)
+
 
 class SessionGatewayService:
     def __init__(
@@ -499,6 +507,9 @@ class SessionGatewayService:
         await self.session_store.save(session)
         await self._publish("session.closed", session, reason_code=reason)
         return session
+
+    async def list_sessions(self, *, subject_id: str, tenant_id: str) -> list[SessionRecord]:
+        return await self.session_store.list_by_subject(subject_id=subject_id, tenant_id=tenant_id)
 
     async def revoke_sessions_by_jit_grant(self, jit_grant_id: str, reason: str) -> list[str]:
         sessions = await self.session_store.list_by_jit_grant(jit_grant_id)

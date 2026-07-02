@@ -12,6 +12,7 @@ from app.api.sessions.schemas import (
     SessionConnectionTokenRequest,
     SessionConnectionTokenResponse,
     SessionCreateRequest,
+    SessionListResponse,
     SessionResponse,
 )
 from app.api.sessions.service import (
@@ -100,6 +101,18 @@ async def issue_connection_token(
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return SessionConnectionTokenResponse.from_issue(issue)
+
+
+@router.get("/", response_model=SessionListResponse)
+async def list_sessions(
+    user: dict[str, Any] = Depends(current_user),
+    service: SessionGatewayService = Depends(get_session_gateway_service),
+) -> SessionListResponse:
+    sessions = await service.list_sessions(
+        subject_id=str(user["id"]),
+        tenant_id=str(user.get("tenant_id", "default")),
+    )
+    return SessionListResponse.from_records(sessions)
 
 
 @router.post("/", response_model=SessionResponse, status_code=status.HTTP_201_CREATED)

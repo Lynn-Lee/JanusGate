@@ -82,3 +82,13 @@ class SessionResponse(BaseModel):
             closed_at=session.closed_at.isoformat() if session.closed_at else None,
             audit_event_ids=session.audit_event_ids,
         )
+
+
+class SessionListResponse(BaseModel):
+    items: list[SessionResponse]
+    total: int
+
+    @classmethod
+    def from_records(cls, sessions: list[SessionRecord]) -> SessionListResponse:
+        items = [SessionResponse.from_record(session) for session in sessions]
+        return cls(items=items, total=len(items))

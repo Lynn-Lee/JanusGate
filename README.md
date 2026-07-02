@@ -24,8 +24,8 @@ docker compose up -d
 ## 文档
 
 - [最终评估报告](docs/architecture/00-final-evaluation.md) — 基于 JumpServer 的完整评估与重构基线
-- 产品设计文档（待补充）
-- API 规范（待补充）
+- [主基线文档与研发总计划](docs/architecture/10-master-evaluation-and-roadmap.md) — 当前唯一权威 roadmap
+- [Phase 3 API 契约](docs/api-contract.md) — 前后端联调契约与错误码规范
 
 ## 技术栈
 
@@ -54,4 +54,4 @@ npm --prefix frontend run lint
 npm --prefix frontend run build
 ```
 
-开发服务默认代理 `/api` 和 `/health` 到 `http://127.0.0.1:8000`；也可通过 `VITE_API_BASE_URL` 指向独立后端。当前后端只暴露会话创建/关闭接口，尚无会话列表接口，因此前端会话页临时展示本控制台创建/关闭的本地会话缓存；后续后端提供列表后应替换为服务端数据源。
+开发服务默认代理 `/api` 和 `/health` 到 `http://127.0.0.1:8000`；也可通过 `VITE_API_BASE_URL` 指向独立后端。会话页通过 `GET /api/v1/sessions/` 读取后端记录的当前用户会话，Workflow/JIT 页创建会话前会先换取真实短期 `connection_token`。
