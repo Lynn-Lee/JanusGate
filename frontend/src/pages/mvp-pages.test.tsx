@@ -10,6 +10,9 @@ const request = { id: 'req-1', tenant_id: 'default', requester_id: '1', requeste
 const grant = { id: 'grant-1', tenant_id: 'default', workflow_request_id: 'req-1', subject_id: '1', asset_id: '1', account_id: 'root', protocol: 'ssh', action: 'session.connect', status: 'active', issued_at: '2026-07-01T00:01:00Z', expires_at: '2026-07-01T00:31:00Z', revoked_at: null, max_session_ttl_seconds: 1800, constraints: {} };
 const audit = { id: 'audit-1', tenant_id: 'default', actor_id: '1', actor_username: 'admin', event_type: 'workflow.request.approved', category: 'workflow', action: 'approve', resource_type: 'workflow_request', resource_id: 'req-1', session_id: null, severity: 'medium', message: '审批通过', metadata: { token: 'secret-token', safe: 'visible' }, sequence_number: 1, created_at: '2026-07-01T00:02:00Z' };
 const session = { id: 'session-1', asset_id: '1', account_id: 'root', connector_id: 'connector-1', protocol: 'ssh', status: 'active', connection_url: 'ssh://10.0.0.10', workflow_request_id: 'req-1', jit_grant_id: 'grant-1', created_at: '2026-07-01T00:03:00Z', updated_at: '2026-07-01T00:03:00Z', closed_at: null, audit_event_ids: [] };
+const organization = { id: 'org-a', tenant_id: 'tenant-a', name: 'Tenant A Ops', status: 'active' };
+const team = { id: 'team-a', tenant_id: 'tenant-a', organization_id: 'org-a', name: 'Ops Team' };
+const project = { id: 'project-a', tenant_id: 'tenant-a', organization_id: 'org-a', team_id: 'team-a', name: 'Production Project', status: 'active' };
 
 function installFetch() {
   return vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -22,6 +25,9 @@ function installFetch() {
     if (url.endsWith('/api/v1/workflows/grants/active')) return Response.json({ items: [grant], total: 1 });
     if (url.endsWith('/api/v1/sessions/') && method === 'GET') return Response.json({ items: [session], total: 1 });
     if (url.endsWith('/api/v1/audits/events')) return Response.json({ items: [audit], total: 1, limit: 50, offset: 0 });
+    if (url.endsWith('/api/v1/tenancy/organizations')) return Response.json({ items: [organization], total: 1 });
+    if (url.endsWith('/api/v1/tenancy/teams')) return Response.json({ items: [team], total: 1 });
+    if (url.endsWith('/api/v1/tenancy/projects')) return Response.json({ items: [project], total: 1 });
     if (url.endsWith('/health')) return Response.json({ status: 'ok', version: '0.1.0' });
     return Response.json(session);
   });
@@ -85,5 +91,15 @@ describe('MVP pages', () => {
     await waitFor(() => expect(screen.getByText('运行时状态')).toBeInTheDocument());
     expect(screen.getByText('JWT Bearer 访问令牌')).toBeInTheDocument();
     expect(screen.getByText('PostgreSQL / SQLAlchemy async')).toBeInTheDocument();
+  });
+
+  it('shows Phase 4 tenancy organization, team, and project inventory', async () => {
+    history.pushState(null, '', '/tenancy');
+    render(<App />);
+
+    expect(await screen.findByRole('heading', { name: '多租户组织结构' })).toBeInTheDocument();
+    expect(screen.getByText('Tenant A Ops')).toBeInTheDocument();
+    expect(screen.getByText('Ops Team')).toBeInTheDocument();
+    expect(screen.getByText('Production Project')).toBeInTheDocument();
   });
 });
