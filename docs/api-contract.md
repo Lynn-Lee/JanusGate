@@ -2,8 +2,8 @@
 
 > 面向 #t36 前端控制台、#t38 E2E smoke 和 #t41 QA 门禁。本文件记录当前后端稳定契约，后续新增 API 默认沿用。
 
-更新时间：2026-07-01
-范围：Phase 3 MVP 前端/后端联调契约。
+更新时间：2026-07-02
+范围：Phase 3 MVP 前端/后端联调契约，以及 Phase 4 多租户增量契约。
 
 ## 基础约定
 
@@ -58,6 +58,72 @@
 - Sessions：`/api/v1/sessions/*`，会话创建/关闭，JIT grant 绑定。
 - Workflow/JIT：`/api/v1/workflows/*`，申请、提交、审批、拒绝、撤销、active grant。
 - Audit/SIEM：`/api/v1/audits/events`，审计事件创建和检索。
+- Tenancy：`/api/v1/tenancy/*`，Phase 4 组织/团队/项目管理与租户隔离 API。
+
+## Phase 4 Tenancy API（#t42）
+
+### GET `/api/v1/tenancy/organizations`
+
+用途：返回当前登录用户可见的 Organization 列表。
+
+鉴权：需要登录态；`admin` 或 `tenancy:read` 权限可访问。后端使用当前用户 `tenant_id` 和 `app.tenancy.scope.scoped_select()` 过滤，不接受前端传入 tenant。
+
+响应 `200`：
+
+```json
+{
+  "items": [
+    {
+      "id": "org-a",
+      "tenant_id": "tenant-a",
+      "name": "Tenant A Ops",
+      "status": "active"
+    }
+  ],
+  "total": 1
+}
+```
+
+安全语义：
+
+- 跨租户 Organization 不出现在响应中。
+- 非 admin 用户若绑定了 `organization_id`，只返回该用户可见组织。
+- 未授权用户返回 `403` 的统一错误响应。
+
+### POST `/api/v1/tenancy/organizations`
+
+用途：在当前用户租户内创建 Organization。
+
+鉴权：需要登录态和 `admin` 权限；后端使用当前用户 `tenant_id` 写入，不接受前端传入 tenant。
+
+请求体：
+
+```json
+{
+  "id": "org-a",
+  "name": "Tenant A Ops",
+  "status": "active"
+}
+```
+
+响应 `201`：
+
+```json
+{
+  "id": "org-a",
+  "tenant_id": "tenant-a",
+  "name": "Tenant A Ops",
+  "status": "active"
+}
+```
+
+错误码：
+
+| HTTP | detail | 说明 |
+| --- | --- | --- |
+| 400 | `ORGANIZATION_ALREADY_EXISTS` | 当前租户内组织 ID 已存在 |
+| 403 | `TENANT_SCOPE_VIOLATION` | 组织 ID 已被其他租户占用 |
+| 403 | `缺少权限: admin` | 当前用户不能创建组织 |
 
 ## Session connection token（#t42）
 

@@ -239,7 +239,7 @@ JumpServer 上游在 2026-06-26 → 07-01 期间进行了重大技术栈升级�
 
 ### 4.4 残余风险与待增强
 
-1. **多租户**：Phase 4 #t42 已建立后端 Organization/Team/Project 模型与 `scoped_select()` 租户过滤基座；组织/团队/项目管理 API、UI 与更细粒度策略绑定仍待后续切片
+1. **多租户**：Phase 4 #t42 已建立后端 Organization/Team/Project 模型、`scoped_select()` 租户过滤基座，以及租户隔离的 Organization 管理 API；Team/Project 管理 API、UI 与更细粒度策略绑定仍待后续切片
 2. **策略持久化**：当前 PolicyDecisionService 为内存规则，需接入持久化策略
 3. **Connector 生产级信任链**：mTLS / attestation / key rotation 待 Phase 4
 4. **Vault 生产级后端**：当前为内存 AES-GCM，KMS/HSM/云 Vault 待 Phase 4
@@ -623,7 +623,7 @@ User ──┬── WorkflowRequest ──── JitGrant
 
 | 任务 ID | 任务 | Owner | 范围 | 优先级 |
 |---------|------|-------|------|--------|
-| **#t42** | 多租户与组织/团队/项目维度权限 | architect + backend | 后端 Organization/Team/Project 模型 + DB 层 `tenant_id` scope helper 已完成；管理 API、UI 与细粒度策略绑定待后续切片 | 高 |
+| **#t42** | 多租户与组织/团队/项目维度权限 | architect + backend | 后端 Organization/Team/Project 模型 + DB 层 `tenant_id` scope helper + Organization 管理 API 已完成；Team/Project API、UI 与细粒度策略绑定待后续切片 | 高 |
 | **#t43** | 资产账号托管与凭据轮换 | backend | Account 模型 + CredentialRotation 调度 + 双写迁移 + 回滚 | 高 |
 | **#t44** | SSH CA / 临时证书 | backend + security | SshCertificateAuthority + 签发/撤销 + 资产信任配置 | 高 |
 | **#t45** | 连接器/边缘网关架构 | architect + backend | mTLS + attestation + key rotation + heartbeat + Connector SDK | 高 |
