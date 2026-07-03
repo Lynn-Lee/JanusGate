@@ -239,7 +239,7 @@ JumpServer 上游在 2026-06-26 → 07-01 期间进行了重大技术栈升级�
 
 ### 4.4 残余风险与待增强
 
-1. **多租户、账号托管与 SSH CA**：Phase 4 #t42 已建立后端 Organization/Team/Project 模型、`scoped_select()` 租户过滤基座、租户隔离的 Organization/Team/Project 管理 API、前端 `/tenancy` 只读组织结构页，以及 PolicyRule 的 organization/team/project 资源维度绑定；Phase 4 #t43 已启动 `Account` 持久化模型与租户/项目作用域账号列表、创建 API，并补 `CredentialRotation` 调度记录、账号作用域 API、到期轮换执行 worker、旧/新 secret 引用记录、completed rotation 回滚和前端 `/accounts` 账号托管/轮换调度页；Phase 4 #t44 已启动 `SshCertificateAuthority` / `SshCertificate` 后端模型、资产 SSH CA 信任配置字段、CA 管理/禁用 API、签发/撤销服务契约、临时证书签发/撤销 REST API、API 路由可用的 Vault-backed OpenSSH signer，以及连接器/资产侧可读取的 SSH CA trust bundle API
+1. **多租户、账号托管与 SSH CA**：Phase 4 #t42 已建立后端 Organization/Team/Project 模型、`scoped_select()` 租户过滤基座、租户隔离的 Organization/Team/Project 管理 API、前端 `/tenancy` 只读组织结构页，以及 PolicyRule 的 organization/team/project 资源维度绑定；Phase 4 #t43 已启动 `Account` 持久化模型与租户/项目作用域账号列表、创建 API，并补 `CredentialRotation` 调度记录、账号作用域 API、到期轮换执行 worker、旧/新 secret 引用记录、completed rotation 回滚和前端 `/accounts` 账号托管/轮换调度页；Phase 4 #t44 已启动 `SshCertificateAuthority` / `SshCertificate` 后端模型、资产 SSH CA 信任配置字段、CA 管理/禁用 API、签发/撤销服务契约、临时证书签发/撤销 REST API、API 路由可用的 Vault-backed OpenSSH signer、连接器/资产侧可读取的 SSH CA trust bundle API，以及前端 `/ssh-ca` SSH CA / 临时证书入口
 2. **策略持久化**：当前 PolicyDecisionService 为内存规则，需接入持久化策略
 3. **Connector 生产级信任链**：mTLS / attestation / key rotation 待 Phase 4
 4. **Vault 生产级后端**：当前为内存 AES-GCM，KMS/HSM/云 Vault 待 Phase 4
@@ -473,7 +473,7 @@ User ──┬── WorkflowRequest ──── JitGrant
 - connection token：connector 必须 active + policy allow → 签发 jgt_ 前缀短期 token
 
 **Phase 4 增强**：
-- SSH CA / 临时证书服务已启动后端模型、CA 管理/禁用 API、签发/撤销服务契约、临时证书签发/撤销 REST API、API 路由可用的 Vault-backed OpenSSH signer，以及连接器/资产侧可读取的 SSH CA trust bundle API
+- SSH CA / 临时证书服务已启动后端模型、CA 管理/禁用 API、签发/撤销服务契约、临时证书签发/撤销 REST API、API 路由可用的 Vault-backed OpenSSH signer、连接器/资产侧可读取的 SSH CA trust bundle API，以及前端 `/ssh-ca` 管理入口
 - mTLS 证书绑定
 - key rotation
 - capability reporting（协议/能力声明）
@@ -626,7 +626,7 @@ User ──┬── WorkflowRequest ──── JitGrant
 |---------|------|-------|------|--------|
 | **#t42** | 多租户与组织/团队/项目维度权限 | architect + backend | 后端 Organization/Team/Project 模型 + DB 层 `tenant_id` scope helper + Organization/Team/Project 管理 API + `/tenancy` 只读控制台页 + PolicyRule 组织/团队/项目资源维度绑定已完成；后续业务接入跟随 #t43/#t44/#t45 | 高 |
 | **#t43** | 资产账号托管与凭据轮换 | backend + frontend | Account 模型 + 租户/项目作用域账号列表与创建 API 已启动；CredentialRotation 调度 API、到期轮换执行 worker、旧/新 secret 引用记录与 completed rotation 回滚已完成；前端 `/accounts` 账号托管页已可查看 secret 引用、轮换记录并调度凭据轮换 | 高 |
-| **#t44** | SSH CA / 临时证书 | backend + security | `SshCertificateAuthority` / `SshCertificate` 模型 + `Asset.trusted_ssh_ca_id` 信任配置字段 + CA 管理/禁用 API + 后端签发/撤销服务契约 + 临时证书签发/撤销 REST API + API 路由可用的 Vault-backed OpenSSH signer + SSH CA trust bundle API 已完成；后续补前端入口 | 高 |
+| **#t44** | SSH CA / 临时证书 | backend + security | `SshCertificateAuthority` / `SshCertificate` 模型 + `Asset.trusted_ssh_ca_id` 信任配置字段 + CA 管理/禁用 API + 后端签发/撤销服务契约 + 临时证书签发/撤销 REST API + API 路由可用的 Vault-backed OpenSSH signer + SSH CA trust bundle API + 前端 `/ssh-ca` CA/trust bundle/临时证书入口已完成；后续补连接器生产级信任链或签发体验增强 | 高 |
 | **#t45** | 连接器/边缘网关架构 | architect + backend | mTLS + attestation + key rotation + heartbeat + Connector SDK | 高 |
 | **#t46** | 会话录制、回放、命令检索 | backend + frontend | SessionRecording + 命令审计实时上报 + 回放 UI + 全文搜索 | 中 |
 | **#t47** | WebHook / 通知中心 / 工单系统增强 | backend | WebhookEndpoint + NotificationRule + 真实 IM 通知 + 多级审批 | 中 |

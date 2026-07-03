@@ -9,6 +9,7 @@ import { AuditsPage } from './pages/AuditsPage';
 import { LoginPage } from './pages/LoginPage';
 import { SessionsPage } from './pages/SessionsPage';
 import { SettingsPage } from './pages/SettingsPage';
+import { SshCaPage } from './pages/SshCaPage';
 import { TenancyPage } from './pages/TenancyPage';
 import { WorkflowPage } from './pages/WorkflowPage';
 import './styles.css';
@@ -35,6 +36,7 @@ export default function App() {
                 <Route path="/sessions" element={<SessionsPage />} />
                 <Route path="/workflow" element={<WorkflowPage />} />
                 <Route path="/tenancy" element={<TenancyPage />} />
+                <Route path="/ssh-ca" element={<SshCaPage />} />
                 <Route path="/audits" element={<AuditsPage />} />
                 <Route path="/settings" element={<SettingsPage />} />
               </Route>

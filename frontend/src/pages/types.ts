@@ -143,3 +143,42 @@ export type CredentialRotation = {
   requested_by: string;
   scheduled_at: string | null;
 };
+
+export type SshCertificateAuthority = {
+  id: number;
+  tenant_id: string;
+  name: string;
+  public_key: string;
+  status: string;
+  validity_seconds: number;
+};
+
+export type SshCertificateAuthorityTrustBundleItem = {
+  ca_id: number;
+  name: string;
+  public_key: string;
+  trusted_asset_ids: number[];
+};
+
+export type SshCertificateAuthorityTrustBundle = {
+  items: SshCertificateAuthorityTrustBundleItem[];
+  total: number;
+};
+
+export type SshCertificate = {
+  id: number;
+  tenant_id: string;
+  ca_id: number;
+  asset_id: number;
+  account_id: number;
+  principal: string;
+  public_key: string;
+  serial: string;
+  certificate_body: string;
+  requested_by: string;
+  valid_after: string;
+  valid_before: string;
+  status: string;
+  revoked_at: string | null;
+  revoke_reason: string | null;
+};

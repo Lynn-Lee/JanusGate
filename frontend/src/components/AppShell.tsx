@@ -4,6 +4,7 @@ import {
   ClusterOutlined,
   DesktopOutlined,
   KeyOutlined,
+  LockOutlined,
   SafetyCertificateOutlined,
   SettingOutlined
 } from '@ant-design/icons';
@@ -20,6 +21,7 @@ const navItems: Required<MenuProps>['items'] = [
   { key: '/sessions', icon: <DesktopOutlined />, label: <Link to="/sessions">会话</Link> },
   { key: '/workflow', icon: <SafetyCertificateOutlined />, label: <Link to="/workflow">Workflow/JIT</Link> },
   { key: '/tenancy', icon: <ApartmentOutlined />, label: <Link to="/tenancy">多租户</Link> },
+  { key: '/ssh-ca', icon: <LockOutlined />, label: <Link to="/ssh-ca">SSH CA</Link> },
   { key: '/audits', icon: <AuditOutlined />, label: <Link to="/audits">审计日志</Link> },
   { key: '/settings', icon: <SettingOutlined />, label: <Link to="/settings">系统设置</Link> }
 ];

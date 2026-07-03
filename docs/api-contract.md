@@ -399,7 +399,7 @@
 
 ## Phase 4 SSH CA / Temporary Certificate Service（#t44）
 
-当前 #t44 已落地后端模型、CA 管理 API、CA 禁用 API、连接器信任 bundle API、服务契约、临时证书签发/撤销 REST API，以及接入 API 路由的 Vault-backed OpenSSH signer。后续补前端入口时必须沿用本节安全语义。
+当前 #t44 已落地后端模型、CA 管理 API、CA 禁用 API、连接器信任 bundle API、服务契约、临时证书签发/撤销 REST API、接入 API 路由的 Vault-backed OpenSSH signer，以及前端 `/ssh-ca` SSH CA / 临时证书入口。前端入口必须沿用本节安全语义。
 
 核心模型：
 
@@ -559,9 +559,10 @@
 | 403 | `缺少权限: ssh-certificates:revoke` | 当前用户不能撤销证书 |
 | 404 | `SSH_CERTIFICATE_NOT_FOUND` | 证书不存在、跨租户或已不处于 issued 状态 |
 
-后续 API 切片必须补充：
+后续切片可继续增强：
 
-- 前端 SSH CA 与临时证书签发入口。
+- 前端临时证书签发交互与 CA 创建/禁用操作。
+- 连接器生产级 trust bundle 同步与信任链轮换。
 
 ## Session connection token（#t42）
 
