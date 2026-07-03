@@ -160,6 +160,58 @@ async def test_ssh_certificate_api_issues_and_revokes_temporary_certificate(
 
 
 @pytest.mark.asyncio
+async def test_ssh_ca_management_api_lists_and_creates_tenant_authorities(
+    session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    install_db(session_factory)
+    await seed_ssh_ca_fixture(session_factory)
+
+    with TestClient(app) as client:
+        install_user(tenant_id="tenant-a", permissions=["ssh-certificate-authorities:read"])
+        list_response = client.get("/api/v1/ssh-certificate-authorities/")
+        forbidden_create = client.post(
+            "/api/v1/ssh-certificate-authorities/",
+            json={
+                "name": "tenant-a-new-ca",
+                "public_key": "ssh-ed25519 AAAAC3NzaTenantANew",
+                "private_key_secret_id": "sec_tenant_a_new_ssh_ca",
+                "validity_seconds": 1200,
+            },
+        )
+
+        install_user(tenant_id="tenant-a", permissions=["ssh-certificate-authorities:create"])
+        create_response = client.post(
+            "/api/v1/ssh-certificate-authorities/",
+            json={
+                "name": "tenant-a-new-ca",
+                "public_key": "ssh-ed25519 AAAAC3NzaTenantANew",
+                "private_key_secret_id": "sec_tenant_a_new_ssh_ca",
+                "validity_seconds": 1200,
+            },
+        )
+
+    assert list_response.status_code == 200
+    listed = list_response.json()
+    assert listed["total"] == 2
+    assert {item["name"] for item in listed["items"]} == {
+        "tenant-a-ca",
+        "tenant-a-untrusted-ca",
+    }
+    assert all(item["tenant_id"] == "tenant-a" for item in listed["items"])
+    assert all("private_key_secret_id" not in item for item in listed["items"])
+    assert forbidden_create.status_code == 403
+    assert forbidden_create.json()["code"] == "FORBIDDEN"
+    assert create_response.status_code == 201
+    created = create_response.json()
+    assert created["tenant_id"] == "tenant-a"
+    assert created["name"] == "tenant-a-new-ca"
+    assert created["public_key"] == "ssh-ed25519 AAAAC3NzaTenantANew"
+    assert created["validity_seconds"] == 1200
+    assert created["status"] == "active"
+    assert "private_key_secret_id" not in created
+
+
+@pytest.mark.asyncio
 async def test_ssh_certificate_api_maps_service_errors_to_stable_codes(
     session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
