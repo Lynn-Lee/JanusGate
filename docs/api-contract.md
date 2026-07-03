@@ -2,7 +2,7 @@
 
 > 面向 #t36 前端控制台、#t38 E2E smoke 和 #t41 QA 门禁。本文件记录当前后端稳定契约，后续新增 API 默认沿用。
 
-更新时间：2026-07-03
+更新时间：2026-07-04
 范围：Phase 3 MVP 前端/后端联调契约，以及 Phase 4 多租户增量契约。
 
 ## 基础约定
@@ -396,6 +396,30 @@
 | --- | --- | --- |
 | 403 | `缺少权限: accounts:rotate` | 当前用户不能调度凭据轮换 |
 | 404 | `ACCOUNT_NOT_FOUND` | 指定账号不存在或当前用户不可见 |
+
+## Phase 4 SSH CA / Temporary Certificate Service（#t44）
+
+当前 #t44 已落地后端模型与服务契约，REST API 尚未暴露。后续新增 API 时必须沿用本节安全语义。
+
+核心模型：
+
+- `SshCertificateAuthority`：按租户保存 CA 名称、公钥、`private_key_secret_id`、状态与默认有效期。私钥明文不得进入数据库或响应，只能通过 Vault secret 引用交给签名器。
+- `Asset.trusted_ssh_ca_id`：资产信任的 SSH CA 引用；未绑定或不匹配时不得签发临时证书。
+- `SshCertificate`：保存租户、CA、资产、账号、principal、公钥、serial、证书正文、有效期、签发人、状态与撤销信息。
+
+服务语义：
+
+- `SshCertificateService.issue_certificate(...)` 只允许同租户 active CA、active Asset、active SSH Account 组合签发。
+- 资产必须显式信任请求中的 CA，否则 fail-closed 为 `ASSET_SSH_CA_NOT_TRUSTED`。
+- 跨租户或不可见资产返回 `ASSET_NOT_FOUND`；跨租户或不可见账号返回 `ACCOUNT_NOT_FOUND`；inactive 或不存在的 CA 返回 `SSH_CA_NOT_FOUND`。
+- 签发请求只向 signer 传 `private_key_secret_id`，不传或记录私钥明文。
+- `SshCertificateService.revoke_certificate(...)` 只撤销同租户且状态为 `issued` 的证书；重复撤销、跨租户或不存在证书返回 `False`。
+
+后续 API 切片必须补充：
+
+- CA 创建/列表/禁用 API，且响应不得返回 `private_key_secret_id` 以外的任何私钥材料。
+- 临时证书签发/撤销 API，错误码稳定映射到统一 `ErrorResponse`。
+- Connector/Asset 信任配置分发与真实 OpenSSH certificate signer 集成。
 
 ## Session connection token（#t42）
 
