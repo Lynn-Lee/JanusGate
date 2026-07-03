@@ -3,6 +3,7 @@ import zhCN from 'antd/locale/zh_CN';
 import { Navigate, Route, BrowserRouter, Routes } from 'react-router-dom';
 import { AuthProvider, useAuth } from './auth/AuthContext';
 import { AppShell } from './components/AppShell';
+import { AccountsPage } from './pages/AccountsPage';
 import { AssetsPage } from './pages/AssetsPage';
 import { AuditsPage } from './pages/AuditsPage';
 import { LoginPage } from './pages/LoginPage';
@@ -30,6 +31,7 @@ export default function App() {
               <Route path="/login" element={<LoginPage />} />
               <Route element={<ProtectedShell />}>
                 <Route path="/assets" element={<AssetsPage />} />
+                <Route path="/accounts" element={<AccountsPage />} />
                 <Route path="/sessions" element={<SessionsPage />} />
                 <Route path="/workflow" element={<WorkflowPage />} />
                 <Route path="/tenancy" element={<TenancyPage />} />

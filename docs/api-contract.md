@@ -514,3 +514,4 @@
 2. 展示文案优先 `message`，必要时展开 `detail`。
 3. 422 表单错误按 `detail[].loc` 映射字段。
 4. 不要依赖未声明字段；新增字段必须先进入 OpenAPI 和本文件。
+5. `/accounts` 控制台页只消费 `secret_id` 引用和 rotation 状态，不展示或缓存凭据明文；调度轮换时调用 `POST /api/v1/accounts/{account_id}/rotations` 并使用固定业务原因或后续表单输入。

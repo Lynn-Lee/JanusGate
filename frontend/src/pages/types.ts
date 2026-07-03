@@ -119,3 +119,27 @@ export type Project = {
   name: string;
   status: string;
 };
+
+export type Account = {
+  id: number;
+  tenant_id: string;
+  asset_id: number;
+  username: string;
+  protocol: string;
+  secret_id: string;
+  organization_id: string | null;
+  team_id: string | null;
+  project_id: string | null;
+  status: string;
+  rotation_policy: string;
+};
+
+export type CredentialRotation = {
+  id: number;
+  tenant_id: string;
+  account_id: number;
+  status: string;
+  reason: string;
+  requested_by: string;
+  scheduled_at: string | null;
+};

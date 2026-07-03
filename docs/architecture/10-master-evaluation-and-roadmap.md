@@ -239,7 +239,7 @@ JumpServer 上游在 2026-06-26 → 07-01 期间进行了重大技术栈升级�
 
 ### 4.4 残余风险与待增强
 
-1. **多租户与账号托管**：Phase 4 #t42 已建立后端 Organization/Team/Project 模型、`scoped_select()` 租户过滤基座、租户隔离的 Organization/Team/Project 管理 API、前端 `/tenancy` 只读组织结构页，以及 PolicyRule 的 organization/team/project 资源维度绑定；Phase 4 #t43 已启动 `Account` 持久化模型与租户/项目作用域账号列表、创建 API，并补 `CredentialRotation` 调度记录、账号作用域 API、到期轮换执行 worker、旧/新 secret 引用记录和 completed rotation 回滚
+1. **多租户与账号托管**：Phase 4 #t42 已建立后端 Organization/Team/Project 模型、`scoped_select()` 租户过滤基座、租户隔离的 Organization/Team/Project 管理 API、前端 `/tenancy` 只读组织结构页，以及 PolicyRule 的 organization/team/project 资源维度绑定；Phase 4 #t43 已启动 `Account` 持久化模型与租户/项目作用域账号列表、创建 API，并补 `CredentialRotation` 调度记录、账号作用域 API、到期轮换执行 worker、旧/新 secret 引用记录、completed rotation 回滚和前端 `/accounts` 账号托管/轮换调度页
 2. **策略持久化**：当前 PolicyDecisionService 为内存规则，需接入持久化策略
 3. **Connector 生产级信任链**：mTLS / attestation / key rotation 待 Phase 4
 4. **Vault 生产级后端**：当前为内存 AES-GCM，KMS/HSM/云 Vault 待 Phase 4
@@ -624,7 +624,7 @@ User ──┬── WorkflowRequest ──── JitGrant
 | 任务 ID | 任务 | Owner | 范围 | 优先级 |
 |---------|------|-------|------|--------|
 | **#t42** | 多租户与组织/团队/项目维度权限 | architect + backend | 后端 Organization/Team/Project 模型 + DB 层 `tenant_id` scope helper + Organization/Team/Project 管理 API + `/tenancy` 只读控制台页 + PolicyRule 组织/团队/项目资源维度绑定已完成；后续业务接入跟随 #t43/#t44/#t45 | 高 |
-| **#t43** | 资产账号托管与凭据轮换 | backend | Account 模型 + 租户/项目作用域账号列表与创建 API 已启动；CredentialRotation 调度 API、到期轮换执行 worker、旧/新 secret 引用记录与 completed rotation 回滚已完成；前端凭据轮换 UI 待续 | 高 |
+| **#t43** | 资产账号托管与凭据轮换 | backend + frontend | Account 模型 + 租户/项目作用域账号列表与创建 API 已启动；CredentialRotation 调度 API、到期轮换执行 worker、旧/新 secret 引用记录与 completed rotation 回滚已完成；前端 `/accounts` 账号托管页已可查看 secret 引用、轮换记录并调度凭据轮换 | 高 |
 | **#t44** | SSH CA / 临时证书 | backend + security | SshCertificateAuthority + 签发/撤销 + 资产信任配置 | 高 |
 | **#t45** | 连接器/边缘网关架构 | architect + backend | mTLS + attestation + key rotation + heartbeat + Connector SDK | 高 |
 | **#t46** | 会话录制、回放、命令检索 | backend + frontend | SessionRecording + 命令审计实时上报 + 回放 UI + 全文搜索 | 中 |
