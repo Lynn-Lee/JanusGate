@@ -5,6 +5,14 @@ from collections.abc import AsyncGenerator
 from datetime import UTC, datetime
 
 import pytest
+from cryptography.hazmat.primitives.asymmetric import ed25519
+from cryptography.hazmat.primitives.serialization import (
+    Encoding,
+    NoEncryption,
+    PrivateFormat,
+    PublicFormat,
+    load_ssh_public_identity,
+)
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from app.core.database import Base
@@ -15,6 +23,7 @@ from app.services.ssh_ca import (
     SshCertificateService,
     SshCertificateSigner,
     SshCertificateSigningRequest,
+    VaultOpenSshCertificateSigner,
 )
 
 
@@ -36,6 +45,17 @@ class RecordingSigner(SshCertificateSigner):
     async def sign(self, request: SshCertificateSigningRequest) -> str:
         self.requests.append(request)
         return f"ssh-rsa-cert-v01@openssh.com {request.serial} {request.principal}"
+
+
+class StaticSecretProvider:
+    def __init__(self, secrets: dict[str, str]) -> None:
+        self._secrets = secrets
+
+    def unwrap(self, secret_id: str) -> str:
+        secret = self._secrets.get(secret_id)
+        if secret is None:
+            raise ValueError("SECRET_NOT_FOUND")
+        return secret
 
 
 async def seed_ca_asset_account(
@@ -111,6 +131,71 @@ async def test_ssh_ca_service_issues_temporary_certificate_for_trusted_asset(
     assert certificate.certificate_body == "ssh-rsa-cert-v01@openssh.com tenant-a-1-1-1 deploy"
     assert signer.requests[0].private_key_secret_id == "sec_tenant_a_ssh_ca"
     assert signer.requests[0].valid_before == certificate.valid_before
+
+
+@pytest.mark.asyncio
+async def test_vault_openssh_signer_builds_parseable_user_certificate() -> None:
+    ca_key = ed25519.Ed25519PrivateKey.generate()
+    user_key = ed25519.Ed25519PrivateKey.generate()
+    ca_private_key = ca_key.private_bytes(
+        Encoding.PEM,
+        PrivateFormat.OpenSSH,
+        NoEncryption(),
+    ).decode()
+    user_public_key = user_key.public_key().public_bytes(
+        Encoding.OpenSSH,
+        PublicFormat.OpenSSH,
+    ).decode()
+    signer = VaultOpenSshCertificateSigner(
+        secret_provider=StaticSecretProvider({"sec_tenant_a_ssh_ca": ca_private_key})
+    )
+
+    certificate_body = await signer.sign(
+        SshCertificateSigningRequest(
+            tenant_id="tenant-a",
+            ca_id=1,
+            private_key_secret_id="sec_tenant_a_ssh_ca",
+            asset_id=1,
+            account_id=1,
+            principal="deploy",
+            public_key=user_public_key,
+            serial="tenant-a-1-1-1",
+            valid_after=datetime(2026, 7, 3, 12, 0, tzinfo=UTC),
+            valid_before=datetime(2026, 7, 3, 12, 15, tzinfo=UTC),
+        )
+    )
+
+    parsed = load_ssh_public_identity(certificate_body.encode())
+    assert certificate_body.startswith("ssh-ed25519-cert-v01@openssh.com ")
+    assert parsed.valid_principals == [b"deploy"]
+    assert parsed.valid_after == 1783080000
+    assert parsed.valid_before == 1783080900
+
+
+@pytest.mark.asyncio
+async def test_vault_openssh_signer_fails_closed_when_ca_secret_missing() -> None:
+    user_key = ed25519.Ed25519PrivateKey.generate()
+    user_public_key = user_key.public_key().public_bytes(
+        Encoding.OpenSSH,
+        PublicFormat.OpenSSH,
+    ).decode()
+    signer = VaultOpenSshCertificateSigner(secret_provider=StaticSecretProvider({}))
+
+    with pytest.raises(ValueError, match="SSH_CA_PRIVATE_KEY_UNAVAILABLE"):
+        await signer.sign(
+            SshCertificateSigningRequest(
+                tenant_id="tenant-a",
+                ca_id=1,
+                private_key_secret_id="sec_tenant_a_ssh_ca",
+                asset_id=1,
+                account_id=1,
+                principal="deploy",
+                public_key=user_public_key,
+                serial="tenant-a-1-1-1",
+                valid_after=datetime(2026, 7, 3, 12, 0, tzinfo=UTC),
+                valid_before=datetime(2026, 7, 3, 12, 15, tzinfo=UTC),
+            )
+        )
 
 
 @pytest.mark.asyncio
