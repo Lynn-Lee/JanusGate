@@ -33,6 +33,8 @@ class ConnectorEnrollmentToken:
     expires_at: datetime
     public_key_fingerprint: str | None = None
     mtls_certificate_fingerprint: str | None = None
+    attestation_nonce: str | None = None
+    attestation_digest: str | None = None
     connector_name: str | None = None
     environment: str | None = None
     used_at: datetime | None = None
@@ -44,6 +46,8 @@ class ConnectorEnrollmentToken:
         expires_at: datetime,
         public_key_fingerprint: str | None = None,
         mtls_certificate_fingerprint: str | None = None,
+        attestation_nonce: str | None = None,
+        attestation_digest: str | None = None,
         connector_name: str | None = None,
         environment: str | None = None,
     ) -> ConnectorEnrollmentToken:
@@ -52,6 +56,8 @@ class ConnectorEnrollmentToken:
             expires_at=expires_at,
             public_key_fingerprint=public_key_fingerprint,
             mtls_certificate_fingerprint=mtls_certificate_fingerprint,
+            attestation_nonce=attestation_nonce,
+            attestation_digest=attestation_digest,
             connector_name=connector_name,
             environment=environment,
         )
@@ -76,6 +82,14 @@ class ConnectorEnrollmentToken:
             and self.mtls_certificate_fingerprint != request.mtls_certificate_fingerprint
         ):
             raise ValueError("ENROLLMENT_TOKEN_BINDING_MISMATCH")
+        if self.attestation_nonce is not None or self.attestation_digest is not None:
+            if request.attestation_nonce is None or request.attestation_digest is None:
+                raise ValueError("CONNECTOR_ATTESTATION_REQUIRED")
+            if (
+                self.attestation_nonce != request.attestation_nonce
+                or self.attestation_digest != request.attestation_digest
+            ):
+                raise ValueError("CONNECTOR_ATTESTATION_MISMATCH")
         if self.connector_name is not None and self.connector_name != request.name:
             raise ValueError("ENROLLMENT_TOKEN_BINDING_MISMATCH")
         if self.environment is not None and self.environment != request.environment:
@@ -148,6 +162,8 @@ class ConnectorRegistry:
             environment=request.environment,
             public_key_fingerprint=request.public_key_fingerprint,
             mtls_certificate_fingerprint=enrollment_token.mtls_certificate_fingerprint,
+            attestation_nonce=request.attestation_nonce,
+            attestation_digest=request.attestation_digest,
             capabilities=request.capabilities,
             registered_at=now,
             last_heartbeat_at=now,
