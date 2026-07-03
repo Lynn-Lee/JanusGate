@@ -35,6 +35,7 @@ class ConnectorRecord(BaseModel):
     name: str
     environment: str
     public_key_fingerprint: str
+    previous_public_key_fingerprint: str | None = None
     mtls_certificate_fingerprint: str | None = None
     attestation_nonce: str | None = None
     attestation_digest: str | None = None
@@ -42,6 +43,7 @@ class ConnectorRecord(BaseModel):
     status: ConnectorStatus = ConnectorStatus.ACTIVE
     registered_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     last_heartbeat_at: datetime | None = None
+    key_rotated_at: datetime | None = None
 
 
 class ConnectionToken(BaseModel):

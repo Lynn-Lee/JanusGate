@@ -127,6 +127,23 @@ class InMemoryConnectorStore:
         self._records[connector_id] = updated
         return updated
 
+    def rotate_key(
+        self,
+        connector_id: str,
+        public_key_fingerprint: str,
+        rotated_at: datetime,
+    ) -> ConnectorRecord:
+        record = self._records[connector_id]
+        updated = record.model_copy(
+            update={
+                "public_key_fingerprint": public_key_fingerprint,
+                "previous_public_key_fingerprint": record.public_key_fingerprint,
+                "key_rotated_at": rotated_at,
+            }
+        )
+        self._records[connector_id] = updated
+        return updated
+
 
 class ConnectorRegistry:
     """Registers trusted connectors and gates connection-token issuance."""
@@ -180,6 +197,25 @@ class ConnectorRegistry:
         if connector.status != ConnectorStatus.ACTIVE:
             raise ValueError("CONNECTOR_NOT_ACTIVE")
         return self._store.record_heartbeat(connector_id, heartbeat_at or datetime.now(UTC))
+
+    def rotate_key(
+        self,
+        connector_id: str,
+        public_key_fingerprint: str,
+        rotated_at: datetime | None = None,
+    ) -> ConnectorRecord:
+        connector = self._store.get(connector_id)
+        if connector is None:
+            raise ValueError("CONNECTOR_NOT_FOUND")
+        if connector.status != ConnectorStatus.ACTIVE:
+            raise ValueError("CONNECTOR_NOT_ACTIVE")
+        if not public_key_fingerprint.startswith("sha256:"):
+            raise ValueError("INVALID_CONNECTOR_FINGERPRINT")
+        return self._store.rotate_key(
+            connector_id,
+            public_key_fingerprint,
+            rotated_at or datetime.now(UTC),
+        )
 
     def issue_connection_token(
         self,
