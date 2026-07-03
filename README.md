@@ -70,3 +70,5 @@ CI 已包含 Phase 3 部署 smoke 门禁：后端 `pytest --cov=app --cov-report
 ## Phase 4 多租户基座
 
 Phase 4 #t42 已启动后端 tenancy 基座：`User` 持久化 `tenant_id` 以及可选 `organization_id`、`team_id`、`project_id`，并新增 `Organization`、`Team`、`Project` 模型。后端查询可通过 `app.tenancy.scope.scoped_select()` 默认注入 `tenant_id` 过滤，避免 Phase 4 后续权限与 UI 接入时绕过租户隔离。当前已提供租户隔离的 Organization 管理 API：`GET /api/v1/tenancy/organizations` 与 `POST /api/v1/tenancy/organizations`；Team 管理 API：`GET /api/v1/tenancy/teams` 与 `POST /api/v1/tenancy/teams`；以及 Project 管理 API：`GET /api/v1/tenancy/projects` 与 `POST /api/v1/tenancy/projects`。前端控制台已新增 `/tenancy` 只读组织结构页，展示当前用户可见的 Organization、Team、Project。PolicyRule 现在可按 `organization_ids`、`team_ids`、`project_ids` 绑定资源维度，资源缺失或不匹配绑定维度时 fail-closed 为无匹配策略。
+
+Phase 4 #t43 已启动资产账号托管后端切片：新增 `Account` 持久化模型与 `GET/POST /api/v1/accounts/`，账号记录绑定当前租户、资产、Vault `secret_id` 以及可选 Organization/Team/Project 维度。账号列表复用 `scoped_select()` 做租户和项目维度收敛，响应只返回 secret 引用，不返回凭据明文。后续仍需补 CredentialRotation 调度、双写迁移、回滚和前端凭据轮换 UI。
