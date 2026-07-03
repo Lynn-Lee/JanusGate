@@ -399,7 +399,7 @@
 
 ## Phase 4 SSH CA / Temporary Certificate Service（#t44）
 
-当前 #t44 已落地后端模型、服务契约和临时证书签发/撤销 REST API。后续新增 CA 管理、真实 OpenSSH signer、连接器信任分发和前端入口时必须沿用本节安全语义。
+当前 #t44 已落地后端模型、CA 管理 API、服务契约和临时证书签发/撤销 REST API。后续新增真实 OpenSSH signer、连接器信任分发和前端入口时必须沿用本节安全语义。
 
 核心模型：
 
@@ -416,6 +416,40 @@
 - `SshCertificateService.revoke_certificate(...)` 只撤销同租户且状态为 `issued` 的证书；重复撤销、跨租户或不存在证书返回 `False`。
 
 已暴露 API：
+
+### GET `/api/v1/ssh-certificate-authorities/`
+
+用途：返回当前登录用户租户内的 SSH CA 列表。
+
+鉴权：需要登录态；`admin` 或 `ssh-certificate-authorities:read` 权限可访问。
+
+响应只返回 CA 名称、公钥、状态和默认有效期，不返回 `private_key_secret_id` 或任何私钥材料。
+
+### POST `/api/v1/ssh-certificate-authorities/`
+
+用途：在当前用户租户内创建 SSH CA，私钥材料必须先存入 Vault/KMS，API 只接收 `private_key_secret_id` 引用。
+
+鉴权：需要登录态；`admin` 或 `ssh-certificate-authorities:create` 权限可访问。
+
+请求体：
+
+```json
+{
+  "name": "tenant-a-ca",
+  "public_key": "ssh-ed25519 AAAA...",
+  "private_key_secret_id": "sec_tenant_a_ssh_ca",
+  "validity_seconds": 900
+}
+```
+
+响应 `201` 返回 CA 元数据；响应不包含 `private_key_secret_id` 或任何私钥明文。
+
+错误码：
+
+| HTTP | detail | 说明 |
+| --- | --- | --- |
+| 400 | `SSH_CA_ALREADY_EXISTS` | 当前租户内 CA 名称已存在 |
+| 403 | `缺少权限: ssh-certificate-authorities:create` | 当前用户不能创建 CA |
 
 ### GET `/api/v1/ssh-certificates/`
 
@@ -480,7 +514,7 @@
 
 后续 API 切片必须补充：
 
-- CA 创建/列表/禁用 API，且响应不得返回 `private_key_secret_id` 以外的任何私钥材料。
+- CA 禁用 API，且响应不得返回 `private_key_secret_id` 或任何私钥材料。
 - Connector/Asset 信任配置分发与真实 OpenSSH certificate signer 集成。
 
 ## Session connection token（#t42）
