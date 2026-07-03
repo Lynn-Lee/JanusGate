@@ -55,6 +55,7 @@
 
 - Auth：`/api/v1/auth/*`，登录、2FA、refresh、当前用户、密码/API key。
 - Assets：`/api/v1/assets/*`，资产、平台、受控连接测试。
+- Accounts：`/api/v1/accounts/*`，Phase 4 资产账号托管与 Vault secret 引用。
 - Sessions：`/api/v1/sessions/*`，会话创建/关闭，JIT grant 绑定。
 - Workflow/JIT：`/api/v1/workflows/*`，申请、提交、审批、拒绝、撤销、active grant。
 - Audit/SIEM：`/api/v1/audits/events`，审计事件创建和检索。
@@ -269,6 +270,78 @@
 | 403 | `缺少权限: admin` | 当前用户不能创建项目 |
 | 404 | `ORGANIZATION_NOT_FOUND` | 指定组织不存在 |
 | 404 | `TEAM_NOT_FOUND` | 指定团队不存在 |
+
+## Phase 4 Account Custody API（#t43）
+
+### GET `/api/v1/accounts/`
+
+用途：返回当前登录用户可见的资产账号托管记录。
+
+鉴权：需要登录态；`admin` 或 `accounts:read` 权限可访问。后端使用当前用户 `tenant_id` 与 `app.tenancy.scope.scoped_select()` 过滤；非 admin 用户若绑定了 `project_id`、`team_id` 或 `organization_id`，按最细维度收敛。
+
+响应 `200`：
+
+```json
+{
+  "items": [
+    {
+      "id": 1,
+      "tenant_id": "tenant-a",
+      "asset_id": 1,
+      "username": "deploy",
+      "protocol": "ssh",
+      "secret_id": "sec_tenant_a_deploy",
+      "organization_id": "org-a",
+      "team_id": "team-a",
+      "project_id": "project-a",
+      "status": "active",
+      "rotation_policy": "manual"
+    }
+  ],
+  "total": 1
+}
+```
+
+安全语义：
+
+- 跨租户 Account 不出现在响应中。
+- 响应只返回 Vault `secret_id` 引用，不返回密码、私钥或 token 明文。
+- 未授权用户返回 `403` 的统一错误响应。
+
+### POST `/api/v1/accounts/`
+
+用途：在当前用户租户内创建资产账号托管记录。
+
+鉴权：需要登录态；`admin` 或 `accounts:write` 权限可访问。后端使用当前用户 `tenant_id` 写入，不接受前端传入 tenant。
+
+请求体：
+
+```json
+{
+  "asset_id": 1,
+  "username": "deploy",
+  "protocol": "ssh",
+  "secret_id": "sec_tenant_a_deploy",
+  "organization_id": "org-a",
+  "team_id": "team-a",
+  "project_id": "project-a",
+  "status": "active",
+  "rotation_policy": "manual"
+}
+```
+
+响应 `201`：同 `GET /api/v1/accounts/` 的单条 item。
+
+错误码：
+
+| HTTP | detail | 说明 |
+| --- | --- | --- |
+| 403 | `TENANT_SCOPE_VIOLATION` | Organization、Team 或 Project 不属于当前租户或层级不匹配 |
+| 403 | `缺少权限: accounts:write` | 当前用户不能创建账号 |
+| 404 | `ASSET_NOT_FOUND` | 指定资产不存在 |
+| 404 | `ORGANIZATION_NOT_FOUND` | 指定组织不存在 |
+| 404 | `TEAM_NOT_FOUND` | 指定团队不存在 |
+| 404 | `PROJECT_NOT_FOUND` | 指定项目不存在 |
 
 ## Session connection token（#t42）
 
