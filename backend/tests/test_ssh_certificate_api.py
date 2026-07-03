@@ -4,15 +4,47 @@ from __future__ import annotations
 from collections.abc import AsyncGenerator
 
 import pytest
+from cryptography.hazmat.primitives.asymmetric import ed25519
+from cryptography.hazmat.primitives.serialization import (
+    Encoding,
+    NoEncryption,
+    PrivateFormat,
+    PublicFormat,
+    load_ssh_public_identity,
+)
 from fastapi.testclient import TestClient
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
+from app.api.ssh_certificates import get_ssh_ca_secret_provider
 from app.core.database import Base, get_db
 from app.core.deps import current_user
 from app.main import app
 from app.models.account import Account
 from app.models.asset import Asset, Platform
 from app.models.ssh_ca import SshCertificateAuthority
+
+CA_KEY = ed25519.Ed25519PrivateKey.generate()
+CLIENT_KEY = ed25519.Ed25519PrivateKey.generate()
+CA_PRIVATE_KEY = CA_KEY.private_bytes(
+    Encoding.PEM,
+    PrivateFormat.OpenSSH,
+    NoEncryption(),
+).decode()
+CLIENT_PUBLIC_KEY = CLIENT_KEY.public_key().public_bytes(
+    Encoding.OpenSSH,
+    PublicFormat.OpenSSH,
+).decode()
+
+
+class StaticSecretProvider:
+    def __init__(self, secrets: dict[str, str]) -> None:
+        self._secrets = secrets
+
+    def unwrap(self, secret_id: str) -> str:
+        secret = self._secrets.get(secret_id)
+        if secret is None:
+            raise ValueError("SECRET_NOT_FOUND")
+        return secret
 
 
 @pytest.fixture
@@ -38,6 +70,13 @@ def install_db(session_factory: async_sessionmaker[AsyncSession]) -> None:
                 await session.close()
 
     app.dependency_overrides[get_db] = override_db
+
+
+def install_ssh_ca_secrets(secrets: dict[str, str] | None = None) -> None:
+    secret_values = secrets if secrets is not None else {"sec_tenant_a_ssh_ca": CA_PRIVATE_KEY}
+    app.dependency_overrides[get_ssh_ca_secret_provider] = lambda: StaticSecretProvider(
+        secret_values
+    )
 
 
 def install_user(
@@ -121,6 +160,7 @@ async def test_ssh_certificate_api_issues_and_revokes_temporary_certificate(
     session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
     install_db(session_factory)
+    install_ssh_ca_secrets()
     await seed_ssh_ca_fixture(session_factory)
 
     with TestClient(app) as client:
@@ -132,7 +172,7 @@ async def test_ssh_certificate_api_issues_and_revokes_temporary_certificate(
                 "asset_id": 1,
                 "account_id": 1,
                 "principal": "deploy",
-                "public_key": "ssh-ed25519 AAAAC3NzaClient user@example",
+                "public_key": CLIENT_PUBLIC_KEY,
             },
         )
         list_response = client.get("/api/v1/ssh-certificates/")
@@ -149,7 +189,9 @@ async def test_ssh_certificate_api_issues_and_revokes_temporary_certificate(
     assert issued["account_id"] == 1
     assert issued["principal"] == "deploy"
     assert issued["status"] == "issued"
-    assert issued["certificate_body"].startswith("ssh-rsa-cert-v01@openssh.com ")
+    parsed_certificate = load_ssh_public_identity(issued["certificate_body"].encode())
+    assert issued["certificate_body"].startswith("ssh-ed25519-cert-v01@openssh.com ")
+    assert parsed_certificate.valid_principals == [b"deploy"]
     assert "private_key" not in issued
     assert "private_key_secret_id" not in issued
     assert list_response.status_code == 200
@@ -164,6 +206,7 @@ async def test_ssh_ca_management_api_lists_and_creates_tenant_authorities(
     session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
     install_db(session_factory)
+    install_ssh_ca_secrets()
     await seed_ssh_ca_fixture(session_factory)
 
     with TestClient(app) as client:
@@ -216,6 +259,7 @@ async def test_ssh_ca_management_api_disables_tenant_authority_without_leaking_s
     session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
     install_db(session_factory)
+    install_ssh_ca_secrets()
     await seed_ssh_ca_fixture(session_factory)
 
     with TestClient(app) as client:
@@ -254,6 +298,7 @@ async def test_ssh_certificate_api_maps_service_errors_to_stable_codes(
     session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
     install_db(session_factory)
+    install_ssh_ca_secrets()
     await seed_ssh_ca_fixture(session_factory)
 
     with TestClient(app) as client:
@@ -265,7 +310,7 @@ async def test_ssh_certificate_api_maps_service_errors_to_stable_codes(
                 "asset_id": 1,
                 "account_id": 1,
                 "principal": "deploy",
-                "public_key": "ssh-ed25519 AAAAC3NzaClient user@example",
+                "public_key": CLIENT_PUBLIC_KEY,
             },
         )
 
@@ -277,7 +322,7 @@ async def test_ssh_certificate_api_maps_service_errors_to_stable_codes(
                 "asset_id": 1,
                 "account_id": 1,
                 "principal": "deploy",
-                "public_key": "ssh-ed25519 AAAAC3NzaClient user@example",
+                "public_key": CLIENT_PUBLIC_KEY,
             },
         )
 
@@ -292,6 +337,7 @@ async def test_ssh_certificate_api_requires_permissions(
     session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
     install_db(session_factory)
+    install_ssh_ca_secrets()
     await seed_ssh_ca_fixture(session_factory)
 
     with TestClient(app) as client:
@@ -303,7 +349,7 @@ async def test_ssh_certificate_api_requires_permissions(
                 "asset_id": 1,
                 "account_id": 1,
                 "principal": "deploy",
-                "public_key": "ssh-ed25519 AAAAC3NzaClient user@example",
+                "public_key": CLIENT_PUBLIC_KEY,
             },
         )
         revoke_response = client.post(
@@ -322,6 +368,7 @@ async def test_ssh_certificate_api_respects_account_project_scope(
     session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
     install_db(session_factory)
+    install_ssh_ca_secrets()
     await seed_ssh_ca_fixture(session_factory)
 
     async with session_factory() as session:
@@ -348,7 +395,7 @@ async def test_ssh_certificate_api_respects_account_project_scope(
                 "asset_id": 1,
                 "account_id": 1,
                 "principal": "deploy",
-                "public_key": "ssh-ed25519 AAAAC3NzaClientA user@example",
+                "public_key": CLIENT_PUBLIC_KEY,
             },
         )
         second = client.post(
@@ -358,7 +405,7 @@ async def test_ssh_certificate_api_respects_account_project_scope(
                 "asset_id": 1,
                 "account_id": 2,
                 "principal": "breakglass",
-                "public_key": "ssh-ed25519 AAAAC3NzaClientB user@example",
+                "public_key": CLIENT_PUBLIC_KEY,
             },
         )
 
@@ -386,3 +433,28 @@ async def test_ssh_certificate_api_respects_account_project_scope(
     assert revoke_out_of_scope.json()["code"] == "SSH_CERTIFICATE_NOT_FOUND"
     assert revoke_in_scope.status_code == 200
     assert revoke_in_scope.json()["status"] == "revoked"
+
+
+@pytest.mark.asyncio
+async def test_ssh_certificate_api_fails_closed_when_ca_secret_is_unavailable(
+    session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    install_db(session_factory)
+    install_ssh_ca_secrets({})
+    await seed_ssh_ca_fixture(session_factory)
+
+    with TestClient(app) as client:
+        install_user(tenant_id="tenant-a", permissions=["ssh-certificates:issue"])
+        response = client.post(
+            "/api/v1/ssh-certificates/",
+            json={
+                "ca_id": 1,
+                "asset_id": 1,
+                "account_id": 1,
+                "principal": "deploy",
+                "public_key": CLIENT_PUBLIC_KEY,
+            },
+        )
+
+    assert response.status_code == 400
+    assert response.json()["code"] == "SSH_CA_PRIVATE_KEY_UNAVAILABLE"
