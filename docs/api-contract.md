@@ -377,7 +377,7 @@
 
 用途：为当前登录用户可见账号创建凭据轮换调度记录。
 
-鉴权：需要登录态；`admin` 或 `accounts:rotate` 权限可访问。后端 `CredentialRotationWorker` 会处理到期且状态为 `scheduled` 的记录；worker 成功后将对应 `Account.secret_id` 更新为轮换器返回的新 secret 引用，并把 rotation 标记为 `completed`；轮换器失败时标记为 `failed` 且不改账号 secret。双写迁移和回滚在后续 #t43 子切片补齐。
+鉴权：需要登录态；`admin` 或 `accounts:rotate` 权限可访问。后端 `CredentialRotationWorker` 会处理到期且状态为 `scheduled` 的记录；worker 成功后将对应 `Account.secret_id` 更新为轮换器返回的新 secret 引用，并把 rotation 标记为 `completed`，同时在内部记录 `previous_secret_id` 与 `new_secret_id` 以支持 completed rotation 回滚；轮换器失败时标记为 `failed`、记录错误码且不改账号 secret。轮换响应仍不返回 secret 引用、密码、私钥或 token 明文。
 
 请求体：
 

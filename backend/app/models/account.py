@@ -45,6 +45,9 @@ class CredentialRotation(Base):
     reason: Mapped[str | None] = mapped_column(String(240), nullable=True)
     requested_by: Mapped[str] = mapped_column(String(64), nullable=False)
     scheduled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    previous_secret_id: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    new_secret_id: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    error_code: Mapped[str | None] = mapped_column(String(120), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )

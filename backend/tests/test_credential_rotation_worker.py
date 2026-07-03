@@ -97,6 +97,8 @@ async def test_rotation_worker_executes_due_scheduled_rotation(
     assert account.secret_id == "sec_tenant_a_deploy:v2"
     assert rotation is not None
     assert rotation.status == "completed"
+    assert rotation.previous_secret_id == "sec_tenant_a_deploy"
+    assert rotation.new_secret_id == "sec_tenant_a_deploy:v2"
 
 
 @pytest.mark.asyncio
@@ -121,6 +123,36 @@ async def test_rotation_worker_marks_failed_without_changing_account_secret(
     assert account.secret_id == "sec_tenant_a_deploy"
     assert rotation is not None
     assert rotation.status == "failed"
+    assert rotation.previous_secret_id == "sec_tenant_a_deploy"
+    assert rotation.new_secret_id is None
+    assert rotation.error_code == "CONNECTOR_ROTATION_FAILED"
+
+
+@pytest.mark.asyncio
+async def test_rotation_worker_rolls_back_completed_rotation(
+    session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    await seed_account_with_rotation(
+        session_factory,
+        scheduled_at=datetime.now(UTC) - timedelta(minutes=1),
+    )
+    rotator = RecordingRotator()
+
+    async with session_factory() as session:
+        worker = CredentialRotationWorker(session=session, rotator=rotator)
+        await worker.run_due_rotations(now=datetime.now(UTC), limit=10)
+        rolled_back = await worker.rollback_completed_rotation(rotation_id=1)
+
+        account = await session.get(Account, 1)
+        rotation = await session.get(CredentialRotation, 1)
+
+    assert rolled_back is True
+    assert account is not None
+    assert account.secret_id == "sec_tenant_a_deploy"
+    assert rotation is not None
+    assert rotation.status == "rolled_back"
+    assert rotation.previous_secret_id == "sec_tenant_a_deploy"
+    assert rotation.new_secret_id == "sec_tenant_a_deploy:v2"
 
 
 @pytest.mark.asyncio
