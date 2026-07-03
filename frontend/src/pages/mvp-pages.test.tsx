@@ -35,6 +35,42 @@ const rotation = {
   requested_by: 'admin',
   scheduled_at: '2026-07-04T10:00:00Z'
 };
+const sshCa = {
+  id: 3,
+  tenant_id: 'tenant-a',
+  name: 'Tenant A SSH CA',
+  public_key: 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAITenantACa',
+  status: 'active',
+  validity_seconds: 1800
+};
+const sshTrustBundle = {
+  items: [
+    {
+      ca_id: 3,
+      name: 'Tenant A SSH CA',
+      public_key: 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAITenantACa',
+      trusted_asset_ids: [1]
+    }
+  ],
+  total: 1
+};
+const sshCertificate = {
+  id: 5,
+  tenant_id: 'tenant-a',
+  ca_id: 3,
+  asset_id: 1,
+  account_id: 1,
+  principal: 'deploy',
+  public_key: 'ssh-ed25519 AAAAC3NzaClient',
+  serial: 'serial-5',
+  certificate_body: 'ssh-ed25519-cert-v01@openssh.com AAAAissued',
+  requested_by: 'admin',
+  valid_after: '2026-07-04T10:00:00Z',
+  valid_before: '2026-07-04T10:30:00Z',
+  status: 'issued',
+  revoked_at: null,
+  revoke_reason: null
+};
 
 function installFetch() {
   return vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -56,6 +92,18 @@ function installFetch() {
     }
     if (url.endsWith('/api/v1/accounts/1/rotations') && method === 'POST') {
       return Response.json({ ...rotation, id: 8, reason: 'console requested rotation' }, { status: 201 });
+    }
+    if (url.endsWith('/api/v1/ssh-certificate-authorities/') && method === 'GET') {
+      return Response.json({ items: [sshCa], total: 1 });
+    }
+    if (url.endsWith('/api/v1/ssh-certificate-authorities/trust-bundle')) {
+      return Response.json(sshTrustBundle);
+    }
+    if (url.endsWith('/api/v1/ssh-certificates/') && method === 'GET') {
+      return Response.json({ items: [sshCertificate], total: 1 });
+    }
+    if (url.endsWith('/api/v1/ssh-certificates/5/revoke') && method === 'POST') {
+      return Response.json({ ...sshCertificate, status: 'revoked', revoke_reason: 'console revoked' });
     }
     if (url.endsWith('/health')) return Response.json({ status: 'ok', version: '0.1.0' });
     return Response.json(session);
@@ -151,6 +199,30 @@ describe('MVP pages', () => {
         expect.objectContaining({
           method: 'POST',
           body: JSON.stringify({ reason: 'console requested rotation' })
+        })
+      )
+    );
+  });
+
+  it('shows SSH CA authorities, trust bundle, and issued certificates without private key references', async () => {
+    const fetchMock = installFetch();
+    vi.stubGlobal('fetch', fetchMock);
+    history.pushState(null, '', '/ssh-ca');
+    render(<App />);
+
+    expect(await screen.findByRole('heading', { name: 'SSH CA 与临时证书' })).toBeInTheDocument();
+    expect(screen.getByText('Tenant A SSH CA')).toBeInTheDocument();
+    expect(screen.getByText('serial-5')).toBeInTheDocument();
+    expect(screen.getByText('1 trusted assets')).toBeInTheDocument();
+    expect(screen.queryByText('private_key_secret_id')).not.toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole('button', { name: '撤销证书 serial-5' }));
+    await waitFor(() =>
+      expect(fetchMock).toHaveBeenCalledWith(
+        '/api/v1/ssh-certificates/5/revoke',
+        expect.objectContaining({
+          method: 'POST',
+          body: JSON.stringify({ reason: 'console revoked' })
         })
       )
     );
