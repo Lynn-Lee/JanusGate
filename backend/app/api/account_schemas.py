@@ -1,4 +1,6 @@
 """Phase 4 account custody API schemas."""
+from datetime import datetime
+
 from pydantic import BaseModel, Field
 
 
@@ -30,4 +32,24 @@ class AccountResponse(BaseModel):
 
 class AccountListResponse(BaseModel):
     items: list[AccountResponse]
+    total: int
+
+
+class CredentialRotationCreate(BaseModel):
+    reason: str | None = Field(default=None, max_length=240)
+    scheduled_at: datetime | None = None
+
+
+class CredentialRotationResponse(BaseModel):
+    id: int
+    tenant_id: str
+    account_id: int
+    status: str
+    reason: str | None
+    requested_by: str
+    scheduled_at: datetime | None
+
+
+class CredentialRotationListResponse(BaseModel):
+    items: list[CredentialRotationResponse]
     total: int

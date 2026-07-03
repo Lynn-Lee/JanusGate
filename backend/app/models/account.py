@@ -33,3 +33,23 @@ class Account(Base):
     )
 
     asset: Mapped[Asset] = relationship()
+
+
+class CredentialRotation(Base):
+    __tablename__ = "credential_rotations"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    tenant_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    account_id: Mapped[int] = mapped_column(Integer, ForeignKey("accounts.id"), nullable=False, index=True)
+    status: Mapped[str] = mapped_column(String(32), nullable=False, default="scheduled")
+    reason: Mapped[str | None] = mapped_column(String(240), nullable=True)
+    requested_by: Mapped[str] = mapped_column(String(64), nullable=False)
+    scheduled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+    account: Mapped[Account] = relationship()
