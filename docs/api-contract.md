@@ -399,7 +399,7 @@
 
 ## Phase 4 SSH CA / Temporary Certificate Service（#t44）
 
-当前 #t44 已落地后端模型与服务契约，REST API 尚未暴露。后续新增 API 时必须沿用本节安全语义。
+当前 #t44 已落地后端模型、服务契约和临时证书签发/撤销 REST API。后续新增 CA 管理、真实 OpenSSH signer、连接器信任分发和前端入口时必须沿用本节安全语义。
 
 核心模型：
 
@@ -415,10 +415,72 @@
 - 签发请求只向 signer 传 `private_key_secret_id`，不传或记录私钥明文。
 - `SshCertificateService.revoke_certificate(...)` 只撤销同租户且状态为 `issued` 的证书；重复撤销、跨租户或不存在证书返回 `False`。
 
+已暴露 API：
+
+### GET `/api/v1/ssh-certificates/`
+
+用途：返回当前登录用户租户内可见的临时 SSH 证书列表。
+
+鉴权：需要登录态；`admin` 或 `ssh-certificates:read` 权限可访问。
+
+响应只返回证书正文、公钥、serial、有效期和撤销状态等证书材料，不返回 CA 私钥明文或 CA 私钥 secret 引用。
+
+### POST `/api/v1/ssh-certificates/`
+
+用途：基于 active CA、active Asset 和 active SSH Account 签发短期临时证书。
+
+鉴权：需要登录态；`admin` 或 `ssh-certificates:issue` 权限可访问。
+
+请求体：
+
+```json
+{
+  "ca_id": 1,
+  "asset_id": 1,
+  "account_id": 1,
+  "principal": "deploy",
+  "public_key": "ssh-ed25519 AAAA..."
+}
+```
+
+响应 `201` 返回证书记录和 `certificate_body`；响应不包含 `private_key_secret_id` 或任何私钥明文。
+
+错误码：
+
+| HTTP | detail | 说明 |
+| --- | --- | --- |
+| 403 | `ASSET_SSH_CA_NOT_TRUSTED` | 资产未显式信任请求 CA |
+| 403 | `缺少权限: ssh-certificates:issue` | 当前用户不能签发证书 |
+| 404 | `SSH_CA_NOT_FOUND` | CA 不存在、inactive 或不属于当前租户 |
+| 404 | `ASSET_NOT_FOUND` | 资产不存在、inactive 或不属于当前租户 |
+| 404 | `ACCOUNT_NOT_FOUND` | 账号不存在、不是 SSH、inactive、资产不匹配或不在当前用户可见范围 |
+
+### POST `/api/v1/ssh-certificates/{certificate_id}/revoke`
+
+用途：撤销当前租户内仍处于 `issued` 状态的临时证书。
+
+鉴权：需要登录态；`admin` 或 `ssh-certificates:revoke` 权限可访问。
+
+请求体：
+
+```json
+{
+  "reason": "access ended"
+}
+```
+
+响应 `200` 返回撤销后的证书记录，`status` 为 `revoked`，并写入 `revoked_at` 与 `revoke_reason`。
+
+错误码：
+
+| HTTP | detail | 说明 |
+| --- | --- | --- |
+| 403 | `缺少权限: ssh-certificates:revoke` | 当前用户不能撤销证书 |
+| 404 | `SSH_CERTIFICATE_NOT_FOUND` | 证书不存在、跨租户或已不处于 issued 状态 |
+
 后续 API 切片必须补充：
 
 - CA 创建/列表/禁用 API，且响应不得返回 `private_key_secret_id` 以外的任何私钥材料。
-- 临时证书签发/撤销 API，错误码稳定映射到统一 `ErrorResponse`。
 - Connector/Asset 信任配置分发与真实 OpenSSH certificate signer 集成。
 
 ## Session connection token（#t42）
