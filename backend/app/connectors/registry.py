@@ -32,6 +32,7 @@ class ConnectorEnrollmentToken:
     token_digest: str
     expires_at: datetime
     public_key_fingerprint: str | None = None
+    mtls_certificate_fingerprint: str | None = None
     connector_name: str | None = None
     environment: str | None = None
     used_at: datetime | None = None
@@ -42,6 +43,7 @@ class ConnectorEnrollmentToken:
         plaintext_token: str,
         expires_at: datetime,
         public_key_fingerprint: str | None = None,
+        mtls_certificate_fingerprint: str | None = None,
         connector_name: str | None = None,
         environment: str | None = None,
     ) -> ConnectorEnrollmentToken:
@@ -49,6 +51,7 @@ class ConnectorEnrollmentToken:
             token_digest=cls.digest(plaintext_token),
             expires_at=expires_at,
             public_key_fingerprint=public_key_fingerprint,
+            mtls_certificate_fingerprint=mtls_certificate_fingerprint,
             connector_name=connector_name,
             environment=environment,
         )
@@ -66,6 +69,11 @@ class ConnectorEnrollmentToken:
         if (
             self.public_key_fingerprint is not None
             and self.public_key_fingerprint != request.public_key_fingerprint
+        ):
+            raise ValueError("ENROLLMENT_TOKEN_BINDING_MISMATCH")
+        if (
+            self.mtls_certificate_fingerprint is not None
+            and self.mtls_certificate_fingerprint != request.mtls_certificate_fingerprint
         ):
             raise ValueError("ENROLLMENT_TOKEN_BINDING_MISMATCH")
         if self.connector_name is not None and self.connector_name != request.name:
@@ -127,6 +135,11 @@ class ConnectorRegistry:
         enrollment_token.validate_for(request)
         if not request.public_key_fingerprint.startswith("sha256:"):
             raise ValueError("INVALID_CONNECTOR_FINGERPRINT")
+        if (
+            enrollment_token.mtls_certificate_fingerprint is not None
+            and not enrollment_token.mtls_certificate_fingerprint.startswith("sha256:")
+        ):
+            raise ValueError("INVALID_CONNECTOR_MTLS_FINGERPRINT")
 
         now = datetime.now(UTC)
         record = ConnectorRecord(
@@ -134,6 +147,7 @@ class ConnectorRegistry:
             name=request.name,
             environment=request.environment,
             public_key_fingerprint=request.public_key_fingerprint,
+            mtls_certificate_fingerprint=enrollment_token.mtls_certificate_fingerprint,
             capabilities=request.capabilities,
             registered_at=now,
             last_heartbeat_at=now,
@@ -156,12 +170,18 @@ class ConnectorRegistry:
         connector_id: str,
         request: dict[str, Any],
         policy_service: PolicyEvaluator,
+        mtls_certificate_fingerprint: str | None = None,
     ) -> ConnectionToken:
         connector = self._store.get(connector_id)
         if connector is None:
             raise ValueError("CONNECTOR_NOT_FOUND")
         if connector.status != ConnectorStatus.ACTIVE:
             raise ValueError("CONNECTOR_NOT_ACTIVE")
+        if (
+            connector.mtls_certificate_fingerprint is not None
+            and connector.mtls_certificate_fingerprint != mtls_certificate_fingerprint
+        ):
+            raise ValueError("CONNECTOR_MTLS_CERTIFICATE_MISMATCH")
         if self._heartbeat_expired(connector):
             raise ValueError("CONNECTOR_HEARTBEAT_EXPIRED")
 

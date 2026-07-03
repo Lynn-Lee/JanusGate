@@ -47,6 +47,7 @@ def _registration_request(enrollment_token: str = "token-1") -> ConnectorRegistr
         name="koko-1",
         environment="prod",
         public_key_fingerprint="sha256:abc",
+        mtls_certificate_fingerprint="sha256:cert-abc",
         capabilities=[ConnectorCapability.SSH],
         enrollment_token=enrollment_token,
     )
@@ -108,6 +109,37 @@ def test_allowed_policy_returns_short_lived_connection_token():
     assert token.token.startswith("jgt_")
     assert token.ttl_seconds == 120
     assert token.policy_audit_event_id == "pde_test"
+
+
+def test_connector_registration_records_mtls_certificate_fingerprint():
+    registry = ConnectorRegistry(
+        store=InMemoryConnectorStore(),
+        enrollment_tokens=_enrollment_tokens(
+            _active_token(mtls_certificate_fingerprint="sha256:cert-abc")
+        ),
+    )
+
+    connector = registry.register(_registration_request())
+
+    assert connector.mtls_certificate_fingerprint == "sha256:cert-abc"
+
+
+def test_mtls_certificate_mismatch_blocks_connection_token():
+    registry = ConnectorRegistry(
+        store=InMemoryConnectorStore(),
+        enrollment_tokens=_enrollment_tokens(
+            _active_token(mtls_certificate_fingerprint="sha256:cert-abc")
+        ),
+    )
+    connector = registry.register(_registration_request())
+
+    with pytest.raises(ValueError, match="CONNECTOR_MTLS_CERTIFICATE_MISMATCH"):
+        registry.issue_connection_token(
+            connector.id,
+            request={"action": "asset.connect"},
+            policy_service=StubPolicyService(PolicyDecision.ALLOW),
+            mtls_certificate_fingerprint="sha256:cert-other",
+        )
 
 
 def test_connector_heartbeat_refreshes_lease_timestamp():
