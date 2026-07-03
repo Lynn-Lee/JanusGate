@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 from app.core.database import Base, get_db
 from app.core.deps import current_user
 from app.main import app
+from app.models.account import Account
 from app.models.asset import Asset, Platform
 from app.models.tenancy import Organization, Project, Team
 
@@ -197,3 +198,111 @@ async def test_account_create_rejects_cross_tenant_project(
 
     assert response.status_code == 403
     assert response.json()["code"] == "TENANT_SCOPE_VIOLATION"
+
+
+@pytest.mark.asyncio
+async def test_account_rotation_api_schedules_and_lists_jobs_with_tenant_scope(
+    session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    install_db(session_factory)
+    await seed_inventory_and_tenancy(session_factory)
+
+    async with session_factory() as session:
+        session.add(
+            Account(
+                tenant_id="tenant-a",
+                asset_id=1,
+                username="deploy",
+                protocol="ssh",
+                secret_id="sec_tenant_a_deploy",
+                organization_id="org-a",
+                team_id="team-a",
+                project_id="project-a",
+            )
+        )
+        await session.commit()
+
+    with TestClient(app) as client:
+        install_user(tenant_id="tenant-a", permissions=["admin"])
+        create_response = client.post(
+            "/api/v1/accounts/1/rotations",
+            json={"reason": "quarterly rotation", "scheduled_at": "2026-07-04T10:00:00Z"},
+        )
+        list_response = client.get("/api/v1/accounts/1/rotations")
+
+        install_user(tenant_id="tenant-b", permissions=["admin"])
+        tenant_b_response = client.get("/api/v1/accounts/1/rotations")
+
+    assert create_response.status_code == 201
+    created = create_response.json()
+    assert created == {
+        "id": 1,
+        "tenant_id": "tenant-a",
+        "account_id": 1,
+        "status": "scheduled",
+        "reason": "quarterly rotation",
+        "requested_by": "user-1",
+        "scheduled_at": "2026-07-04T10:00:00Z",
+    }
+    assert "secret_id" not in created
+    assert "plaintext" not in created
+    assert list_response.status_code == 200
+    assert list_response.json() == {"items": [created], "total": 1}
+    assert tenant_b_response.status_code == 404
+    assert tenant_b_response.json()["code"] == "ACCOUNT_NOT_FOUND"
+
+
+@pytest.mark.asyncio
+async def test_account_rotation_api_respects_project_scope(
+    session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    install_db(session_factory)
+    await seed_inventory_and_tenancy(session_factory)
+
+    async with session_factory() as session:
+        session.add(
+            Account(
+                tenant_id="tenant-a",
+                asset_id=1,
+                username="deploy",
+                protocol="ssh",
+                secret_id="sec_tenant_a_deploy",
+                organization_id="org-a",
+                team_id="team-a",
+                project_id="project-a",
+            )
+        )
+        session.add(
+            Account(
+                tenant_id="tenant-a",
+                asset_id=1,
+                username="breakglass",
+                protocol="ssh",
+                secret_id="sec_tenant_a_breakglass",
+                organization_id="org-a",
+                team_id="team-a",
+            )
+        )
+        await session.commit()
+
+    with TestClient(app) as client:
+        install_user(
+            tenant_id="tenant-a",
+            permissions=["accounts:rotate"],
+            organization_id="org-a",
+            team_id="team-a",
+            project_id="project-a",
+        )
+        in_scope_response = client.post(
+            "/api/v1/accounts/1/rotations",
+            json={"reason": "project scoped rotation"},
+        )
+        out_of_scope_response = client.post(
+            "/api/v1/accounts/2/rotations",
+            json={"reason": "should not cross project scope"},
+        )
+
+    assert in_scope_response.status_code == 201
+    assert in_scope_response.json()["account_id"] == 1
+    assert out_of_scope_response.status_code == 404
+    assert out_of_scope_response.json()["code"] == "ACCOUNT_NOT_FOUND"

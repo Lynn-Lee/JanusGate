@@ -343,6 +343,60 @@
 | 404 | `TEAM_NOT_FOUND` | 指定团队不存在 |
 | 404 | `PROJECT_NOT_FOUND` | 指定项目不存在 |
 
+### GET `/api/v1/accounts/{account_id}/rotations`
+
+用途：返回当前登录用户可见账号的凭据轮换调度记录。
+
+鉴权：需要登录态；`admin` 或 `accounts:read` 权限可访问。后端先按 `Account` 的租户/项目可见范围确认账号存在，再返回该账号下的 rotation 记录。
+
+响应 `200`：
+
+```json
+{
+  "items": [
+    {
+      "id": 1,
+      "tenant_id": "tenant-a",
+      "account_id": 1,
+      "status": "scheduled",
+      "reason": "quarterly rotation",
+      "requested_by": "user-1",
+      "scheduled_at": "2026-07-04T10:00:00Z"
+    }
+  ],
+  "total": 1
+}
+```
+
+安全语义：
+
+- 不返回 `secret_id`、密码、私钥或 token 明文。
+- 不可见或跨租户账号统一返回 `404 ACCOUNT_NOT_FOUND`，避免泄露账号存在性。
+
+### POST `/api/v1/accounts/{account_id}/rotations`
+
+用途：为当前登录用户可见账号创建凭据轮换调度记录。
+
+鉴权：需要登录态；`admin` 或 `accounts:rotate` 权限可访问。当前切片只持久化调度记录，实际轮换执行 worker、双写迁移和回滚在后续 #t43 子切片补齐。
+
+请求体：
+
+```json
+{
+  "reason": "quarterly rotation",
+  "scheduled_at": "2026-07-04T10:00:00Z"
+}
+```
+
+响应 `201`：同 `GET /api/v1/accounts/{account_id}/rotations` 的单条 item。
+
+错误码：
+
+| HTTP | detail | 说明 |
+| --- | --- | --- |
+| 403 | `缺少权限: accounts:rotate` | 当前用户不能调度凭据轮换 |
+| 404 | `ACCOUNT_NOT_FOUND` | 指定账号不存在或当前用户不可见 |
+
 ## Session connection token（#t42）
 
 前端创建会话前必须先向后端换取真实 `connection_token`，不得在前端伪造 token。

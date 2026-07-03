@@ -1,13 +1,21 @@
 """Phase 4 account custody API routes."""
+from datetime import UTC, datetime
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.account_schemas import AccountCreate, AccountListResponse, AccountResponse
+from app.api.account_schemas import (
+    AccountCreate,
+    AccountListResponse,
+    AccountResponse,
+    CredentialRotationCreate,
+    CredentialRotationListResponse,
+    CredentialRotationResponse,
+)
 from app.core.database import get_db
 from app.core.deps import current_user
-from app.models.account import Account
+from app.models.account import Account, CredentialRotation
 from app.models.asset import Asset
 from app.models.tenancy import Organization, Project, Team
 from app.tenancy.scope import actor_scope_from_user, scoped_select
@@ -66,6 +74,51 @@ async def create_account(
     return _account_response(account)
 
 
+@router.get("/{account_id}/rotations", response_model=CredentialRotationListResponse)
+async def list_credential_rotations(
+    account_id: int,
+    db: AsyncSession = Depends(get_db),
+    user: dict[str, Any] = Depends(current_user),
+) -> CredentialRotationListResponse:
+    _require_account_permission(user, "accounts:read")
+    account = await _get_scoped_account(db=db, user=user, account_id=account_id)
+    result = await db.execute(
+        scoped_select(CredentialRotation, actor_scope_from_user(user))
+        .where(CredentialRotation.account_id == account.id)
+        .order_by(CredentialRotation.id)
+    )
+    rotations = result.scalars().all()
+    items = [_rotation_response(rotation) for rotation in rotations]
+    return CredentialRotationListResponse(items=items, total=len(items))
+
+
+@router.post(
+    "/{account_id}/rotations",
+    response_model=CredentialRotationResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+async def schedule_credential_rotation(
+    account_id: int,
+    data: CredentialRotationCreate,
+    db: AsyncSession = Depends(get_db),
+    user: dict[str, Any] = Depends(current_user),
+) -> CredentialRotationResponse:
+    _require_account_permission(user, "accounts:rotate")
+    account = await _get_scoped_account(db=db, user=user, account_id=account_id)
+    rotation = CredentialRotation(
+        tenant_id=account.tenant_id,
+        account_id=account.id,
+        status="scheduled",
+        reason=data.reason,
+        requested_by=str(user.get("id") or ""),
+        scheduled_at=data.scheduled_at,
+    )
+    db.add(rotation)
+    await db.commit()
+    await db.refresh(rotation)
+    return _rotation_response(rotation)
+
+
 async def _assert_tenant_scope(
     *,
     db: AsyncSession,
@@ -110,6 +163,18 @@ def _require_account_permission(user: dict[str, Any], permission: str) -> None:
     raise HTTPException(status_code=403, detail=f"缺少权限: {permission}")
 
 
+async def _get_scoped_account(
+    *, db: AsyncSession, user: dict[str, Any], account_id: int
+) -> Account:
+    result = await db.execute(
+        scoped_select(Account, actor_scope_from_user(user)).where(Account.id == account_id)
+    )
+    account = result.scalar_one_or_none()
+    if account is None:
+        raise HTTPException(status_code=404, detail="ACCOUNT_NOT_FOUND")
+    return account
+
+
 def _account_response(account: Account) -> AccountResponse:
     return AccountResponse(
         id=account.id,
@@ -124,3 +189,21 @@ def _account_response(account: Account) -> AccountResponse:
         status=account.status,
         rotation_policy=account.rotation_policy,
     )
+
+
+def _rotation_response(rotation: CredentialRotation) -> CredentialRotationResponse:
+    return CredentialRotationResponse(
+        id=rotation.id,
+        tenant_id=rotation.tenant_id,
+        account_id=rotation.account_id,
+        status=rotation.status,
+        reason=rotation.reason,
+        requested_by=rotation.requested_by,
+        scheduled_at=_as_utc(rotation.scheduled_at),
+    )
+
+
+def _as_utc(value: datetime | None) -> datetime | None:
+    if value is None or value.tzinfo is not None:
+        return value
+    return value.replace(tzinfo=UTC)
