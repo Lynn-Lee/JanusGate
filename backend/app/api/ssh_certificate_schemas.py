@@ -58,3 +58,16 @@ class SshCertificateAuthorityResponse(BaseModel):
 class SshCertificateAuthorityListResponse(BaseModel):
     items: list[SshCertificateAuthorityResponse]
     total: int
+
+
+class SshCertificateAuthorityTrustBundleItem(BaseModel):
+    ca_id: int
+    tenant_id: str
+    name: str
+    public_key: str
+    trusted_asset_ids: list[int]
+
+
+class SshCertificateAuthorityTrustBundleResponse(BaseModel):
+    items: list[SshCertificateAuthorityTrustBundleItem]
+    total: int

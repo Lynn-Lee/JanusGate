@@ -399,7 +399,7 @@
 
 ## Phase 4 SSH CA / Temporary Certificate Service（#t44）
 
-当前 #t44 已落地后端模型、CA 管理 API、CA 禁用 API、服务契约、临时证书签发/撤销 REST API，以及接入 API 路由的 Vault-backed OpenSSH signer。后续补连接器信任分发和前端入口时必须沿用本节安全语义。
+当前 #t44 已落地后端模型、CA 管理 API、CA 禁用 API、连接器信任 bundle API、服务契约、临时证书签发/撤销 REST API，以及接入 API 路由的 Vault-backed OpenSSH signer。后续补前端入口时必须沿用本节安全语义。
 
 核心模型：
 
@@ -467,6 +467,35 @@
 | 403 | `缺少权限: ssh-certificate-authorities:disable` | 当前用户不能禁用 CA |
 | 404 | `SSH_CA_NOT_FOUND` | CA 不存在、跨租户或已不处于 active 状态 |
 
+### GET `/api/v1/ssh-certificate-authorities/trust-bundle`
+
+用途：返回当前登录用户租户内 active 资产实际信任的 active SSH CA 公钥 bundle，供连接器/资产侧同步 trusted CA 公钥。
+
+鉴权：需要登录态；`admin` 或 `ssh-certificate-authorities:read` 权限可访问。
+
+响应 `200`：
+
+```json
+{
+  "items": [
+    {
+      "ca_id": 1,
+      "tenant_id": "tenant-a",
+      "name": "tenant-a-ca",
+      "public_key": "ssh-ed25519 AAAA...",
+      "trusted_asset_ids": [1, 3]
+    }
+  ],
+  "total": 1
+}
+```
+
+安全语义：
+
+- 只返回当前租户 active CA 与 active Asset 的交集。
+- 未被任何 active 资产信任的 CA、disabled CA、跨租户 CA、inactive 资产引用的 CA 不返回。
+- 响应不包含 `private_key_secret_id` 或任何私钥材料。
+
 ### GET `/api/v1/ssh-certificates/`
 
 用途：返回当前登录用户租户内可见的临时 SSH 证书列表。
@@ -532,7 +561,6 @@
 
 后续 API 切片必须补充：
 
-- Connector/Asset 信任配置分发。
 - 前端 SSH CA 与临时证书签发入口。
 
 ## Session connection token（#t42）
