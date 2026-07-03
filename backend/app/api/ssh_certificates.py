@@ -1,6 +1,8 @@
 """Phase 4 SSH CA temporary certificate API routes."""
 from datetime import UTC, datetime
-from typing import Any
+from functools import lru_cache
+from hashlib import sha256
+from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
@@ -12,23 +14,37 @@ from app.api.ssh_certificate_schemas import (
     SshCertificateResponse,
     SshCertificateRevokeRequest,
 )
+from app.core.config import settings
 from app.core.database import get_db
 from app.core.deps import current_user
 from app.models.account import Account
 from app.models.ssh_ca import SshCertificate
 from app.services.ssh_ca import (
+    SshCaSecretProvider,
     SshCertificateService,
     SshCertificateSigner,
-    SshCertificateSigningRequest,
+    VaultOpenSshCertificateSigner,
 )
 from app.tenancy.scope import actor_scope_from_user, scoped_select
+from app.vault.provider import LocalEncryptedSecretProvider
 
 router = APIRouter(prefix="/ssh-certificates", tags=["SSH CA"])
 
 
-class ReferenceSshCertificateSigner(SshCertificateSigner):
-    async def sign(self, request: SshCertificateSigningRequest) -> str:
-        return f"ssh-rsa-cert-v01@openssh.com {request.serial} {request.principal}"
+@lru_cache
+def _default_ssh_ca_secret_provider() -> LocalEncryptedSecretProvider:
+    master_key = sha256(settings.SECRET_KEY.encode()).digest()
+    return LocalEncryptedSecretProvider(master_key=master_key)
+
+
+def get_ssh_ca_secret_provider() -> SshCaSecretProvider:
+    return _default_ssh_ca_secret_provider()
+
+
+def get_ssh_certificate_signer(
+    secret_provider: Annotated[SshCaSecretProvider, Depends(get_ssh_ca_secret_provider)],
+) -> SshCertificateSigner:
+    return VaultOpenSshCertificateSigner(secret_provider=secret_provider)
 
 
 @router.get("/", response_model=SshCertificateListResponse)
@@ -57,6 +73,7 @@ async def issue_ssh_certificate(
     data: SshCertificateIssueRequest,
     db: AsyncSession = Depends(get_db),
     user: dict[str, Any] = Depends(current_user),
+    signer: SshCertificateSigner = Depends(get_ssh_certificate_signer),
 ) -> SshCertificateResponse:
     _require_ssh_certificate_permission(user, "ssh-certificates:issue")
     tenant_id = str(user.get("tenant_id") or "default")
@@ -67,7 +84,7 @@ async def issue_ssh_certificate(
         asset_id=data.asset_id,
     )
 
-    service = SshCertificateService(session=db, signer=ReferenceSshCertificateSigner())
+    service = SshCertificateService(session=db, signer=signer)
     try:
         certificate = await service.issue_certificate(
             tenant_id=tenant_id,
@@ -89,12 +106,13 @@ async def revoke_ssh_certificate(
     data: SshCertificateRevokeRequest,
     db: AsyncSession = Depends(get_db),
     user: dict[str, Any] = Depends(current_user),
+    signer: SshCertificateSigner = Depends(get_ssh_certificate_signer),
 ) -> SshCertificateResponse:
     _require_ssh_certificate_permission(user, "ssh-certificates:revoke")
     tenant_id = str(user.get("tenant_id") or "default")
     certificate = await _get_visible_certificate(db=db, user=user, certificate_id=certificate_id)
 
-    service = SshCertificateService(session=db, signer=ReferenceSshCertificateSigner())
+    service = SshCertificateService(session=db, signer=signer)
     revoked = await service.revoke_certificate(
         tenant_id=tenant_id,
         certificate_id=certificate.id,

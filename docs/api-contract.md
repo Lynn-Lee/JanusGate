@@ -399,7 +399,7 @@
 
 ## Phase 4 SSH CA / Temporary Certificate Service（#t44）
 
-当前 #t44 已落地后端模型、CA 管理 API、CA 禁用 API、服务契约、临时证书签发/撤销 REST API，以及 Vault-backed OpenSSH signer service primitive。后续将 API 路由切换到真实 Vault provider、连接器信任分发和前端入口时必须沿用本节安全语义。
+当前 #t44 已落地后端模型、CA 管理 API、CA 禁用 API、服务契约、临时证书签发/撤销 REST API，以及接入 API 路由的 Vault-backed OpenSSH signer。后续补连接器信任分发和前端入口时必须沿用本节安全语义。
 
 核心模型：
 
@@ -410,7 +410,7 @@
 服务语义：
 
 - `SshCertificateService.issue_certificate(...)` 只允许同租户 active CA、active Asset、active SSH Account 组合签发。
-- `VaultOpenSshCertificateSigner` 必须只通过 `private_key_secret_id` 从 SecretProvider unwrap CA 私钥，并生成 OpenSSH user certificate；CA 私钥缺失、撤销或格式错误时 fail-closed 为 `SSH_CA_PRIVATE_KEY_UNAVAILABLE`。
+- `VaultOpenSshCertificateSigner` 必须只通过 `private_key_secret_id` 从 SecretProvider unwrap CA 私钥，并生成 OpenSSH user certificate；API 路由默认使用该 signer。CA 私钥缺失、撤销或格式错误时 fail-closed 为 `SSH_CA_PRIVATE_KEY_UNAVAILABLE`。
 - 资产必须显式信任请求中的 CA，否则 fail-closed 为 `ASSET_SSH_CA_NOT_TRUSTED`。
 - 跨租户或不可见资产返回 `ASSET_NOT_FOUND`；跨租户或不可见账号返回 `ACCOUNT_NOT_FOUND`；inactive 或不存在的 CA 返回 `SSH_CA_NOT_FOUND`。
 - 签发请求只向 signer 传 `private_key_secret_id`，不传或记录私钥明文。
@@ -499,6 +499,8 @@
 
 | HTTP | detail | 说明 |
 | --- | --- | --- |
+| 400 | `SSH_CA_PRIVATE_KEY_UNAVAILABLE` | CA 私钥 secret 缺失、撤销、解密失败或格式不可用 |
+| 400 | `SSH_PUBLIC_KEY_INVALID` | 请求公钥不是可解析的 SSH 公钥 |
 | 403 | `ASSET_SSH_CA_NOT_TRUSTED` | 资产未显式信任请求 CA |
 | 403 | `缺少权限: ssh-certificates:issue` | 当前用户不能签发证书 |
 | 404 | `SSH_CA_NOT_FOUND` | CA 不存在、inactive 或不属于当前租户 |
@@ -530,8 +532,8 @@
 
 后续 API 切片必须补充：
 
-- API 路由切换真实 Vault provider 后的 OpenSSH certificate signer 集成。
 - Connector/Asset 信任配置分发。
+- 前端 SSH CA 与临时证书签发入口。
 
 ## Session connection token（#t42）
 
