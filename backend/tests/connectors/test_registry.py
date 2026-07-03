@@ -224,6 +224,36 @@ def test_inactive_connector_heartbeat_is_rejected():
     assert store.get(connector.id).status == ConnectorStatus.INACTIVE
 
 
+def test_active_connector_key_rotation_updates_fingerprint_and_history():
+    store = InMemoryConnectorStore()
+    registry = ConnectorRegistry(store=store, enrollment_tokens=_enrollment_tokens(_active_token()))
+    connector = registry.register(_registration_request())
+    rotated_at = datetime.now(UTC) + timedelta(minutes=1)
+
+    updated = registry.rotate_key(
+        connector.id,
+        public_key_fingerprint="sha256:def",
+        rotated_at=rotated_at,
+    )
+
+    assert updated.public_key_fingerprint == "sha256:def"
+    assert updated.previous_public_key_fingerprint == "sha256:abc"
+    assert updated.key_rotated_at == rotated_at
+    assert store.get(connector.id).public_key_fingerprint == "sha256:def"
+
+
+def test_inactive_connector_key_rotation_is_rejected():
+    store = InMemoryConnectorStore()
+    registry = ConnectorRegistry(store=store, enrollment_tokens=_enrollment_tokens(_active_token()))
+    connector = registry.register(_registration_request())
+    store.set_status(connector.id, ConnectorStatus.INACTIVE)
+
+    with pytest.raises(ValueError, match="CONNECTOR_NOT_ACTIVE"):
+        registry.rotate_key(connector.id, public_key_fingerprint="sha256:def")
+
+    assert store.get(connector.id).public_key_fingerprint == "sha256:abc"
+
+
 def test_enrollment_token_cannot_be_reused_after_successful_registration():
     registry = ConnectorRegistry(
         store=InMemoryConnectorStore(),
