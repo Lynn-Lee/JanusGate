@@ -294,6 +294,84 @@ async def test_ssh_ca_management_api_disables_tenant_authority_without_leaking_s
 
 
 @pytest.mark.asyncio
+async def test_ssh_ca_trust_bundle_lists_active_tenant_asset_trust_without_secrets(
+    session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    install_db(session_factory)
+    install_ssh_ca_secrets()
+    await seed_ssh_ca_fixture(session_factory)
+
+    async with session_factory() as session:
+        session.add(
+            SshCertificateAuthority(
+                id=4,
+                tenant_id="tenant-a",
+                name="tenant-a-disabled-ca",
+                public_key="ssh-ed25519 AAAAC3NzaTenantADisabled",
+                private_key_secret_id="sec_tenant_a_disabled_ssh_ca",
+                status="disabled",
+                validity_seconds=900,
+            )
+        )
+        session.add(
+            Asset(
+                id=2,
+                tenant_id="tenant-a",
+                name="disabled-ca-host",
+                address="203.0.113.11",
+                platform_id=1,
+                trusted_ssh_ca_id=4,
+            )
+        )
+        session.add(
+            Asset(
+                id=3,
+                tenant_id="tenant-a",
+                name="second-prod-linux",
+                address="203.0.113.12",
+                platform_id=1,
+                trusted_ssh_ca_id=1,
+            )
+        )
+        session.add(
+            Asset(
+                id=4,
+                tenant_id="tenant-a",
+                name="inactive-prod-linux",
+                address="203.0.113.13",
+                platform_id=1,
+                trusted_ssh_ca_id=1,
+                is_active=False,
+            )
+        )
+        await session.commit()
+
+    with TestClient(app) as client:
+        install_user(tenant_id="tenant-a", permissions=[])
+        forbidden = client.get("/api/v1/ssh-certificate-authorities/trust-bundle")
+
+        install_user(tenant_id="tenant-a", permissions=["ssh-certificate-authorities:read"])
+        response = client.get("/api/v1/ssh-certificate-authorities/trust-bundle")
+
+    assert forbidden.status_code == 403
+    assert response.status_code == 200
+    assert response.json() == {
+        "items": [
+            {
+                "ca_id": 1,
+                "tenant_id": "tenant-a",
+                "name": "tenant-a-ca",
+                "public_key": "ssh-ed25519 AAAAC3NzaTenantA",
+                "trusted_asset_ids": [1, 3],
+            }
+        ],
+        "total": 1,
+    }
+    assert "private_key_secret_id" not in response.text
+    assert "sec_tenant" not in response.text
+
+
+@pytest.mark.asyncio
 async def test_ssh_certificate_api_maps_service_errors_to_stable_codes(
     session_factory: async_sessionmaker[AsyncSession],
 ) -> None:

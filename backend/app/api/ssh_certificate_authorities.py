@@ -9,9 +9,12 @@ from app.api.ssh_certificate_schemas import (
     SshCertificateAuthorityCreateRequest,
     SshCertificateAuthorityListResponse,
     SshCertificateAuthorityResponse,
+    SshCertificateAuthorityTrustBundleItem,
+    SshCertificateAuthorityTrustBundleResponse,
 )
 from app.core.database import get_db
 from app.core.deps import current_user
+from app.models.asset import Asset
 from app.models.ssh_ca import SshCertificateAuthority
 
 router = APIRouter(prefix="/ssh-certificate-authorities", tags=["SSH CA"])
@@ -32,6 +35,41 @@ async def list_ssh_certificate_authorities(
     authorities = result.scalars().all()
     items = [_authority_response(authority) for authority in authorities]
     return SshCertificateAuthorityListResponse(items=items, total=len(items))
+
+
+@router.get("/trust-bundle", response_model=SshCertificateAuthorityTrustBundleResponse)
+async def get_ssh_ca_trust_bundle(
+    db: AsyncSession = Depends(get_db),
+    user: dict[str, Any] = Depends(current_user),
+) -> SshCertificateAuthorityTrustBundleResponse:
+    _require_ssh_ca_permission(user, "ssh-certificate-authorities:read")
+    tenant_id = str(user.get("tenant_id") or "default")
+    result = await db.execute(
+        select(SshCertificateAuthority, Asset.id)
+        .join(Asset, Asset.trusted_ssh_ca_id == SshCertificateAuthority.id)
+        .where(SshCertificateAuthority.tenant_id == tenant_id)
+        .where(SshCertificateAuthority.status == "active")
+        .where(Asset.tenant_id == tenant_id)
+        .where(Asset.is_active.is_(True))
+        .order_by(SshCertificateAuthority.id, Asset.id)
+    )
+
+    bundle_by_ca_id: dict[int, SshCertificateAuthorityTrustBundleItem] = {}
+    for authority, asset_id in result.all():
+        item = bundle_by_ca_id.get(authority.id)
+        if item is None:
+            item = SshCertificateAuthorityTrustBundleItem(
+                ca_id=authority.id,
+                tenant_id=authority.tenant_id,
+                name=authority.name,
+                public_key=authority.public_key,
+                trusted_asset_ids=[],
+            )
+            bundle_by_ca_id[authority.id] = item
+        item.trusted_asset_ids.append(asset_id)
+
+    items = list(bundle_by_ca_id.values())
+    return SshCertificateAuthorityTrustBundleResponse(items=items, total=len(items))
 
 
 @router.post(
