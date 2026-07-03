@@ -77,6 +77,33 @@ body,
 }
 
 @media (max-width: 800px) {
+  .jg-shell,
+  .jg-shell.ant-layout-has-sider {
+    flex-direction: column;
+  }
+
+  .jg-shell > .ant-layout {
+    flex: none;
+    min-width: 100% !important;
+    width: 100% !important;
+  }
+
+  .jg-shell .ant-layout-sider {
+    max-width: 100% !important;
+    min-width: 100% !important;
+    width: 100% !important;
+  }
+
+  .jg-shell .ant-menu-inline {
+    display: flex;
+    overflow-x: auto;
+  }
+
+  .jg-shell .ant-menu-inline .ant-menu-item {
+    flex: 0 0 auto;
+    width: auto;
+  }
+
   .jg-header {
     height: auto;
     padding: 16px;
@@ -87,5 +114,29 @@ body,
 
   .jg-content {
     padding: 16px;
+    width: 100%;
+    min-width: 0;
+  }
+
+  .jg-page {
+    width: 100%;
+    min-width: 0;
+  }
+
+  .jg-page-header {
+    flex-direction: column;
+    width: 100%;
+  }
+
+  .jg-page-header > div {
+    width: 100%;
+  }
+
+  .jg-page-header > .ant-space {
+    flex-wrap: wrap;
+  }
+
+  .jg-card-grid .ant-card-body {
+    overflow-x: auto;
   }
 }

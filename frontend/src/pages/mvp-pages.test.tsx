@@ -13,6 +13,28 @@ const session = { id: 'session-1', asset_id: '1', account_id: 'root', connector_
 const organization = { id: 'org-a', tenant_id: 'tenant-a', name: 'Tenant A Ops', status: 'active' };
 const team = { id: 'team-a', tenant_id: 'tenant-a', organization_id: 'org-a', name: 'Ops Team' };
 const project = { id: 'project-a', tenant_id: 'tenant-a', organization_id: 'org-a', team_id: 'team-a', name: 'Production Project', status: 'active' };
+const account = {
+  id: 1,
+  tenant_id: 'tenant-a',
+  asset_id: 1,
+  username: 'deploy',
+  protocol: 'ssh',
+  secret_id: 'sec_tenant_a_deploy',
+  organization_id: 'org-a',
+  team_id: 'team-a',
+  project_id: 'project-a',
+  status: 'active',
+  rotation_policy: 'manual'
+};
+const rotation = {
+  id: 7,
+  tenant_id: 'tenant-a',
+  account_id: 1,
+  status: 'scheduled',
+  reason: 'quarterly rotation',
+  requested_by: 'admin',
+  scheduled_at: '2026-07-04T10:00:00Z'
+};
 
 function installFetch() {
   return vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -28,6 +50,13 @@ function installFetch() {
     if (url.endsWith('/api/v1/tenancy/organizations')) return Response.json({ items: [organization], total: 1 });
     if (url.endsWith('/api/v1/tenancy/teams')) return Response.json({ items: [team], total: 1 });
     if (url.endsWith('/api/v1/tenancy/projects')) return Response.json({ items: [project], total: 1 });
+    if (url.endsWith('/api/v1/accounts/') && method === 'GET') return Response.json({ items: [account], total: 1 });
+    if (url.endsWith('/api/v1/accounts/1/rotations') && method === 'GET') {
+      return Response.json({ items: [rotation], total: 1 });
+    }
+    if (url.endsWith('/api/v1/accounts/1/rotations') && method === 'POST') {
+      return Response.json({ ...rotation, id: 8, reason: 'console requested rotation' }, { status: 201 });
+    }
     if (url.endsWith('/health')) return Response.json({ status: 'ok', version: '0.1.0' });
     return Response.json(session);
   });
@@ -101,5 +130,29 @@ describe('MVP pages', () => {
     expect(screen.getByText('Tenant A Ops')).toBeInTheDocument();
     expect(screen.getByText('Ops Team')).toBeInTheDocument();
     expect(screen.getByText('Production Project')).toBeInTheDocument();
+  });
+
+  it('shows account custody and schedules credential rotation without exposing secrets', async () => {
+    const fetchMock = installFetch();
+    vi.stubGlobal('fetch', fetchMock);
+    history.pushState(null, '', '/accounts');
+    render(<App />);
+
+    expect(await screen.findByRole('heading', { name: '账号托管与凭据轮换' })).toBeInTheDocument();
+    expect(screen.getByText('deploy')).toBeInTheDocument();
+    expect(screen.getByText('sec_tenant_a_deploy')).toBeInTheDocument();
+    expect(await screen.findByText('quarterly rotation')).toBeInTheDocument();
+    expect(screen.queryByText('plaintext-password')).not.toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole('button', { name: '调度轮换' }));
+    await waitFor(() =>
+      expect(fetchMock).toHaveBeenCalledWith(
+        '/api/v1/accounts/1/rotations',
+        expect.objectContaining({
+          method: 'POST',
+          body: JSON.stringify({ reason: 'console requested rotation' })
+        })
+      )
+    );
   });
 });
