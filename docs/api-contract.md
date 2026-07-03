@@ -399,7 +399,7 @@
 
 ## Phase 4 SSH CA / Temporary Certificate Service（#t44）
 
-当前 #t44 已落地后端模型、CA 管理 API、CA 禁用 API、服务契约和临时证书签发/撤销 REST API。后续新增真实 OpenSSH signer、连接器信任分发和前端入口时必须沿用本节安全语义。
+当前 #t44 已落地后端模型、CA 管理 API、CA 禁用 API、服务契约、临时证书签发/撤销 REST API，以及 Vault-backed OpenSSH signer service primitive。后续将 API 路由切换到真实 Vault provider、连接器信任分发和前端入口时必须沿用本节安全语义。
 
 核心模型：
 
@@ -410,6 +410,7 @@
 服务语义：
 
 - `SshCertificateService.issue_certificate(...)` 只允许同租户 active CA、active Asset、active SSH Account 组合签发。
+- `VaultOpenSshCertificateSigner` 必须只通过 `private_key_secret_id` 从 SecretProvider unwrap CA 私钥，并生成 OpenSSH user certificate；CA 私钥缺失、撤销或格式错误时 fail-closed 为 `SSH_CA_PRIVATE_KEY_UNAVAILABLE`。
 - 资产必须显式信任请求中的 CA，否则 fail-closed 为 `ASSET_SSH_CA_NOT_TRUSTED`。
 - 跨租户或不可见资产返回 `ASSET_NOT_FOUND`；跨租户或不可见账号返回 `ACCOUNT_NOT_FOUND`；inactive 或不存在的 CA 返回 `SSH_CA_NOT_FOUND`。
 - 签发请求只向 signer 传 `private_key_secret_id`，不传或记录私钥明文。
@@ -529,7 +530,8 @@
 
 后续 API 切片必须补充：
 
-- Connector/Asset 信任配置分发与真实 OpenSSH certificate signer 集成。
+- API 路由切换真实 Vault provider 后的 OpenSSH certificate signer 集成。
+- Connector/Asset 信任配置分发。
 
 ## Session connection token（#t42）
 

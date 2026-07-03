@@ -3,8 +3,20 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
+from hashlib import sha256
 from typing import Protocol
 
+from cryptography.hazmat.primitives.asymmetric import ec, ed25519, rsa
+from cryptography.hazmat.primitives.serialization import (
+    load_ssh_private_key,
+    load_ssh_public_key,
+)
+from cryptography.hazmat.primitives.serialization.ssh import (
+    SSHCertificateBuilder,
+    SSHCertificateType,
+    SSHCertPrivateKeyTypes,
+    SSHCertPublicKeyTypes,
+)
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -29,6 +41,56 @@ class SshCertificateSigningRequest:
 
 class SshCertificateSigner(Protocol):
     async def sign(self, request: SshCertificateSigningRequest) -> str: ...
+
+
+class SshCaSecretProvider(Protocol):
+    def unwrap(self, secret_id: str) -> str: ...
+
+
+class VaultOpenSshCertificateSigner:
+    def __init__(self, *, secret_provider: SshCaSecretProvider) -> None:
+        self._secret_provider = secret_provider
+
+    async def sign(self, request: SshCertificateSigningRequest) -> str:
+        ca_private_key = self._load_ca_private_key(request.private_key_secret_id)
+        public_key = self._load_public_key(request.public_key)
+        certificate = (
+            SSHCertificateBuilder()
+            .public_key(public_key)
+            .type(SSHCertificateType.USER)
+            .serial(_openssh_serial_number(request.serial))
+            .key_id(request.serial.encode())
+            .valid_principals([request.principal.encode()])
+            .valid_after(int(_as_utc(request.valid_after).timestamp()))
+            .valid_before(int(_as_utc(request.valid_before).timestamp()))
+            .sign(ca_private_key)
+        )
+        return certificate.public_bytes().decode()
+
+    def _load_ca_private_key(self, secret_id: str) -> SSHCertPrivateKeyTypes:
+        try:
+            private_key = self._secret_provider.unwrap(secret_id)
+            loaded_key = load_ssh_private_key(private_key.encode(), password=None)
+            if not isinstance(
+                loaded_key,
+                (ec.EllipticCurvePrivateKey, rsa.RSAPrivateKey, ed25519.Ed25519PrivateKey),
+            ):
+                raise ValueError("SSH_CA_PRIVATE_KEY_UNSUPPORTED")
+            return loaded_key
+        except Exception as exc:
+            raise ValueError("SSH_CA_PRIVATE_KEY_UNAVAILABLE") from exc
+
+    def _load_public_key(self, public_key: str) -> SSHCertPublicKeyTypes:
+        try:
+            loaded_key = load_ssh_public_key(public_key.encode())
+            if not isinstance(
+                loaded_key,
+                (ec.EllipticCurvePublicKey, rsa.RSAPublicKey, ed25519.Ed25519PublicKey),
+            ):
+                raise ValueError("SSH_PUBLIC_KEY_UNSUPPORTED")
+            return loaded_key
+        except Exception as exc:
+            raise ValueError("SSH_PUBLIC_KEY_INVALID") from exc
 
 
 class SshCertificateService:
@@ -157,3 +219,7 @@ def _as_utc(value: datetime) -> datetime:
     if value.tzinfo is None:
         return value.replace(tzinfo=UTC)
     return value.astimezone(UTC)
+
+
+def _openssh_serial_number(serial: str) -> int:
+    return int.from_bytes(sha256(serial.encode()).digest()[:8], "big")
