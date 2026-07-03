@@ -94,6 +94,17 @@ class InMemoryConnectorStore:
         record = self._records[connector_id]
         self._records[connector_id] = record.model_copy(update={"status": status})
 
+    def record_heartbeat(self, connector_id: str, heartbeat_at: datetime) -> ConnectorRecord:
+        record = self._records[connector_id]
+        updated = record.model_copy(
+            update={
+                "status": ConnectorStatus.ACTIVE,
+                "last_heartbeat_at": heartbeat_at,
+            }
+        )
+        self._records[connector_id] = updated
+        return updated
+
 
 class ConnectorRegistry:
     """Registers trusted connectors and gates connection-token issuance."""
@@ -102,9 +113,11 @@ class ConnectorRegistry:
         self,
         store: InMemoryConnectorStore,
         enrollment_tokens: dict[str, ConnectorEnrollmentToken],
+        heartbeat_timeout_seconds: int = 120,
     ) -> None:
         self._store = store
         self._enrollment_tokens = enrollment_tokens
+        self._heartbeat_timeout_seconds = heartbeat_timeout_seconds
 
     def register(self, request: ConnectorRegistrationRequest) -> ConnectorRecord:
         token_digest = ConnectorEnrollmentToken.digest(request.enrollment_token)
@@ -115,15 +128,28 @@ class ConnectorRegistry:
         if not request.public_key_fingerprint.startswith("sha256:"):
             raise ValueError("INVALID_CONNECTOR_FINGERPRINT")
 
+        now = datetime.now(UTC)
         record = ConnectorRecord(
             id=f"conn_{uuid4().hex}",
             name=request.name,
             environment=request.environment,
             public_key_fingerprint=request.public_key_fingerprint,
             capabilities=request.capabilities,
+            registered_at=now,
+            last_heartbeat_at=now,
         )
         enrollment_token.mark_used()
         return self._store.save(record)
+
+    def record_heartbeat(
+        self, connector_id: str, heartbeat_at: datetime | None = None
+    ) -> ConnectorRecord:
+        connector = self._store.get(connector_id)
+        if connector is None:
+            raise ValueError("CONNECTOR_NOT_FOUND")
+        if connector.status != ConnectorStatus.ACTIVE:
+            raise ValueError("CONNECTOR_NOT_ACTIVE")
+        return self._store.record_heartbeat(connector_id, heartbeat_at or datetime.now(UTC))
 
     def issue_connection_token(
         self,
@@ -136,6 +162,8 @@ class ConnectorRegistry:
             raise ValueError("CONNECTOR_NOT_FOUND")
         if connector.status != ConnectorStatus.ACTIVE:
             raise ValueError("CONNECTOR_NOT_ACTIVE")
+        if self._heartbeat_expired(connector):
+            raise ValueError("CONNECTOR_HEARTBEAT_EXPIRED")
 
         policy_result = policy_service.evaluate(request)
         if policy_result.decision != PolicyDecision.ALLOW:
@@ -151,3 +179,9 @@ class ConnectorRegistry:
             ttl_seconds=ttl,
             policy_audit_event_id=policy_result.audit_event_id,
         )
+
+    def _heartbeat_expired(self, connector: ConnectorRecord) -> bool:
+        if connector.last_heartbeat_at is None:
+            return True
+        elapsed = datetime.now(UTC) - connector.last_heartbeat_at
+        return elapsed.total_seconds() > self._heartbeat_timeout_seconds

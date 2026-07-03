@@ -10,6 +10,7 @@
 - API 前缀：业务接口统一在 `/api/v1/*` 下暴露；健康检查保留 `/health`。
 - 认证：默认使用 Bearer access token；未认证或 token 失效返回 `401`。
 - 租户/权限：接口必须通过 `current_user` / `require_permission` 或业务层 actor-aware 查询控制租户与资源边界。Phase 4 起 `current_user` 会返回 `tenant_id`，以及可选的 `organization_id`、`team_id`、`project_id`；新增 DB 查询优先使用 `app.tenancy.scope.scoped_select()` 注入租户过滤。
+- Connector 信任：连接器注册、心跳和 connection token 签发必须 fail-closed。Phase 4 #t45 起 registry 会维护 `last_heartbeat_at` 租约，过期连接器不得签发 connection token。
 - 时间字段：响应中业务时间优先使用 ISO 8601 字符串或 OpenAPI `date-time` schema，不返回本地化展示文案。
 - 分页/列表：现阶段列表响应优先返回 `items + total`；资产等历史接口仍保持数组响应，前端需按 OpenAPI 读取。
 
@@ -637,6 +638,17 @@
 ```
 
 后端会再次走 JIT grant reserve/consume、PolicyDecisionService 和 connection token consume/绑定校验；任一环节不匹配都拒绝创建会话。
+
+## Phase 4 Connector Registry（#t45）
+
+当前 #t45 已落地 Connector Registry 心跳租约基础能力。连接器注册成功后会记录 `registered_at` 与初始 `last_heartbeat_at`；连接器运行期间通过 registry `record_heartbeat(connector_id)` 刷新 `last_heartbeat_at` 并保持 active 状态。
+
+安全语义：
+
+- connection token 签发前必须同时校验 connector 存在、状态为 `active`、心跳租约未过期，并通过 PolicyDecisionService。
+- 已撤销或 inactive connector 不得通过 heartbeat 恢复为 active。
+- 心跳过期时 fail-closed，registry 抛出稳定业务码 `CONNECTOR_HEARTBEAT_EXPIRED`。
+- 后续公开 REST/Connector API 时不得把 enrollment token 明文、私钥材料或长期凭据返回给连接器或控制台。
 
 ### GET `/api/v1/sessions/`
 
