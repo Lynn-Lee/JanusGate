@@ -110,6 +110,51 @@ def test_allowed_policy_returns_short_lived_connection_token():
     assert token.policy_audit_event_id == "pde_test"
 
 
+def test_connector_heartbeat_refreshes_lease_timestamp():
+    store = InMemoryConnectorStore()
+    registry = ConnectorRegistry(store=store, enrollment_tokens=_enrollment_tokens(_active_token()))
+    connector = registry.register(_registration_request())
+    heartbeat_at = datetime.now(UTC) + timedelta(seconds=30)
+
+    updated = registry.record_heartbeat(connector.id, heartbeat_at=heartbeat_at)
+
+    assert updated.last_heartbeat_at == heartbeat_at
+    assert updated.status == ConnectorStatus.ACTIVE
+    assert store.get(connector.id).last_heartbeat_at == heartbeat_at
+
+
+def test_stale_connector_heartbeat_blocks_connection_token():
+    registry = ConnectorRegistry(
+        store=InMemoryConnectorStore(),
+        enrollment_tokens=_enrollment_tokens(_active_token()),
+        heartbeat_timeout_seconds=30,
+    )
+    connector = registry.register(_registration_request())
+    registry.record_heartbeat(
+        connector.id,
+        heartbeat_at=datetime.now(UTC) - timedelta(seconds=31),
+    )
+
+    with pytest.raises(ValueError, match="CONNECTOR_HEARTBEAT_EXPIRED"):
+        registry.issue_connection_token(
+            connector.id,
+            request={"action": "asset.connect"},
+            policy_service=StubPolicyService(PolicyDecision.ALLOW),
+        )
+
+
+def test_inactive_connector_heartbeat_is_rejected():
+    store = InMemoryConnectorStore()
+    registry = ConnectorRegistry(store=store, enrollment_tokens=_enrollment_tokens(_active_token()))
+    connector = registry.register(_registration_request())
+    store.set_status(connector.id, ConnectorStatus.INACTIVE)
+
+    with pytest.raises(ValueError, match="CONNECTOR_NOT_ACTIVE"):
+        registry.record_heartbeat(connector.id)
+
+    assert store.get(connector.id).status == ConnectorStatus.INACTIVE
+
+
 def test_enrollment_token_cannot_be_reused_after_successful_registration():
     registry = ConnectorRegistry(
         store=InMemoryConnectorStore(),
