@@ -24,6 +24,8 @@ class ConnectorRegistrationRequest(BaseModel):
     environment: str
     public_key_fingerprint: str
     mtls_certificate_fingerprint: str | None = None
+    attestation_nonce: str | None = None
+    attestation_digest: str | None = None
     capabilities: list[ConnectorCapability]
     enrollment_token: str
 
@@ -34,6 +36,8 @@ class ConnectorRecord(BaseModel):
     environment: str
     public_key_fingerprint: str
     mtls_certificate_fingerprint: str | None = None
+    attestation_nonce: str | None = None
+    attestation_digest: str | None = None
     capabilities: list[ConnectorCapability]
     status: ConnectorStatus = ConnectorStatus.ACTIVE
     registered_at: datetime = Field(default_factory=lambda: datetime.now(UTC))

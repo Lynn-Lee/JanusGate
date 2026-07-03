@@ -124,6 +124,43 @@ def test_connector_registration_records_mtls_certificate_fingerprint():
     assert connector.mtls_certificate_fingerprint == "sha256:cert-abc"
 
 
+def test_attestation_required_enrollment_token_rejects_missing_claims():
+    registry = ConnectorRegistry(
+        store=InMemoryConnectorStore(),
+        enrollment_tokens=_enrollment_tokens(
+            _active_token(attestation_nonce="nonce-1", attestation_digest="sha256:attest-abc")
+        ),
+    )
+
+    with pytest.raises(ValueError, match="CONNECTOR_ATTESTATION_REQUIRED"):
+        registry.register(_registration_request())
+
+
+def test_connector_registration_records_matching_attestation_claims():
+    registry = ConnectorRegistry(
+        store=InMemoryConnectorStore(),
+        enrollment_tokens=_enrollment_tokens(
+            _active_token(attestation_nonce="nonce-1", attestation_digest="sha256:attest-abc")
+        ),
+    )
+
+    connector = registry.register(
+        ConnectorRegistrationRequest(
+            name="koko-1",
+            environment="prod",
+            public_key_fingerprint="sha256:abc",
+            mtls_certificate_fingerprint="sha256:cert-abc",
+            capabilities=[ConnectorCapability.SSH],
+            enrollment_token="token-1",
+            attestation_nonce="nonce-1",
+            attestation_digest="sha256:attest-abc",
+        )
+    )
+
+    assert connector.attestation_nonce == "nonce-1"
+    assert connector.attestation_digest == "sha256:attest-abc"
+
+
 def test_mtls_certificate_mismatch_blocks_connection_token():
     registry = ConnectorRegistry(
         store=InMemoryConnectorStore(),
