@@ -68,6 +68,30 @@ async def create_ssh_certificate_authority(
     return _authority_response(authority)
 
 
+@router.post("/{authority_id}/disable", response_model=SshCertificateAuthorityResponse)
+async def disable_ssh_certificate_authority(
+    authority_id: int,
+    db: AsyncSession = Depends(get_db),
+    user: dict[str, Any] = Depends(current_user),
+) -> SshCertificateAuthorityResponse:
+    _require_ssh_ca_permission(user, "ssh-certificate-authorities:disable")
+    tenant_id = str(user.get("tenant_id") or "default")
+    result = await db.execute(
+        select(SshCertificateAuthority)
+        .where(SshCertificateAuthority.id == authority_id)
+        .where(SshCertificateAuthority.tenant_id == tenant_id)
+        .where(SshCertificateAuthority.status == "active")
+    )
+    authority = result.scalar_one_or_none()
+    if authority is None:
+        raise HTTPException(status_code=404, detail="SSH_CA_NOT_FOUND")
+
+    authority.status = "disabled"
+    await db.commit()
+    await db.refresh(authority)
+    return _authority_response(authority)
+
+
 def _require_ssh_ca_permission(user: dict[str, Any], permission: str) -> None:
     permissions = user.get("permissions", [])
     if "admin" in permissions or permission in permissions:

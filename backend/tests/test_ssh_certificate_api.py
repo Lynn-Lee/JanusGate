@@ -212,6 +212,44 @@ async def test_ssh_ca_management_api_lists_and_creates_tenant_authorities(
 
 
 @pytest.mark.asyncio
+async def test_ssh_ca_management_api_disables_tenant_authority_without_leaking_secret(
+    session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    install_db(session_factory)
+    await seed_ssh_ca_fixture(session_factory)
+
+    with TestClient(app) as client:
+        install_user(tenant_id="tenant-a", permissions=["ssh-certificate-authorities:read"])
+        forbidden_disable = client.post("/api/v1/ssh-certificate-authorities/1/disable")
+
+        install_user(tenant_id="tenant-b", permissions=["ssh-certificate-authorities:disable"])
+        cross_tenant_disable = client.post("/api/v1/ssh-certificate-authorities/1/disable")
+
+        install_user(tenant_id="tenant-a", permissions=["ssh-certificate-authorities:disable"])
+        disable_response = client.post("/api/v1/ssh-certificate-authorities/1/disable")
+        disable_again = client.post("/api/v1/ssh-certificate-authorities/1/disable")
+
+    assert forbidden_disable.status_code == 403
+    assert forbidden_disable.json()["code"] == "FORBIDDEN"
+    assert cross_tenant_disable.status_code == 404
+    assert cross_tenant_disable.json()["code"] == "SSH_CA_NOT_FOUND"
+    assert disable_response.status_code == 200
+    disabled = disable_response.json()
+    assert disabled["tenant_id"] == "tenant-a"
+    assert disabled["id"] == 1
+    assert disabled["status"] == "disabled"
+    assert "private_key_secret_id" not in disabled
+    assert "private_key" not in disabled
+    assert disable_again.status_code == 404
+    assert disable_again.json()["code"] == "SSH_CA_NOT_FOUND"
+
+    async with session_factory() as session:
+        authority = await session.get(SshCertificateAuthority, 1)
+    assert authority is not None
+    assert authority.status == "disabled"
+
+
+@pytest.mark.asyncio
 async def test_ssh_certificate_api_maps_service_errors_to_stable_codes(
     session_factory: async_sessionmaker[AsyncSession],
 ) -> None:

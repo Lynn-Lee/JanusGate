@@ -399,7 +399,7 @@
 
 ## Phase 4 SSH CA / Temporary Certificate Service（#t44）
 
-当前 #t44 已落地后端模型、CA 管理 API、服务契约和临时证书签发/撤销 REST API。后续新增真实 OpenSSH signer、连接器信任分发和前端入口时必须沿用本节安全语义。
+当前 #t44 已落地后端模型、CA 管理 API、CA 禁用 API、服务契约和临时证书签发/撤销 REST API。后续新增真实 OpenSSH signer、连接器信任分发和前端入口时必须沿用本节安全语义。
 
 核心模型：
 
@@ -450,6 +450,21 @@
 | --- | --- | --- |
 | 400 | `SSH_CA_ALREADY_EXISTS` | 当前租户内 CA 名称已存在 |
 | 403 | `缺少权限: ssh-certificate-authorities:create` | 当前用户不能创建 CA |
+
+### POST `/api/v1/ssh-certificate-authorities/{authority_id}/disable`
+
+用途：禁用当前租户内仍处于 `active` 状态的 SSH CA，后续签发请求不得再使用该 CA。
+
+鉴权：需要登录态；`admin` 或 `ssh-certificate-authorities:disable` 权限可访问。
+
+响应 `200` 返回禁用后的 CA 元数据，`status` 为 `disabled`；响应不包含 `private_key_secret_id` 或任何私钥明文。
+
+错误码：
+
+| HTTP | detail | 说明 |
+| --- | --- | --- |
+| 403 | `缺少权限: ssh-certificate-authorities:disable` | 当前用户不能禁用 CA |
+| 404 | `SSH_CA_NOT_FOUND` | CA 不存在、跨租户或已不处于 active 状态 |
 
 ### GET `/api/v1/ssh-certificates/`
 
@@ -514,7 +529,6 @@
 
 后续 API 切片必须补充：
 
-- CA 禁用 API，且响应不得返回 `private_key_secret_id` 或任何私钥材料。
 - Connector/Asset 信任配置分发与真实 OpenSSH certificate signer 集成。
 
 ## Session connection token（#t42）
