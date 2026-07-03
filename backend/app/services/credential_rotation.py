@@ -37,18 +37,45 @@ class CredentialRotationWorker:
 
         processed = 0
         for rotation, account in due_rotations:
+            rotation.previous_secret_id = account.secret_id
             try:
                 rotated = await self._rotator.rotate(account, rotation)
-            except Exception:
+            except Exception as exc:
                 rotation.status = "failed"
+                rotation.error_code = _error_code(exc)
             else:
                 account.secret_id = rotated.secret_id
+                rotation.new_secret_id = rotated.secret_id
+                rotation.error_code = None
                 rotation.status = "completed"
             processed += 1
 
         if processed:
             await self._session.commit()
         return processed
+
+    async def rollback_completed_rotation(self, *, rotation_id: int) -> bool:
+        result = await self._session.execute(
+            select(CredentialRotation, Account)
+            .join(Account, CredentialRotation.account_id == Account.id)
+            .where(CredentialRotation.id == rotation_id)
+        )
+        row = result.one_or_none()
+        if row is None:
+            return False
+
+        rotation, account = row
+        if (
+            rotation.status != "completed"
+            or rotation.previous_secret_id is None
+            or account.secret_id != rotation.new_secret_id
+        ):
+            return False
+
+        account.secret_id = rotation.previous_secret_id
+        rotation.status = "rolled_back"
+        await self._session.commit()
+        return True
 
 
 def _due_rotation_query(
@@ -73,3 +100,10 @@ def _as_utc(value: datetime) -> datetime:
     if value.tzinfo is None:
         return value.replace(tzinfo=UTC)
     return value.astimezone(UTC)
+
+
+def _error_code(exc: Exception) -> str:
+    message = str(exc).strip()
+    if message:
+        return message[:120]
+    return exc.__class__.__name__[:120]
