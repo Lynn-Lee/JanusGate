@@ -69,7 +69,7 @@
 
 ## Phase 4 Automation Worker Queue（#t52）
 
-当前切片不新增 REST API，仅定义后端 worker 队列写入与单轮消费循环契约。`AutomationJobQueue` 使用 Redis Streams 风格 `xadd` 写入 `janusgate:automation:jobs`，字段均为字符串，payload 以 `payload_json` 保存，并显式标记 `payload_format=json`。`AutomationWorker` 通过 Redis Streams consumer group 读取消息，按 `job_type` 分发到显式注册的 handler，并仅在 handler 成功后 ack。
+当前切片定义后端 worker 队列写入、单轮消费循环与最小调度 API 契约。`AutomationJobQueue` 使用 Redis Streams 风格 `xadd` 写入 `janusgate:automation:jobs`，字段均为字符串，payload 以 `payload_json` 保存，并显式标记 `payload_format=json`。`AutomationWorker` 通过 Redis Streams consumer group 读取消息，按 `job_type` 分发到显式注册的 handler，并仅在 handler 成功后 ack。
 
 支持的 `job_type` 白名单：
 
@@ -107,6 +107,37 @@
 - API payload 只包含 asset id 与 scan profile，不接受密码、token、secret、私钥或连接串。
 - `AutomationJobQueue` 继续执行敏感字段名拒绝和 JSON-only 序列化约束。
 - 当前切片只负责调度入队，不执行真实网络扫描；真实扫描执行器必须作为后续 worker handler 切片单独验收。
+
+### POST `/api/v1/automation/jobs/credential-rotations`
+
+用途：按当前认证用户租户和账号可见范围调度一个凭据轮换后台任务，写入 `credential.rotate` 队列消息。
+
+鉴权：需要登录态；`automation:write` 或 `admin` 权限可访问。后端使用当前用户 `tenant_id`、项目范围和 `id` 写入队列，不接受前端传入 tenant 或 requested_by。
+
+请求体：
+
+```json
+{
+  "account_id": 1,
+  "reason": "quarterly rotation"
+}
+```
+
+响应 `202`：
+
+```json
+{
+  "job_id": "1700000000000-0",
+  "job_type": "credential.rotate",
+  "status": "queued"
+}
+```
+
+安全语义：
+
+- API 入队前必须通过当前 actor scope 确认 account 可见；跨租户或跨项目账号返回 `ACCOUNT_NOT_FOUND`。
+- 队列 payload 只包含 account id 和可选 reason，不携带 secret_id、凭据明文、token、私钥或连接串。
+- 当前切片只负责调度入队，不执行真实改密；真实改密 handler 必须作为后续 worker handler 切片单独验收。
 
 安全语义：
 
