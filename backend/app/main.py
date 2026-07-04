@@ -6,7 +6,7 @@ from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from typing import Any
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 
@@ -29,6 +29,7 @@ from app.api.workflows.routes import router as workflows_router
 from app.core.config import settings
 from app.core.database import engine
 from app.core.exceptions import API_ERROR_RESPONSES, register_exception_handlers
+from app.observability.metrics import metrics_response, prometheus_metrics_middleware
 
 
 @asynccontextmanager
@@ -48,6 +49,7 @@ app = FastAPI(
 )
 
 app.add_middleware(GZipMiddleware, minimum_size=1000)
+app.middleware("http")(prometheus_metrics_middleware)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.CORS_ORIGINS,
@@ -77,3 +79,8 @@ app.include_router(audits_router)
 @app.get("/health")
 async def health() -> dict[str, Any]:
     return {"status": "ok", "version": "0.1.0"}
+
+
+@app.get("/metrics", include_in_schema=False)
+async def metrics() -> Response:
+    return metrics_response()

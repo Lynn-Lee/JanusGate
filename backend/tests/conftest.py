@@ -24,12 +24,15 @@ os.environ.setdefault("REDIS_URL", "redis://localhost:6379/0")
 
 from app.api.audits.service import repository  # noqa: E402
 from app.main import app  # noqa: E402
+from app.observability.metrics import metrics_registry  # noqa: E402
 
 
 @pytest.fixture(autouse=True)
 def reset_app_state() -> None:
     repository.clear()
+    metrics_registry.reset()
     app.dependency_overrides.clear()
     yield
     repository.clear()
+    metrics_registry.reset()
     app.dependency_overrides.clear()

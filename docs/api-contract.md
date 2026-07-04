@@ -1278,6 +1278,31 @@
 - 只返回当前租户会话；跨租户数据 fail-closed 为空集合。
 - 列表按 `created_at` 倒序，便于控制台优先展示最新会话。
 
+## Phase 4 Observability Metrics（#t51）
+
+### GET `/metrics`
+
+用途：以 Prometheus 文本格式暴露后端 HTTP 请求指标，供 Prometheus 或兼容采集器抓取。
+
+鉴权：当前 foundation 不接入业务登录态；生产暴露应由部署层、Ingress 或采集网络控制访问范围。
+
+响应 `200`，`Content-Type: text/plain; version=0.0.4; charset=utf-8`：
+
+```text
+# HELP janusgate_http_requests_total Total HTTP requests handled by JanusGate.
+# TYPE janusgate_http_requests_total counter
+janusgate_http_requests_total{method="GET",path="/health",status_code="200"} 1
+# HELP janusgate_http_request_duration_seconds HTTP request duration in seconds.
+# TYPE janusgate_http_request_duration_seconds histogram
+janusgate_http_request_duration_seconds_bucket{method="GET",path="/health",status_code="200",le="0.005"} 1
+```
+
+安全语义：
+
+- 指标标签只包含 HTTP method、路由模板 path 和 status_code。
+- 不记录请求体、响应体、Authorization header、token、secret、连接串或用户输入。
+- `/metrics` 自身不会计入 HTTP 请求指标，避免采集周期污染业务请求统计。
+
 ## 前端解析建议
 
 1. 先读 `code` 做流程判断；业务码优先于 HTTP 状态。
