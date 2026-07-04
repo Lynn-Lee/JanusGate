@@ -110,3 +110,56 @@ async def test_session_recording_api_creates_command_events_and_searches_by_tena
     assert tenant_b_search.json() == {"items": [], "total": 0}
     assert tenant_b_append.status_code == 404
     assert tenant_b_append.json()["code"] == "SESSION_RECORDING_NOT_FOUND"
+
+
+@pytest.mark.asyncio
+async def test_session_recording_api_closes_recordings_by_tenant(
+    session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    install_db(session_factory)
+
+    with TestClient(app) as client:
+        install_user(tenant_id="tenant-a", permissions=["admin"])
+        recording_response = client.post(
+            "/api/v1/sessions/session-a/recordings",
+            json={
+                "asset_id": "asset-1",
+                "account_id": "account-1",
+                "protocol": "ssh",
+                "storage_uri": "s3://janusgate-recordings/tenant-a/session-a.cast",
+            },
+        )
+        recording = recording_response.json()
+        close_response = client.post(
+            f"/api/v1/session-recordings/{recording['id']}/close"
+        )
+        second_close_response = client.post(
+            f"/api/v1/session-recordings/{recording['id']}/close"
+        )
+
+        tenant_a_second_recording_response = client.post(
+            "/api/v1/sessions/session-b/recordings",
+            json={
+                "asset_id": "asset-1",
+                "account_id": "account-1",
+                "protocol": "ssh",
+                "storage_uri": "s3://janusgate-recordings/tenant-a/session-b.cast",
+            },
+        )
+        tenant_a_second_recording = tenant_a_second_recording_response.json()
+
+        install_user(tenant_id="tenant-b", permissions=["admin"])
+        tenant_b_close_response = client.post(
+            f"/api/v1/session-recordings/{tenant_a_second_recording['id']}/close"
+        )
+
+    assert close_response.status_code == 200
+    closed_recording = close_response.json()
+    assert closed_recording["status"] == "closed"
+    assert closed_recording["ended_at"] is not None
+
+    assert second_close_response.status_code == 404
+    assert second_close_response.json()["code"] == "SESSION_RECORDING_NOT_FOUND"
+
+    assert tenant_b_close_response.status_code == 404
+    assert tenant_b_close_response.json()["code"] == "SESSION_RECORDING_NOT_FOUND"
