@@ -1,5 +1,6 @@
 from datetime import UTC, datetime, timedelta
 
+from app.models.workflow import ApproverMode
 from app.policy.decision import PolicyDecisionService
 from app.policy.schemas import (
     ApprovalState,
@@ -9,6 +10,7 @@ from app.policy.schemas import (
     ResourceRef,
     SubjectRef,
 )
+from app.workflows.repository import build_approval_policy
 
 
 def _request(**overrides):
@@ -49,6 +51,55 @@ def test_policy_denies_by_default_with_explain_trace():
     assert result.reason_code == "NO_MATCHING_POLICY"
     assert result.explain_trace
     assert result.audit_event_id.startswith("pde_")
+
+
+def test_policy_requires_approval_from_matching_approval_policy_template():
+    policy = build_approval_policy(
+        tenant_id="tenant-a",
+        resource_selector={"asset_id": "asset-1", "protocol": "ssh"},
+        action_selector="session.connect",
+        approver_subject_ids=["manager-1"],
+        approver_mode=ApproverMode.named_user,
+        require_mfa_for_requester=True,
+        require_mfa_for_approver=True,
+        max_grant_ttl_seconds=600,
+        allow_self_approval=False,
+        risk_level="high",
+    )
+    service = PolicyDecisionService(rules=[], approval_policies=[policy])
+
+    result = service.evaluate(_request(action="session.connect", approval=None))
+
+    assert result.decision == PolicyDecision.DENY
+    assert result.reason_code == "APPROVAL_REQUIRED"
+    assert result.obligations["workflow_required"] is True
+    assert result.obligations["approval_policy_id"] == policy.id
+    assert result.obligations["approver_subject_ids"] == ["manager-1"]
+    assert result.obligations["require_mfa_for_approver"] is True
+    assert result.obligations["risk_level"] == "high"
+    assert result.obligations["max_grant_ttl_seconds"] == 600
+
+
+def test_policy_ignores_approval_policy_template_when_selector_does_not_match():
+    policy = build_approval_policy(
+        tenant_id="tenant-a",
+        resource_selector={"asset_id": "asset-1", "protocol": "rdp"},
+        action_selector="session.connect",
+        approver_subject_ids=["manager-1"],
+        approver_mode=ApproverMode.named_user,
+        require_mfa_for_requester=False,
+        require_mfa_for_approver=True,
+        max_grant_ttl_seconds=600,
+        allow_self_approval=False,
+        risk_level="medium",
+    )
+    service = PolicyDecisionService(rules=[], approval_policies=[policy])
+
+    result = service.evaluate(_request(action="session.connect", approval=None))
+
+    assert result.decision == PolicyDecision.DENY
+    assert result.reason_code == "NO_MATCHING_POLICY"
+    assert f"approval_policy:{policy.id}:not_matched" in result.explain_trace
 
 
 def test_policy_allows_explicit_matching_rule():
