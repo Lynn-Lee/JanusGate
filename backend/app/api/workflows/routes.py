@@ -9,6 +9,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.audits.service import audit_service
 from app.api.sessions.routes import get_session_revoker
 from app.api.workflows.schemas import (
+    ApprovalPolicyCreate,
+    ApprovalPolicyListResponse,
+    ApprovalPolicyResponse,
     JitGrantListResponse,
     JitGrantResponse,
     WorkflowDecisionRequest,
@@ -22,6 +25,7 @@ from app.api.workflows.service import SQLAlchemyWorkflowStore, WorkflowService
 from app.core.database import get_db
 from app.core.deps import current_user
 from app.workflows.audit import WorkflowAuditSink
+from app.workflows.repository import SQLAlchemyWorkflowRepository
 
 router = APIRouter(prefix="/workflows", tags=["Workflow/JIT"])
 
@@ -34,6 +38,47 @@ def get_workflow_service(db: AsyncSession = Depends(get_db)) -> WorkflowService:
         audit_sink=_workflow_audit_sink,
         session_revoker=get_session_revoker(),
     )
+
+
+@router.get("/approval-policies", response_model=ApprovalPolicyListResponse)
+async def list_approval_policies(
+    db: AsyncSession = Depends(get_db),
+    user: dict[str, Any] = Depends(current_user),
+) -> ApprovalPolicyListResponse:
+    _require_workflow_admin_permission(user)
+    repo = SQLAlchemyWorkflowRepository(db)
+    policies = await repo.list_approval_policies(tenant_id=str(user.get("tenant_id", "default")))
+    items = [ApprovalPolicyResponse.from_model(policy) for policy in policies]
+    return ApprovalPolicyListResponse(items=items, total=len(items))
+
+
+@router.post(
+    "/approval-policies",
+    response_model=ApprovalPolicyResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+async def create_approval_policy(
+    data: ApprovalPolicyCreate,
+    db: AsyncSession = Depends(get_db),
+    user: dict[str, Any] = Depends(current_user),
+) -> ApprovalPolicyResponse:
+    _require_workflow_admin_permission(user)
+    repo = SQLAlchemyWorkflowRepository(db)
+    policy = await repo.create_approval_policy(
+        tenant_id=str(user.get("tenant_id", "default")),
+        resource_selector=data.resource_selector,
+        action_selector=data.action_selector,
+        approver_subject_ids=data.approver_subject_ids,
+        approver_mode=data.approver_mode,
+        require_mfa_for_requester=data.require_mfa_for_requester,
+        require_mfa_for_approver=data.require_mfa_for_approver,
+        max_grant_ttl_seconds=data.max_grant_ttl_seconds,
+        allow_self_approval=data.allow_self_approval,
+        risk_level=data.risk_level,
+    )
+    await db.commit()
+    await db.refresh(policy)
+    return ApprovalPolicyResponse.from_model(policy)
 
 
 @router.post(
@@ -179,3 +224,10 @@ def _value_error_to_http(exc: ValueError) -> HTTPException:
         else status.HTTP_400_BAD_REQUEST
     )
     return HTTPException(status_code=status_code, detail=detail)
+
+
+def _require_workflow_admin_permission(user: dict[str, Any]) -> None:
+    permissions = user.get("permissions", [])
+    if "admin" in permissions or "workflow:admin" in permissions:
+        return
+    raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="缺少权限: workflow:admin")

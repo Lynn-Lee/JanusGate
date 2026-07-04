@@ -59,12 +59,75 @@
 - Accounts：`/api/v1/accounts/*`，Phase 4 资产账号托管与 Vault secret 引用。
 - Sessions：`/api/v1/sessions/*`，会话创建/关闭，JIT grant 绑定。
 - Workflow/JIT：`/api/v1/workflows/*`，申请、提交、审批、拒绝、撤销、active grant。
+- Approval Policies：`/api/v1/workflows/approval-policies`，Phase 4 JIT 策略模板 / 审批策略基础管理。
 - Audit/SIEM：`/api/v1/audits/events`，审计事件创建和检索。
 - Tenancy：`/api/v1/tenancy/*`，Phase 4 组织/团队/项目管理与租户隔离 API。
 - Session Recordings：`/api/v1/sessions/{session_id}/recordings` 与 `/api/v1/session-recordings/*`，Phase 4 会话录制元数据、命令事件上报与命令检索。
 - Webhook Endpoints：`/api/v1/webhook-endpoints/*`，Phase 4 WebHook / 通知中心 endpoint 管理基础。
 - Notification Rules：`/api/v1/notification-rules/*`，Phase 4 WebHook / 通知规则管理基础。
 - Notification Deliveries：`/api/v1/notification-rules/{rule_id}/deliveries` 与 `/api/v1/notification-deliveries/*`，Phase 4 WebHook 可靠投递队列基础；`NotificationDeliveryWorker` 负责到期投递、失败重试和 dead-letter 状态推进，`HttpWebhookNotificationSender` 负责向 HTTPS WebHook endpoint 投递已脱敏 payload。
+
+## Phase 4 Approval Policy API（#t48）
+
+### POST `/api/v1/workflows/approval-policies`
+
+用途：在当前租户内创建一条 JIT approval policy template，用于后续审批策略 DSL、版本管理和策略模拟接入。
+
+鉴权：需要登录态；`admin` 或 `workflow:admin` 权限可访问。后端使用当前用户 `tenant_id` 写入，不接受前端传入 tenant。
+
+请求体：
+
+```json
+{
+  "resource_selector": {
+    "asset_id": "asset-1",
+    "protocol": "ssh"
+  },
+  "action_selector": "session.connect",
+  "approver_subject_ids": ["manager-1"],
+  "approver_mode": "named_user",
+  "require_mfa_for_requester": true,
+  "require_mfa_for_approver": true,
+  "max_grant_ttl_seconds": 900,
+  "allow_self_approval": false,
+  "risk_level": "high"
+}
+```
+
+响应 `201`：
+
+```json
+{
+  "id": "ap_...",
+  "tenant_id": "tenant-a",
+  "resource_selector": {
+    "asset_id": "asset-1",
+    "protocol": "ssh"
+  },
+  "action_selector": "session.connect",
+  "approver_subject_ids": ["manager-1"],
+  "approver_mode": "named_user",
+  "require_mfa_for_requester": true,
+  "require_mfa_for_approver": true,
+  "max_grant_ttl_seconds": 900,
+  "allow_self_approval": false,
+  "risk_level": "high",
+  "created_at": "2026-07-04T06:40:00Z",
+  "updated_at": "2026-07-04T06:40:00Z"
+}
+```
+
+安全语义：
+
+- 策略模板只能写入当前租户；跨租户读取不会返回该策略。
+- 当前切片只提供模板管理 API，不执行 DSL、不做策略灰度/回滚或策略模拟。
+- 响应不返回凭据、连接 token、审批下游密钥或外部通知 secret。
+
+### GET `/api/v1/workflows/approval-policies`
+
+用途：返回当前租户可见的 approval policy template 列表。
+
+鉴权：需要登录态；`admin` 或 `workflow:admin` 权限可访问。响应按 repository 当前顺序返回 `{items,total}`。
 
 ## Phase 4 Webhook Endpoint API（#t47）
 
