@@ -13,6 +13,7 @@ from typing import Protocol
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from app.core.config import Settings, settings
 from app.models.asset import Asset
 from app.models.automation import AutomationJobRun
 from app.services.automation_worker import JsonValue
@@ -93,6 +94,19 @@ class LocalAnsiblePlaybookRunner:
         if not playbook_path.is_relative_to(self._playbook_root) or not playbook_path.is_file():
             raise ValueError("ANSIBLE_PLAYBOOK_NOT_ALLOWED")
         return playbook_path
+
+
+def build_local_ansible_playbook_runner(
+    *,
+    settings: Settings = settings,
+    command_runner: AnsibleCommandRunner | None = None,
+) -> LocalAnsiblePlaybookRunner:
+    return LocalAnsiblePlaybookRunner(
+        playbook_root=Path(settings.ANSIBLE_PLAYBOOK_ROOT),
+        runtime_root=Path(settings.ANSIBLE_RUNTIME_ROOT),
+        command_runner=command_runner,
+        executable=settings.ANSIBLE_PLAYBOOK_EXECUTABLE,
+    )
 
 
 class AnsiblePlaybookWorkerHandler:

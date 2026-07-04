@@ -43,6 +43,11 @@ class Settings(BaseSettings):
     # ── Assets ──
     ASSET_TEST_CONNECTION_ALLOWLIST: list[str] = []
 
+    # ── Automation / Ansible ──
+    ANSIBLE_PLAYBOOK_ROOT: str = "deploy/ansible/playbooks"
+    ANSIBLE_RUNTIME_ROOT: str = "/var/lib/janusgate/ansible-runtime"
+    ANSIBLE_PLAYBOOK_EXECUTABLE: str = "ansible-playbook"
+
     @model_validator(mode="after")
     def enforce_secrets(self) -> "Settings":
         if not self.SECRET_KEY or len(self.SECRET_KEY) < 32:
