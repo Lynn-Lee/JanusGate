@@ -1,14 +1,14 @@
 """Phase 4 automation job scheduling API routes."""
-from typing import Any
+from typing import Annotated, Any, cast
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.core.deps import current_user, get_redis
 from app.models.account import Account
-from app.services.automation_worker import AutomationJobQueue, RedisStreamClient
+from app.services.automation_worker import AutomationJobQueue, JsonValue, RedisStreamClient
 from app.tenancy.scope import actor_scope_from_user, scoped_select
 
 router = APIRouter(prefix="/automation/jobs", tags=["Automation Jobs"])
@@ -22,6 +22,14 @@ class AssetScanJobCreate(BaseModel):
 class CredentialRotationJobCreate(BaseModel):
     account_id: int = Field(gt=0)
     reason: str | None = Field(default=None, max_length=240)
+
+
+class PlaybookJobCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    playbook_name: str = Field(min_length=1, max_length=128)
+    target_asset_ids: list[Annotated[int, Field(gt=0)]] = Field(min_length=1, max_length=200)
+    check_mode: bool = False
 
 
 class AutomationJobResponse(BaseModel):
@@ -82,6 +90,32 @@ async def enqueue_credential_rotation_job(
         payload=payload,
     )
     return AutomationJobResponse(job_id=job_id, job_type="credential.rotate", status="queued")
+
+
+@router.post(
+    "/playbooks",
+    response_model=AutomationJobResponse,
+    status_code=status.HTTP_202_ACCEPTED,
+)
+async def enqueue_playbook_job(
+    data: PlaybookJobCreate,
+    queue: AutomationJobQueue = Depends(get_automation_job_queue),
+    user: dict[str, Any] = Depends(current_user),
+) -> AutomationJobResponse:
+    _require_automation_permission(user, "automation:write")
+    target_asset_ids = cast(list[JsonValue], list(data.target_asset_ids))
+    payload: dict[str, JsonValue] = {
+        "playbook_name": data.playbook_name,
+        "target_asset_ids": target_asset_ids,
+        "check_mode": data.check_mode,
+    }
+    job_id = await queue.enqueue(
+        tenant_id=str(user.get("tenant_id") or "default"),
+        requested_by=str(user["id"]),
+        job_type="ansible.playbook",
+        payload=payload,
+    )
+    return AutomationJobResponse(job_id=job_id, job_type="ansible.playbook", status="queued")
 
 
 def _require_automation_permission(user: dict[str, Any], permission: str) -> None:
