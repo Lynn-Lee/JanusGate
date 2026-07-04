@@ -26,6 +26,9 @@ class ApprovalPolicyCreate(BaseModel):
 class ApprovalPolicyResponse(BaseModel):
     id: str
     tenant_id: str
+    policy_family_id: str
+    version: int
+    is_active: bool
     resource_selector: dict[str, Any]
     action_selector: str
     approver_subject_ids: list[str]
@@ -43,6 +46,9 @@ class ApprovalPolicyResponse(BaseModel):
         return cls(
             id=policy.id,
             tenant_id=policy.tenant_id,
+            policy_family_id=policy.policy_family_id,
+            version=policy.version,
+            is_active=policy.is_active,
             resource_selector=json.loads(policy.resource_selector_json),
             action_selector=policy.action_selector,
             approver_subject_ids=json.loads(policy.approver_subject_ids_json),
