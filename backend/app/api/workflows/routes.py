@@ -77,6 +77,7 @@ async def create_approval_policy(
         max_grant_ttl_seconds=data.max_grant_ttl_seconds,
         allow_self_approval=data.allow_self_approval,
         risk_level=data.risk_level,
+        rollout_percentage=data.rollout_percentage,
     )
     await db.commit()
     await db.refresh(policy)
@@ -109,6 +110,7 @@ async def create_approval_policy_version(
             max_grant_ttl_seconds=data.max_grant_ttl_seconds,
             allow_self_approval=data.allow_self_approval,
             risk_level=data.risk_level,
+            rollout_percentage=data.rollout_percentage,
         )
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="APPROVAL_POLICY_NOT_FOUND") from exc

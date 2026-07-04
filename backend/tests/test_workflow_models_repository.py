@@ -61,6 +61,7 @@ def test_workflow_models_cover_phase2_persistence_fields():
         "policy_family_id",
         "version",
         "is_active",
+        "rollout_percentage",
         "resource_selector_json",
         "action_selector",
         "approver_subject_ids_json",
