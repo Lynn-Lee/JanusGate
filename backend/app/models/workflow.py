@@ -92,6 +92,7 @@ class ApprovalPolicyModel(Base):
     policy_family_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
     version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, index=True)
+    rollout_percentage: Mapped[int] = mapped_column(Integer, nullable=False, default=100)
     resource_selector_json: Mapped[str] = mapped_column(Text, default="{}")
     action_selector: Mapped[str] = mapped_column(String(120), nullable=False)
     approver_subject_ids_json: Mapped[str] = mapped_column(Text, default="[]")

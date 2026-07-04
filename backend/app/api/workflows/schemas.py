@@ -21,6 +21,7 @@ class ApprovalPolicyCreate(BaseModel):
     max_grant_ttl_seconds: int = Field(default=1800, gt=0, le=86_400)
     allow_self_approval: bool = False
     risk_level: str = Field(default="medium", min_length=1, max_length=20)
+    rollout_percentage: int = Field(default=100, ge=0, le=100)
 
 
 class ApprovalPolicyResponse(BaseModel):
@@ -29,6 +30,7 @@ class ApprovalPolicyResponse(BaseModel):
     policy_family_id: str
     version: int
     is_active: bool
+    rollout_percentage: int
     resource_selector: dict[str, Any]
     action_selector: str
     approver_subject_ids: list[str]
@@ -49,6 +51,7 @@ class ApprovalPolicyResponse(BaseModel):
             policy_family_id=policy.policy_family_id,
             version=policy.version,
             is_active=policy.is_active,
+            rollout_percentage=policy.rollout_percentage,
             resource_selector=json.loads(policy.resource_selector_json),
             action_selector=policy.action_selector,
             approver_subject_ids=json.loads(policy.approver_subject_ids_json),

@@ -174,6 +174,7 @@ class InMemoryWorkflowRepository:
         max_grant_ttl_seconds: int = 1800,
         allow_self_approval: bool = False,
         risk_level: str = "medium",
+        rollout_percentage: int = 100,
     ) -> ApprovalPolicyModel:
         policy = build_approval_policy(
             tenant_id=tenant_id,
@@ -186,6 +187,7 @@ class InMemoryWorkflowRepository:
             max_grant_ttl_seconds=max_grant_ttl_seconds,
             allow_self_approval=allow_self_approval,
             risk_level=risk_level,
+            rollout_percentage=rollout_percentage,
         )
         self._policies[policy.id] = policy
         return policy
@@ -211,6 +213,7 @@ class InMemoryWorkflowRepository:
         max_grant_ttl_seconds: int = 1800,
         allow_self_approval: bool = False,
         risk_level: str = "medium",
+        rollout_percentage: int = 100,
     ) -> ApprovalPolicyModel:
         source = self._policies.get(policy_id)
         if source is None or source.tenant_id != tenant_id:
@@ -234,6 +237,7 @@ class InMemoryWorkflowRepository:
             max_grant_ttl_seconds=max_grant_ttl_seconds,
             allow_self_approval=allow_self_approval,
             risk_level=risk_level,
+            rollout_percentage=rollout_percentage,
         )
         version.policy_family_id = family_id
         version.version = max((policy.version for policy in family), default=0) + 1
@@ -411,6 +415,7 @@ class SQLAlchemyWorkflowRepository:
         max_grant_ttl_seconds: int = 1800,
         allow_self_approval: bool = False,
         risk_level: str = "medium",
+        rollout_percentage: int = 100,
     ) -> ApprovalPolicyModel:
         policy = build_approval_policy(
             tenant_id=tenant_id,
@@ -423,6 +428,7 @@ class SQLAlchemyWorkflowRepository:
             max_grant_ttl_seconds=max_grant_ttl_seconds,
             allow_self_approval=allow_self_approval,
             risk_level=risk_level,
+            rollout_percentage=rollout_percentage,
         )
         self._session.add(policy)
         await self._session.flush()
@@ -451,6 +457,7 @@ class SQLAlchemyWorkflowRepository:
         max_grant_ttl_seconds: int = 1800,
         allow_self_approval: bool = False,
         risk_level: str = "medium",
+        rollout_percentage: int = 100,
     ) -> ApprovalPolicyModel:
         result = await self._session.execute(
             select(ApprovalPolicyModel).where(
@@ -483,6 +490,7 @@ class SQLAlchemyWorkflowRepository:
             max_grant_ttl_seconds=max_grant_ttl_seconds,
             allow_self_approval=allow_self_approval,
             risk_level=risk_level,
+            rollout_percentage=rollout_percentage,
         )
         version.policy_family_id = source.policy_family_id
         version.version = max((policy.version for policy in family), default=0) + 1
@@ -656,6 +664,7 @@ def build_approval_policy(
     max_grant_ttl_seconds: int,
     allow_self_approval: bool,
     risk_level: str,
+    rollout_percentage: int = 100,
 ) -> ApprovalPolicyModel:
     policy_id = _new_policy_id()
     return ApprovalPolicyModel(
@@ -664,6 +673,7 @@ def build_approval_policy(
         policy_family_id=policy_id,
         version=1,
         is_active=True,
+        rollout_percentage=rollout_percentage,
         resource_selector_json=json.dumps(resource_selector, sort_keys=True),
         action_selector=action_selector,
         approver_subject_ids_json=json.dumps(approver_subject_ids, sort_keys=True),

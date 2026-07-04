@@ -166,6 +166,45 @@ async def test_approval_policy_simulation_evaluates_current_tenant_templates(
 
 
 @pytest.mark.asyncio
+async def test_approval_policy_rollout_percentage_can_exclude_simulation_subjects(
+    session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    install_db(session_factory)
+
+    with TestClient(app) as client:
+        install_user(tenant_id="tenant-a", permissions=["workflow:admin"])
+        create_response = client.post(
+            "/api/v1/workflows/approval-policies",
+            json={
+                "resource_selector": {"asset_id": "asset-1", "protocol": "ssh"},
+                "action_selector": "session.connect",
+                "approver_subject_ids": ["manager-1"],
+                "max_grant_ttl_seconds": 900,
+                "risk_level": "high",
+                "rollout_percentage": 0,
+            },
+        )
+        simulate_response = client.post(
+            "/api/v1/workflows/approval-policies/simulate",
+            json={
+                "subject": {"id": "user-2", "tenant_id": "tenant-a"},
+                "action": "session.connect",
+                "resource": {"id": "asset-1", "type": "asset", "tenant_id": "tenant-a"},
+                "context": {"protocol": "ssh"},
+                "connector_trusted": True,
+            },
+        )
+
+    assert create_response.status_code == 201
+    created = create_response.json()
+    assert created["rollout_percentage"] == 0
+    assert simulate_response.status_code == 200
+    simulated = simulate_response.json()
+    assert simulated["reason_code"] == "NO_MATCHING_POLICY"
+    assert f"approval_policy:{created['id']}:rollout_excluded" in simulated["explain_trace"]
+
+
+@pytest.mark.asyncio
 async def test_approval_policy_version_api_supersedes_current_tenant_policy(
     session_factory: async_sessionmaker[AsyncSession],
 ) -> None:

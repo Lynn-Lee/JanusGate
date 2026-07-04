@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 from datetime import UTC, datetime
 from typing import Any
@@ -46,6 +47,9 @@ class PolicyDecisionService:
         for policy in self._approval_policies:
             if not self._approval_policy_matches(policy, request):
                 trace.append(f"approval_policy:{policy.id}:not_matched")
+                continue
+            if not self._approval_policy_rollout_includes(policy, request):
+                trace.append(f"approval_policy:{policy.id}:rollout_excluded")
                 continue
 
             trace.append(f"approval_policy:{policy.id}:matched")
@@ -121,6 +125,17 @@ class PolicyDecisionService:
             "project_id": request.resource.project_id,
         }
         return all(self._selector_value_matches(expected, checks[key]) for key, expected in selector.items())
+
+    def _approval_policy_rollout_includes(
+        self, policy: ApprovalPolicyModel, request: PolicyDecisionRequest
+    ) -> bool:
+        if policy.rollout_percentage >= 100:
+            return True
+        if policy.rollout_percentage <= 0:
+            return False
+        seed = f"{policy.id}:{request.subject.tenant_id}:{request.subject.id}:{request.resource.id}"
+        bucket = int(hashlib.sha256(seed.encode("utf-8")).hexdigest()[:8], 16) % 100
+        return bucket < policy.rollout_percentage
 
     def _rule_from_approval_policy(self, policy: ApprovalPolicyModel) -> PolicyRule:
         selector = self._load_json_object(policy.resource_selector_json) or {}
