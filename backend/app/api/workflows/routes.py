@@ -69,6 +69,7 @@ async def create_approval_policy(
     policy = await repo.create_approval_policy(
         tenant_id=str(user.get("tenant_id", "default")),
         resource_selector=data.resource_selector,
+        dsl_conditions=data.dsl_conditions,
         action_selector=data.action_selector,
         approver_subject_ids=data.approver_subject_ids,
         approver_mode=data.approver_mode,
@@ -102,6 +103,7 @@ async def create_approval_policy_version(
             tenant_id=str(user.get("tenant_id", "default")),
             policy_id=policy_id,
             resource_selector=data.resource_selector,
+            dsl_conditions=data.dsl_conditions,
             action_selector=data.action_selector,
             approver_subject_ids=data.approver_subject_ids,
             approver_mode=data.approver_mode,

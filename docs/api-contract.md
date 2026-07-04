@@ -71,7 +71,7 @@
 
 ### POST `/api/v1/workflows/approval-policies`
 
-用途：在当前租户内创建一条 JIT approval policy template，用于后续审批策略 DSL、版本管理和策略模拟接入。
+用途：在当前租户内创建一条 JIT approval policy template，用于审批策略 DSL、版本管理和策略模拟接入。
 
 鉴权：需要登录态；`admin` 或 `workflow:admin` 权限可访问。后端使用当前用户 `tenant_id` 写入，不接受前端传入 tenant。
 
@@ -91,7 +91,12 @@
   "max_grant_ttl_seconds": 900,
   "allow_self_approval": false,
   "risk_level": "high",
-  "rollout_percentage": 100
+  "rollout_percentage": 100,
+  "dsl_conditions": {
+    "context_equals": {
+      "protocol": "ssh"
+    }
+  }
 }
 ```
 
@@ -124,9 +129,9 @@
 - 策略模板只能写入当前租户；跨租户读取不会返回该策略。
 - `PolicyDecisionService` 可接收已加载的 approval policy template；匹配当前租户、action selector、resource selector 且落入 deterministic rollout bucket 的请求会要求 JIT approval，并在 `APPROVAL_REQUIRED` obligations 中返回 approval policy、审批人、MFA、TTL 和风险级别元数据。
 - `rollout_percentage` 默认为 `100`，取值范围 `0-100`；`0` 表示当前 active policy 不命中任何 subject/resource，`100` 表示全部命中，`1-99` 使用策略 ID、租户、subject ID 和 resource ID 做稳定哈希分桶。灰度排除时响应保持 deny-by-default 的 `NO_MATCHING_POLICY`，不会返回 secret 或跨租户信息。
-- 当前切片不执行 DSL。
+- `dsl_conditions.context_equals` 是当前支持的最小 DSL 操作符，只允许按请求 `context` 中的键值做精确匹配；不匹配、DSL JSON 损坏或出现未支持操作符时 fail-closed 为 `NO_MATCHING_POLICY`。
 - Phase 4 #t48 版本管理基础中，响应会返回 `policy_family_id`、`version` 与 `is_active`；新建策略默认为同 family 的 v1 active 版本。
-- 响应不返回凭据、连接 token、审批下游密钥或外部通知 secret。
+- 响应不返回 DSL 条件、凭据、连接 token、审批下游密钥或外部通知 secret。
 
 ### GET `/api/v1/workflows/approval-policies`
 
@@ -148,7 +153,7 @@
 
 - 新版本创建只在当前租户 policy family 内生效；不能借此探测或覆盖跨租户策略。
 - 响应仍只返回 selector、审批人、MFA、TTL、风险级别和版本元数据，不返回 DSL、凭据、连接 token、Webhook secret 或任何下游密钥。
-- 当前切片不提供 DSL 执行。
+- 版本可携带新的 `dsl_conditions.context_equals` 条件；响应仍不回显 DSL 条件。
 
 ### POST `/api/v1/workflows/approval-policies/{policy_id}/rollback`
 
@@ -162,7 +167,7 @@
 
 - 回滚只在当前租户 policy family 内生效；不能借此探测或覆盖跨租户策略。
 - 响应仍只返回 selector、审批人、MFA、TTL、风险级别和版本元数据，不返回 DSL、凭据、连接 token、Webhook secret 或任何下游密钥。
-- 当前切片不提供 DSL 执行。
+- 回滚会恢复目标版本保存的 `dsl_conditions.context_equals` 条件；响应仍不回显 DSL 条件。
 
 ### POST `/api/v1/workflows/approval-policies/simulate`
 
@@ -222,7 +227,7 @@
 
 - 模拟结果只基于当前租户策略；跨租户策略不会被读取或命中。
 - 响应只返回决策解释和 obligations，不返回凭据、连接 token、Webhook secret 或任何下游密钥。
-- 当前切片只模拟已保存策略模板和 rollout 分桶，不执行自定义 DSL。
+- 当前切片模拟已保存策略模板、`context_equals` DSL 条件和 rollout 分桶；复杂表达式与更多 DSL 操作符仍未提供。
 
 ## Phase 4 Webhook Endpoint API（#t47）
 

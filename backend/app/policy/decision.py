@@ -48,6 +48,9 @@ class PolicyDecisionService:
             if not self._approval_policy_matches(policy, request):
                 trace.append(f"approval_policy:{policy.id}:not_matched")
                 continue
+            if not self._approval_policy_dsl_includes(policy, request):
+                trace.append(f"approval_policy:{policy.id}:dsl_excluded")
+                continue
             if not self._approval_policy_rollout_includes(policy, request):
                 trace.append(f"approval_policy:{policy.id}:rollout_excluded")
                 continue
@@ -125,6 +128,25 @@ class PolicyDecisionService:
             "project_id": request.resource.project_id,
         }
         return all(self._selector_value_matches(expected, checks[key]) for key, expected in selector.items())
+
+    def _approval_policy_dsl_includes(
+        self, policy: ApprovalPolicyModel, request: PolicyDecisionRequest
+    ) -> bool:
+        conditions = self._load_json_object(policy.dsl_conditions_json)
+        if conditions is None:
+            return False
+        if not conditions:
+            return True
+        if any(key not in {"context_equals"} for key in conditions):
+            return False
+
+        context_equals = conditions.get("context_equals", {})
+        if not isinstance(context_equals, dict):
+            return False
+        return all(
+            self._selector_value_matches(expected, str(request.context.get(key, "")))
+            for key, expected in context_equals.items()
+        )
 
     def _approval_policy_rollout_includes(
         self, policy: ApprovalPolicyModel, request: PolicyDecisionRequest
