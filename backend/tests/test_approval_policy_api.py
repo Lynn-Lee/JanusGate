@@ -106,3 +106,60 @@ async def test_approval_policy_api_requires_workflow_admin_permission(
         response = client.get("/api/v1/workflows/approval-policies")
 
     assert response.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_approval_policy_simulation_evaluates_current_tenant_templates(
+    session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    install_db(session_factory)
+
+    with TestClient(app) as client:
+        install_user(tenant_id="tenant-a", permissions=["workflow:admin"])
+        create_response = client.post(
+            "/api/v1/workflows/approval-policies",
+            json={
+                "resource_selector": {"asset_id": "asset-1", "protocol": "ssh"},
+                "action_selector": "session.connect",
+                "approver_subject_ids": ["manager-1"],
+                "require_mfa_for_requester": False,
+                "max_grant_ttl_seconds": 900,
+                "risk_level": "high",
+            },
+        )
+        simulate_response = client.post(
+            "/api/v1/workflows/approval-policies/simulate",
+            json={
+                "subject": {"id": "user-2", "tenant_id": "tenant-a"},
+                "action": "session.connect",
+                "resource": {"id": "asset-1", "type": "asset", "tenant_id": "tenant-a"},
+                "context": {"protocol": "ssh", "account_id": "account-1"},
+                "connector_trusted": True,
+            },
+        )
+
+        install_user(tenant_id="tenant-b", permissions=["workflow:admin"])
+        cross_tenant_response = client.post(
+            "/api/v1/workflows/approval-policies/simulate",
+            json={
+                "subject": {"id": "user-2", "tenant_id": "tenant-b"},
+                "action": "session.connect",
+                "resource": {"id": "asset-1", "type": "asset", "tenant_id": "tenant-b"},
+                "context": {"protocol": "ssh", "account_id": "account-1"},
+                "connector_trusted": True,
+            },
+        )
+
+    assert create_response.status_code == 201
+    created = create_response.json()
+    assert simulate_response.status_code == 200
+    simulated = simulate_response.json()
+    assert simulated["decision"] == "deny"
+    assert simulated["reason_code"] == "APPROVAL_REQUIRED"
+    assert simulated["obligations"]["approval_policy_id"] == created["id"]
+    assert simulated["obligations"]["approver_subject_ids"] == ["manager-1"]
+    assert simulated["obligations"]["risk_level"] == "high"
+    assert simulated["ttl_seconds"] == 0
+    assert "approval_policy:" in " ".join(simulated["explain_trace"])
+    assert cross_tenant_response.status_code == 200
+    assert cross_tenant_response.json()["reason_code"] == "NO_MATCHING_POLICY"

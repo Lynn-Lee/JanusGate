@@ -24,6 +24,8 @@ from app.api.workflows.schemas import (
 from app.api.workflows.service import SQLAlchemyWorkflowStore, WorkflowService
 from app.core.database import get_db
 from app.core.deps import current_user
+from app.policy.decision import PolicyDecisionService
+from app.policy.schemas import PolicyDecisionRequest, PolicyDecisionResponse
 from app.workflows.audit import WorkflowAuditSink
 from app.workflows.repository import SQLAlchemyWorkflowRepository
 
@@ -79,6 +81,25 @@ async def create_approval_policy(
     await db.commit()
     await db.refresh(policy)
     return ApprovalPolicyResponse.from_model(policy)
+
+
+@router.post("/approval-policies/simulate", response_model=PolicyDecisionResponse)
+async def simulate_approval_policy(
+    data: PolicyDecisionRequest,
+    db: AsyncSession = Depends(get_db),
+    user: dict[str, Any] = Depends(current_user),
+) -> PolicyDecisionResponse:
+    _require_workflow_admin_permission(user)
+    tenant_id = str(user.get("tenant_id", "default"))
+    repo = SQLAlchemyWorkflowRepository(db)
+    policies = await repo.list_approval_policies(tenant_id=tenant_id)
+    request = data.model_copy(
+        update={
+            "subject": data.subject.model_copy(update={"tenant_id": tenant_id}),
+            "resource": data.resource.model_copy(update={"tenant_id": tenant_id}),
+        },
+    )
+    return PolicyDecisionService(rules=[], approval_policies=policies).evaluate(request)
 
 
 @router.post(
