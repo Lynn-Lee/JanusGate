@@ -69,7 +69,7 @@
 
 ## Phase 4 Automation Worker Queue（#t52）
 
-当前切片不新增 REST API，仅定义后端 worker 队列写入契约。`AutomationJobQueue` 使用 Redis Streams 风格 `xadd` 写入 `janusgate:automation:jobs`，字段均为字符串，payload 以 `payload_json` 保存，并显式标记 `payload_format=json`。
+当前切片不新增 REST API，仅定义后端 worker 队列写入与单轮消费循环契约。`AutomationJobQueue` 使用 Redis Streams 风格 `xadd` 写入 `janusgate:automation:jobs`，字段均为字符串，payload 以 `payload_json` 保存，并显式标记 `payload_format=json`。`AutomationWorker` 通过 Redis Streams consumer group 读取消息，按 `job_type` 分发到显式注册的 handler，并仅在 handler 成功后 ack。
 
 支持的 `job_type` 白名单：
 
@@ -81,6 +81,8 @@
 
 - 队列消息只允许 JSON 序列化 payload，不使用 pickle 或任意 Python 对象派发。
 - 未知 `job_type` fail-closed 为 `UNSUPPORTED_AUTOMATION_JOB_TYPE`。
+- 未配置 handler 时 fail-closed 为 `AUTOMATION_JOB_HANDLER_NOT_CONFIGURED`，不得 ack 消息。
+- 非 JSON payload format fail-closed 为 `UNSUPPORTED_AUTOMATION_JOB_PAYLOAD_FORMAT`，不得 ack 消息。
 - payload 键名包含 password/token/secret/private key/connection string 等敏感字段时 fail-closed 为 `AUTOMATION_JOB_PAYLOAD_CONTAINS_SECRET`。
 - `secret_id` 这类 Vault 引用可由后续执行器显式传递，但队列契约不得承载凭据明文。
 
