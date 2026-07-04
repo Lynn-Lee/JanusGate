@@ -67,6 +67,23 @@
 - Notification Rules：`/api/v1/notification-rules/*`，Phase 4 WebHook / 通知规则管理基础。
 - Notification Deliveries：`/api/v1/notification-rules/{rule_id}/deliveries` 与 `/api/v1/notification-deliveries/*`，Phase 4 WebHook 可靠投递队列基础；`NotificationDeliveryWorker` 负责到期投递、失败重试和 dead-letter 状态推进，`HttpWebhookNotificationSender` 负责向 HTTPS WebHook endpoint 投递已脱敏 payload。
 
+## Phase 4 Automation Worker Queue（#t52）
+
+当前切片不新增 REST API，仅定义后端 worker 队列写入契约。`AutomationJobQueue` 使用 Redis Streams 风格 `xadd` 写入 `janusgate:automation:jobs`，字段均为字符串，payload 以 `payload_json` 保存，并显式标记 `payload_format=json`。
+
+支持的 `job_type` 白名单：
+
+- `asset.scan`
+- `credential.rotate`
+- `ansible.playbook`
+
+安全语义：
+
+- 队列消息只允许 JSON 序列化 payload，不使用 pickle 或任意 Python 对象派发。
+- 未知 `job_type` fail-closed 为 `UNSUPPORTED_AUTOMATION_JOB_TYPE`。
+- payload 键名包含 password/token/secret/private key/connection string 等敏感字段时 fail-closed 为 `AUTOMATION_JOB_PAYLOAD_CONTAINS_SECRET`。
+- `secret_id` 这类 Vault 引用可由后续执行器显式传递，但队列契约不得承载凭据明文。
+
 ## Phase 4 Audit Report API（#t49）
 
 ### GET `/api/v1/audits/reports/summary`
