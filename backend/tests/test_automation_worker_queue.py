@@ -6,7 +6,7 @@ from typing import Any
 
 import pytest
 
-from app.services.automation_worker import AutomationJobQueue
+from app.services.automation_worker import AutomationJobQueue, AutomationWorker
 
 
 class RecordingRedisStream:
@@ -23,6 +23,48 @@ class RecordingRedisStream:
     ) -> str:
         self.calls.append((name, fields, maxlen))
         return "1700000000000-0"
+
+
+class RecordingRedisConsumer(RecordingRedisStream):
+    def __init__(self) -> None:
+        super().__init__()
+        self.acked: list[tuple[str, str, str]] = []
+
+    async def xreadgroup(
+        self,
+        groupname: str,
+        consumername: str,
+        streams: dict[str, str],
+        *,
+        count: int | None = None,
+        block: int | None = None,
+    ) -> list[tuple[str, list[tuple[str, dict[str, str]]]]]:
+        assert groupname == "janusgate-workers"
+        assert consumername == "worker-1"
+        assert streams == {"janusgate:automation": ">"}
+        assert count == 10
+        assert block == 1000
+        return [
+            (
+                "janusgate:automation",
+                [
+                    (
+                        "1700000000000-0",
+                        {
+                            "tenant_id": "tenant-a",
+                            "job_type": "asset.scan",
+                            "requested_by": "user-1",
+                            "payload_json": '{"asset_id":"asset-1"}',
+                            "payload_format": "json",
+                        },
+                    )
+                ],
+            )
+        ]
+
+    async def xack(self, name: str, groupname: str, message_id: str) -> int:
+        self.acked.append((name, groupname, message_id))
+        return 1
 
 
 @pytest.mark.asyncio
@@ -78,3 +120,48 @@ async def test_automation_job_queue_rejects_sensitive_payload_fields() -> None:
             requested_by="user-1",
             payload=payload,
         )
+
+
+@pytest.mark.asyncio
+async def test_automation_worker_dispatches_json_stream_message_and_acks() -> None:
+    stream = RecordingRedisConsumer()
+    handled: list[dict[str, Any]] = []
+
+    async def handle_asset_scan(
+        *,
+        tenant_id: str,
+        requested_by: str,
+        payload: dict[str, Any],
+        message_id: str,
+    ) -> None:
+        handled.append(
+            {
+                "tenant_id": tenant_id,
+                "requested_by": requested_by,
+                "payload": payload,
+                "message_id": message_id,
+            }
+        )
+
+    worker = AutomationWorker(
+        redis=stream,
+        stream_name="janusgate:automation",
+        group_name="janusgate-workers",
+        consumer_name="worker-1",
+        handlers={"asset.scan": handle_asset_scan},
+    )
+
+    processed = await worker.run_once(count=10, block_ms=1000)
+
+    assert processed == 1
+    assert handled == [
+        {
+            "tenant_id": "tenant-a",
+            "requested_by": "user-1",
+            "payload": {"asset_id": "asset-1"},
+            "message_id": "1700000000000-0",
+        }
+    ]
+    assert stream.acked == [
+        ("janusgate:automation", "janusgate-workers", "1700000000000-0")
+    ]
