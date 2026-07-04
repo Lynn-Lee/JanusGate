@@ -88,3 +88,5 @@ Phase 4 #t49 已启动 SIEM / 告警 / 报表中心基础：`GET /api/v1/audits/
 Phase 4 #t50 已启动 Vault 生产级后端基础：`app.vault.provider` 现在提供 `KmsKeyProvider` 协议与 `EnvelopeEncryptedSecretProvider`，每条 secret 使用随机 32 字节 data key 加密，再通过 KMS provider 包装 data key 保存；解密时必须成功 unwrap data key，KMS 拒绝时 fail-closed。当前切片仍为内存 provider foundation，不包含真实云 KMS/HSM/Vault adapter、审批后 unwrap 或 break-glass 流程。
 
 Phase 4 #t51 已启动可观测性基础：后端提供 Prometheus 文本格式 `GET /metrics`，并通过 HTTP middleware 记录请求总数与延迟 histogram，指标标签仅包含 method、路由模板 path 和 status_code，不写入 token、secret、连接串或请求/响应正文。OpenTelemetry 分布式追踪、Loki 日志管道和更完整的部署暴露策略仍是后续切片。
+
+Phase 4 #t52 已启动 Automation Worker 队列基础：`AutomationJobQueue` 使用 Redis Streams 风格 `xadd` 写入 JSON-only 后台任务消息，当前白名单任务类型为 `asset.scan`、`credential.rotate` 和 `ansible.playbook`。队列契约拒绝未知任务类型和 password/token/secret/private key 等敏感 payload 字段，不使用 pickle 或任意 Python 对象派发。真实 worker 消费循环、Ansible/扫描/改密执行器和调度 API 仍是后续切片。
