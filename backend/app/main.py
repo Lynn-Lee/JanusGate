@@ -15,6 +15,7 @@ from app.api import (
     assets,
     auth,
     connectors,
+    notification_deliveries,
     notification_rules,
     session_recordings,
     sessions,
@@ -61,6 +62,7 @@ app.include_router(auth.router, prefix="/api/v1")
 app.include_router(accounts.router, prefix="/api/v1")
 app.include_router(assets.router, prefix="/api/v1")
 app.include_router(connectors.router, prefix="/api/v1")
+app.include_router(notification_deliveries.router, prefix="/api/v1")
 app.include_router(notification_rules.router, prefix="/api/v1")
 app.include_router(session_recordings.router, prefix="/api/v1")
 app.include_router(ssh_certificate_authorities.router, prefix="/api/v1")

@@ -64,8 +64,57 @@
 - Session Recordings：`/api/v1/sessions/{session_id}/recordings` 与 `/api/v1/session-recordings/*`，Phase 4 会话录制元数据、命令事件上报与命令检索。
 - Webhook Endpoints：`/api/v1/webhook-endpoints/*`，Phase 4 WebHook / 通知中心 endpoint 管理基础。
 - Notification Rules：`/api/v1/notification-rules/*`，Phase 4 WebHook / 通知规则管理基础。
+- Notification Deliveries：`/api/v1/notification-rules/{rule_id}/deliveries` 与 `/api/v1/notification-deliveries/*`，Phase 4 WebHook 可靠投递队列基础。
 
 ## Phase 4 Webhook Endpoint API（#t47）
+
+### POST `/api/v1/notification-rules/{rule_id}/deliveries`
+
+用途：将当前租户 active 通知规则匹配的事件写入可靠投递队列，供后续 worker 重试和死信处理。
+
+鉴权：需要登录态；`admin` 或 `notifications:write` 权限可访问。后端使用当前用户 `tenant_id` 写入，不接受前端传入 tenant。
+
+请求体：
+
+```json
+{
+  "event_type": "audit.event.created",
+  "payload": {
+    "audit_event_id": "evt-1"
+  }
+}
+```
+
+响应 `202`：
+
+```json
+{
+  "id": 1,
+  "tenant_id": "tenant-a",
+  "notification_rule_id": 1,
+  "webhook_endpoint_id": 1,
+  "event_type": "audit.event.created",
+  "status": "pending",
+  "attempts": 0,
+  "next_attempt_at": "2026-07-04T05:00:00Z",
+  "last_error": null,
+  "created_at": "2026-07-04T05:00:00Z",
+  "updated_at": "2026-07-04T05:00:00Z"
+}
+```
+
+安全语义：
+
+- 只能写入当前租户 active rule 及其 active WebHook endpoint；缺失、跨租户或 disabled rule 返回 `404 NOTIFICATION_RULE_NOT_FOUND`。
+- `event_type` 必须同时存在于 rule 和 endpoint 的 `event_types`，否则返回 `400 NOTIFICATION_EVENT_NOT_ALLOWED`。
+- payload 入库前会脱敏 token/password/secret/credential 等敏感键或赋值片段；响应不返回 payload。
+- 当前切片只落队列记录，不执行外部 HTTP/IM 投递。
+
+### GET `/api/v1/notification-deliveries/`
+
+用途：返回当前租户可见的通知投递队列记录，按 ID 升序返回 `{items,total}`。
+
+鉴权：需要登录态；`admin` 或 `notifications:read` 权限可访问。响应不返回 payload、signing secret、连接 token 或外部投递凭据。
 
 ### POST `/api/v1/notification-rules/`
 
