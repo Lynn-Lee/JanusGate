@@ -1,0 +1,108 @@
+"""Phase 4 approval policy template API contract tests."""
+from __future__ import annotations
+
+from collections.abc import AsyncGenerator
+
+import pytest
+from fastapi.testclient import TestClient
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+
+from app.core.database import Base, get_db
+from app.core.deps import current_user
+from app.main import app
+
+
+@pytest.fixture
+async def session_factory() -> AsyncGenerator[async_sessionmaker[AsyncSession], None]:
+    engine = create_async_engine("sqlite+aiosqlite:///:memory:")
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+    try:
+        yield async_sessionmaker(engine, expire_on_commit=False)
+    finally:
+        await engine.dispose()
+
+
+def install_db(session_factory: async_sessionmaker[AsyncSession]) -> None:
+    async def override_db() -> AsyncGenerator[AsyncSession, None]:
+        async with session_factory() as session:
+            try:
+                yield session
+            except Exception:
+                await session.rollback()
+                raise
+            finally:
+                await session.close()
+
+    app.dependency_overrides[get_db] = override_db
+
+
+def install_user(*, tenant_id: str, permissions: list[str]) -> None:
+    app.dependency_overrides[current_user] = lambda: {
+        "id": "user-1",
+        "username": "alice",
+        "tenant_id": tenant_id,
+        "organization_id": None,
+        "team_id": None,
+        "project_id": None,
+        "permissions": permissions,
+    }
+
+
+@pytest.mark.asyncio
+async def test_approval_policy_api_creates_and_lists_with_tenant_scope(
+    session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    install_db(session_factory)
+
+    with TestClient(app) as client:
+        install_user(tenant_id="tenant-a", permissions=["workflow:admin"])
+        create_response = client.post(
+            "/api/v1/workflows/approval-policies",
+            json={
+                "resource_selector": {"asset_id": "asset-1", "protocol": "ssh"},
+                "action_selector": "session.connect",
+                "approver_subject_ids": ["manager-1"],
+                "approver_mode": "named_user",
+                "require_mfa_for_requester": True,
+                "require_mfa_for_approver": True,
+                "max_grant_ttl_seconds": 900,
+                "allow_self_approval": False,
+                "risk_level": "high",
+            },
+        )
+        tenant_a_list = client.get("/api/v1/workflows/approval-policies")
+
+        install_user(tenant_id="tenant-b", permissions=["workflow:admin"])
+        tenant_b_list = client.get("/api/v1/workflows/approval-policies")
+
+    assert create_response.status_code == 201
+    created = create_response.json()
+    assert created["tenant_id"] == "tenant-a"
+    assert created["resource_selector"] == {"asset_id": "asset-1", "protocol": "ssh"}
+    assert created["action_selector"] == "session.connect"
+    assert created["approver_subject_ids"] == ["manager-1"]
+    assert created["approver_mode"] == "named_user"
+    assert created["require_mfa_for_requester"] is True
+    assert created["require_mfa_for_approver"] is True
+    assert created["max_grant_ttl_seconds"] == 900
+    assert created["allow_self_approval"] is False
+    assert created["risk_level"] == "high"
+    assert "dsl" not in created
+    assert tenant_a_list.status_code == 200
+    assert tenant_a_list.json() == {"items": [created], "total": 1}
+    assert tenant_b_list.status_code == 200
+    assert tenant_b_list.json() == {"items": [], "total": 0}
+
+
+@pytest.mark.asyncio
+async def test_approval_policy_api_requires_workflow_admin_permission(
+    session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    install_db(session_factory)
+
+    with TestClient(app) as client:
+        install_user(tenant_id="tenant-a", permissions=["workflow:approve"])
+        response = client.get("/api/v1/workflows/approval-policies")
+
+    assert response.status_code == 403

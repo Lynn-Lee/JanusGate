@@ -1,12 +1,65 @@
 """Workflow/JIT API schemas."""
 from __future__ import annotations
 
+import json
 from datetime import datetime
 from typing import Any
 
 from pydantic import BaseModel, Field
 
 from app.api.workflows.service import JitGrantRecord, WorkflowRequestRecord, WorkflowRequestStatus
+from app.models.workflow import ApprovalPolicyModel, ApproverMode
+
+
+class ApprovalPolicyCreate(BaseModel):
+    resource_selector: dict[str, Any] = Field(default_factory=dict)
+    action_selector: str = Field(min_length=1, max_length=120)
+    approver_subject_ids: list[str] = Field(min_length=1)
+    approver_mode: ApproverMode = ApproverMode.named_user
+    require_mfa_for_requester: bool = False
+    require_mfa_for_approver: bool = True
+    max_grant_ttl_seconds: int = Field(default=1800, gt=0, le=86_400)
+    allow_self_approval: bool = False
+    risk_level: str = Field(default="medium", min_length=1, max_length=20)
+
+
+class ApprovalPolicyResponse(BaseModel):
+    id: str
+    tenant_id: str
+    resource_selector: dict[str, Any]
+    action_selector: str
+    approver_subject_ids: list[str]
+    approver_mode: ApproverMode
+    require_mfa_for_requester: bool
+    require_mfa_for_approver: bool
+    max_grant_ttl_seconds: int
+    allow_self_approval: bool
+    risk_level: str
+    created_at: datetime | None
+    updated_at: datetime | None
+
+    @classmethod
+    def from_model(cls, policy: ApprovalPolicyModel) -> ApprovalPolicyResponse:
+        return cls(
+            id=policy.id,
+            tenant_id=policy.tenant_id,
+            resource_selector=json.loads(policy.resource_selector_json),
+            action_selector=policy.action_selector,
+            approver_subject_ids=json.loads(policy.approver_subject_ids_json),
+            approver_mode=policy.approver_mode,
+            require_mfa_for_requester=policy.require_mfa_for_requester,
+            require_mfa_for_approver=policy.require_mfa_for_approver,
+            max_grant_ttl_seconds=policy.max_grant_ttl_seconds,
+            allow_self_approval=policy.allow_self_approval,
+            risk_level=policy.risk_level,
+            created_at=policy.created_at,
+            updated_at=policy.updated_at,
+        )
+
+
+class ApprovalPolicyListResponse(BaseModel):
+    items: list[ApprovalPolicyResponse]
+    total: int
 
 
 class WorkflowRequestCreate(BaseModel):
