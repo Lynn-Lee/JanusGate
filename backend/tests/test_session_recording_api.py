@@ -163,3 +163,51 @@ async def test_session_recording_api_closes_recordings_by_tenant(
 
     assert tenant_b_close_response.status_code == 404
     assert tenant_b_close_response.json()["code"] == "SESSION_RECORDING_NOT_FOUND"
+
+
+@pytest.mark.asyncio
+async def test_session_recording_api_lists_recording_commands_for_playback_by_tenant(
+    session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    install_db(session_factory)
+
+    with TestClient(app) as client:
+        install_user(tenant_id="tenant-a", permissions=["admin"])
+        recording_response = client.post(
+            "/api/v1/sessions/session-a/recordings",
+            json={
+                "asset_id": "asset-1",
+                "account_id": "account-1",
+                "protocol": "ssh",
+                "storage_uri": "s3://janusgate-recordings/tenant-a/session-a.cast",
+            },
+        )
+        recording = recording_response.json()
+        client.post(
+            f"/api/v1/session-recordings/{recording['id']}/commands",
+            json={"sequence": 2, "command": "tail -f /var/log/syslog"},
+        )
+        client.post(
+            f"/api/v1/session-recordings/{recording['id']}/commands",
+            json={"sequence": 1, "command": "whoami"},
+        )
+
+        tenant_a_timeline = client.get(
+            f"/api/v1/session-recordings/{recording['id']}/commands"
+        )
+
+        install_user(tenant_id="tenant-b", permissions=["admin"])
+        tenant_b_timeline = client.get(
+            f"/api/v1/session-recordings/{recording['id']}/commands"
+        )
+
+    assert tenant_a_timeline.status_code == 200
+    assert tenant_a_timeline.json()["total"] == 2
+    assert [item["sequence"] for item in tenant_a_timeline.json()["items"]] == [1, 2]
+    assert [item["command"] for item in tenant_a_timeline.json()["items"]] == [
+        "whoami",
+        "tail -f /var/log/syslog",
+    ]
+
+    assert tenant_b_timeline.status_code == 404
+    assert tenant_b_timeline.json()["code"] == "SESSION_RECORDING_NOT_FOUND"

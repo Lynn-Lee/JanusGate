@@ -123,6 +123,17 @@
 - `output_excerpt` 返回前会脱敏 `token=`、`password=`、`secret=`、`credential=` 赋值片段。
 - 当前切片只保存命令事件和摘要；真实录制对象存储、实时流和回放 UI 后续补齐。
 
+### GET `/api/v1/session-recordings/{recording_id}/commands`
+
+用途：返回当前租户可见录制的命令时间线，作为后续回放 UI 的只读数据源。
+
+鉴权：需要登录态；`admin` 或 `session-recordings:read` 权限可访问。响应按 `sequence` 升序返回 `{items,total}`。
+
+安全语义：
+
+- 只允许读取当前租户可见录制；跨租户或不存在录制返回 `404 SESSION_RECORDING_NOT_FOUND`。
+- 响应沿用命令事件脱敏后的 `output_excerpt`，不返回凭据、连接 token 或对象存储签名 URL。
+
 ### POST `/api/v1/session-recordings/{recording_id}/close`
 
 用途：关闭当前租户可见且仍处于 `recording` 状态的录制，写入 `ended_at` 并返回录制元数据。
