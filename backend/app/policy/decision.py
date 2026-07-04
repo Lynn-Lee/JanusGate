@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+import json
 from datetime import UTC, datetime
+from typing import Any
 from uuid import uuid4
 
+from app.models.workflow import ApprovalPolicyModel
 from app.policy.schemas import (
     PolicyDecision,
     PolicyDecisionRequest,
@@ -21,8 +24,13 @@ class PolicyDecisionService:
     logic in endpoints.
     """
 
-    def __init__(self, rules: list[PolicyRule] | None = None) -> None:
+    def __init__(
+        self,
+        rules: list[PolicyRule] | None = None,
+        approval_policies: list[ApprovalPolicyModel] | None = None,
+    ) -> None:
         self._rules = rules or []
+        self._approval_policies = approval_policies or []
 
     def evaluate(self, request: PolicyDecisionRequest) -> PolicyDecisionResponse:
         trace: list[str] = [
@@ -34,6 +42,27 @@ class PolicyDecisionService:
         preflight = self._preflight_deny(request, trace)
         if preflight is not None:
             return preflight
+
+        for policy in self._approval_policies:
+            if not self._approval_policy_matches(policy, request):
+                trace.append(f"approval_policy:{policy.id}:not_matched")
+                continue
+
+            trace.append(f"approval_policy:{policy.id}:matched")
+            rule = self._rule_from_approval_policy(policy)
+            deny = self._approval_policy_deny(policy, rule, request, trace)
+            if deny is not None:
+                return deny
+
+            obligations = self._allow_obligations(rule, request)
+            obligations["approval_policy_id"] = policy.id
+            return self._response(
+                decision=PolicyDecision.ALLOW,
+                reason_code="POLICY_ALLOWED",
+                trace=trace,
+                obligations=obligations,
+                ttl_seconds=policy.max_grant_ttl_seconds,
+            )
 
         for rule in self._rules:
             if not rule.matches(request):
@@ -55,6 +84,93 @@ class PolicyDecisionService:
 
         trace.append("no_matching_policy")
         return self._deny("NO_MATCHING_POLICY", trace)
+
+    def _approval_policy_matches(
+        self, policy: ApprovalPolicyModel, request: PolicyDecisionRequest
+    ) -> bool:
+        if policy.tenant_id != request.subject.tenant_id or policy.tenant_id != request.resource.tenant_id:
+            return False
+        if policy.action_selector != "*" and policy.action_selector != request.action:
+            return False
+
+        selector = self._load_json_object(policy.resource_selector_json)
+        if selector is None:
+            return False
+
+        supported_keys = {
+            "asset_id",
+            "resource_id",
+            "resource_type",
+            "type",
+            "protocol",
+            "organization_id",
+            "team_id",
+            "project_id",
+        }
+        if any(key not in supported_keys for key in selector):
+            return False
+
+        checks = {
+            "asset_id": request.resource.id,
+            "resource_id": request.resource.id,
+            "resource_type": request.resource.type,
+            "type": request.resource.type,
+            "protocol": str(request.context.get("protocol", "")),
+            "organization_id": request.resource.organization_id,
+            "team_id": request.resource.team_id,
+            "project_id": request.resource.project_id,
+        }
+        return all(self._selector_value_matches(expected, checks[key]) for key, expected in selector.items())
+
+    def _rule_from_approval_policy(self, policy: ApprovalPolicyModel) -> PolicyRule:
+        selector = self._load_json_object(policy.resource_selector_json) or {}
+        asset_id = str(selector.get("asset_id") or selector.get("resource_id") or "*")
+        return PolicyRule(
+            id=f"approval_policy:{policy.id}",
+            subject_ids=["*"],
+            actions=[policy.action_selector],
+            resource_ids=[asset_id],
+            tenant_id=policy.tenant_id,
+            require_mfa=policy.require_mfa_for_requester,
+            require_approval=True,
+            organization_ids=self._selector_ids(selector.get("organization_id")),
+            team_ids=self._selector_ids(selector.get("team_id")),
+            project_ids=self._selector_ids(selector.get("project_id")),
+            max_session_ttl_seconds=policy.max_grant_ttl_seconds,
+        )
+
+    def _approval_policy_deny(
+        self,
+        policy: ApprovalPolicyModel,
+        rule: PolicyRule,
+        request: PolicyDecisionRequest,
+        trace: list[str],
+    ) -> PolicyDecisionResponse | None:
+        if rule.require_mfa and not request.mfa_verified:
+            trace.append("mfa_required_but_missing")
+            return self._deny("MFA_REQUIRED", trace)
+
+        if request.approval is None:
+            trace.append("approval_required_but_missing")
+            return self._deny(
+                "APPROVAL_REQUIRED",
+                trace,
+                obligations={
+                    "workflow_required": True,
+                    "approval_policy_id": policy.id,
+                    "approval_use_type": rule.approval_use_type,
+                    "approval_max_uses": rule.approval_max_uses,
+                    "approver_subject_ids": self._load_json_list(
+                        policy.approver_subject_ids_json
+                    ),
+                    "approver_mode": policy.approver_mode,
+                    "require_mfa_for_approver": policy.require_mfa_for_approver,
+                    "max_grant_ttl_seconds": policy.max_grant_ttl_seconds,
+                    "risk_level": policy.risk_level,
+                },
+            )
+
+        return self._rule_deny(rule, request, trace)
 
     def _preflight_deny(
         self,
@@ -148,6 +264,38 @@ class PolicyDecisionService:
                 }
             )
         return obligations
+
+    def _load_json_object(self, raw: str) -> dict[str, Any] | None:
+        try:
+            value = json.loads(raw)
+        except json.JSONDecodeError:
+            return None
+        if not isinstance(value, dict):
+            return None
+        return value
+
+    def _load_json_list(self, raw: str) -> list[str]:
+        try:
+            value = json.loads(raw)
+        except json.JSONDecodeError:
+            return []
+        if not isinstance(value, list):
+            return []
+        return [str(item) for item in value]
+
+    def _selector_ids(self, value: Any) -> list[str]:
+        if value in (None, "", "*"):
+            return []
+        if isinstance(value, list):
+            return [str(item) for item in value]
+        return [str(value)]
+
+    def _selector_value_matches(self, expected: Any, actual: str) -> bool:
+        if expected in (None, "", "*"):
+            return True
+        if isinstance(expected, list):
+            return "*" in expected or actual in {str(item) for item in expected}
+        return str(expected) == actual
 
     def _deny(
         self,

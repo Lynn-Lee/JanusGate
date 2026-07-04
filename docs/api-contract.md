@@ -120,7 +120,8 @@
 安全语义：
 
 - 策略模板只能写入当前租户；跨租户读取不会返回该策略。
-- 当前切片只提供模板管理 API，不执行 DSL、不做策略灰度/回滚或策略模拟。
+- `PolicyDecisionService` 可接收已加载的 approval policy template；匹配当前租户、action selector 和 resource selector 的请求会要求 JIT approval，并在 `APPROVAL_REQUIRED` obligations 中返回 approval policy、审批人、MFA、TTL 和风险级别元数据。
+- 当前切片不执行 DSL、不做策略灰度/回滚或策略模拟。
 - 响应不返回凭据、连接 token、审批下游密钥或外部通知 secret。
 
 ### GET `/api/v1/workflows/approval-policies`
