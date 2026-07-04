@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 
 from app.core.database import Base
 from app.models.asset import Asset, Platform
+from app.models.automation import AutomationJobRun
 from app.services.ansible_playbook import (
     AnsiblePlaybookRun,
     AnsiblePlaybookTarget,
@@ -35,6 +36,12 @@ class RecordingPlaybookRunner:
 
     async def run(self, playbook: AnsiblePlaybookRun) -> None:
         self.calls.append(playbook)
+
+
+class FailingPlaybookRunner:
+    async def run(self, playbook: AnsiblePlaybookRun) -> None:
+        del playbook
+        raise ValueError("ANSIBLE_PLAYBOOK_FAILED")
 
 
 async def seed_assets(session_factory: async_sessionmaker[AsyncSession]) -> None:
@@ -127,6 +134,75 @@ async def test_playbook_handler_runs_current_tenant_assets_without_credentials(
     ]
     for target in runner.calls[0].targets:
         assert not hasattr(target, "credential")
+
+
+@pytest.mark.asyncio
+async def test_playbook_handler_persists_completion_status(
+    session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    await seed_assets(session_factory)
+    handler = AnsiblePlaybookWorkerHandler(
+        session_factory=session_factory,
+        runner=RecordingPlaybookRunner(),
+    )
+
+    await handler(
+        tenant_id="tenant-a",
+        requested_by="user-1",
+        payload={
+            "playbook_name": "linux-baseline.yml",
+            "target_asset_ids": [1, 2],
+            "check_mode": True,
+        },
+        message_id="1700000000000-0",
+    )
+
+    async with session_factory() as session:
+        run = await session.get(AutomationJobRun, "1700000000000-0")
+
+    assert run is not None
+    assert run.tenant_id == "tenant-a"
+    assert run.job_type == "ansible.playbook"
+    assert run.status == "completed"
+    assert run.requested_by == "user-1"
+    assert run.playbook_name == "linux-baseline.yml"
+    assert run.target_count == 2
+    assert run.error_code is None
+
+
+@pytest.mark.asyncio
+async def test_playbook_handler_persists_failure_status_without_secret_payload(
+    session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    await seed_assets(session_factory)
+    handler = AnsiblePlaybookWorkerHandler(
+        session_factory=session_factory,
+        runner=FailingPlaybookRunner(),
+    )
+
+    with pytest.raises(ValueError, match="ANSIBLE_PLAYBOOK_FAILED"):
+        await handler(
+            tenant_id="tenant-a",
+            requested_by="user-1",
+            payload={
+                "playbook_name": "linux-baseline.yml",
+                "target_asset_ids": [1],
+                "check_mode": False,
+            },
+            message_id="1700000000000-0",
+        )
+
+    async with session_factory() as session:
+        run = await session.get(AutomationJobRun, "1700000000000-0")
+
+    assert run is not None
+    assert run.status == "failed"
+    assert run.error_code == "ANSIBLE_PLAYBOOK_FAILED"
+    assert run.playbook_name == "linux-baseline.yml"
+    assert run.target_count == 1
+    assert not hasattr(run, "payload")
+    assert not hasattr(run, "stdout")
+    assert not hasattr(run, "stderr")
 
 
 @pytest.mark.asyncio

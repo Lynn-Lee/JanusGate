@@ -1,4 +1,5 @@
 from app.models.account import Account, CredentialRotation
+from app.models.automation import AutomationJobRun
 from app.models.connector import Connector
 from app.models.session_recording import SessionCommandEvent, SessionRecording
 from app.models.ssh_ca import SshCertificate, SshCertificateAuthority
@@ -11,6 +12,7 @@ __all__ = [
     "ApiKey",
     "ApprovalPolicyModel",
     "Account",
+    "AutomationJobRun",
     "Connector",
     "CredentialRotation",
     "JitGrantModel",
