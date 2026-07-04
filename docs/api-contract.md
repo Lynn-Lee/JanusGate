@@ -123,6 +123,30 @@
 - `output_excerpt` 返回前会脱敏 `token=`、`password=`、`secret=`、`credential=` 赋值片段。
 - 当前切片只保存命令事件和摘要；真实录制对象存储、实时流和回放 UI 后续补齐。
 
+### POST `/api/v1/connectors/{connector_id}/session-recordings/{recording_id}/commands`
+
+用途：连接器/边缘网关向当前租户可见的录制实时上报命令审计事件。
+
+鉴权：需要登录态；`admin` 或 `connectors:write` 权限可访问。后端会同时校验 connector 和 recording 均属于当前用户租户。
+
+请求体沿用 `SessionCommandEventCreate`：
+
+```json
+{
+  "sequence": 2,
+  "command": "whoami",
+  "exit_code": 0,
+  "output_excerpt": "password=raw-secret"
+}
+```
+
+安全语义：
+
+- connector 不存在或跨租户时返回 `404 CONNECTOR_NOT_FOUND`。
+- connector 为 `inactive` / `revoked` 时返回 `403 CONNECTOR_NOT_ACTIVE`。
+- recording 不存在、跨租户或已关闭时返回 `404 SESSION_RECORDING_NOT_FOUND`。
+- 响应沿用命令事件脱敏规则，不返回 connector 私钥、连接 token、凭据或对象存储签名 URL。
+
 ### GET `/api/v1/session-recordings/{recording_id}/commands`
 
 用途：返回当前租户可见录制的命令时间线，作为后续回放 UI 的只读数据源。

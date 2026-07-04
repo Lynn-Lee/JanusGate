@@ -211,3 +211,92 @@ async def test_session_recording_api_lists_recording_commands_for_playback_by_te
 
     assert tenant_b_timeline.status_code == 404
     assert tenant_b_timeline.json()["code"] == "SESSION_RECORDING_NOT_FOUND"
+
+
+@pytest.mark.asyncio
+async def test_connector_session_recording_ingest_requires_active_same_tenant_connector(
+    session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    install_db(session_factory)
+
+    with TestClient(app) as client:
+        install_user(tenant_id="tenant-a", permissions=["admin"])
+        active_connector_response = client.post(
+            "/api/v1/connectors/",
+            json={
+                "name": "edge-a",
+                "environment": "prod",
+                "public_key_fingerprint": "sha256:connector-a",
+                "capabilities": ["ssh"],
+            },
+        )
+        inactive_connector_response = client.post(
+            "/api/v1/connectors/",
+            json={
+                "name": "edge-inactive",
+                "environment": "prod",
+                "public_key_fingerprint": "sha256:connector-inactive",
+                "capabilities": ["ssh"],
+                "status": "inactive",
+            },
+        )
+        recording_response = client.post(
+            "/api/v1/sessions/session-a/recordings",
+            json={
+                "asset_id": "asset-1",
+                "account_id": "account-1",
+                "protocol": "ssh",
+                "storage_uri": "s3://janusgate-recordings/tenant-a/session-a.cast",
+            },
+        )
+        active_connector = active_connector_response.json()
+        inactive_connector = inactive_connector_response.json()
+        recording = recording_response.json()
+
+        ingest_response = client.post(
+            f"/api/v1/connectors/{active_connector['id']}"
+            f"/session-recordings/{recording['id']}/commands",
+            json={
+                "sequence": 1,
+                "command": "sudo systemctl restart nginx",
+                "exit_code": 0,
+                "output_excerpt": "password=raw-secret",
+            },
+        )
+        inactive_ingest_response = client.post(
+            f"/api/v1/connectors/{inactive_connector['id']}"
+            f"/session-recordings/{recording['id']}/commands",
+            json={"sequence": 2, "command": "whoami"},
+        )
+        close_response = client.post(
+            f"/api/v1/session-recordings/{recording['id']}/close"
+        )
+        closed_ingest_response = client.post(
+            f"/api/v1/connectors/{active_connector['id']}"
+            f"/session-recordings/{recording['id']}/commands",
+            json={"sequence": 3, "command": "id"},
+        )
+
+        install_user(tenant_id="tenant-b", permissions=["admin"])
+        cross_tenant_ingest_response = client.post(
+            f"/api/v1/connectors/{active_connector['id']}"
+            f"/session-recordings/{recording['id']}/commands",
+            json={"sequence": 4, "command": "hostname"},
+        )
+
+    assert ingest_response.status_code == 201
+    command = ingest_response.json()
+    assert command["recording_id"] == recording["id"]
+    assert command["session_id"] == "session-a"
+    assert command["command"] == "sudo systemctl restart nginx"
+    assert "raw-secret" not in command["output_excerpt"]
+
+    assert inactive_ingest_response.status_code == 403
+    assert inactive_ingest_response.json()["code"] == "CONNECTOR_NOT_ACTIVE"
+
+    assert close_response.status_code == 200
+    assert closed_ingest_response.status_code == 404
+    assert closed_ingest_response.json()["code"] == "SESSION_RECORDING_NOT_FOUND"
+
+    assert cross_tenant_ingest_response.status_code == 404
+    assert cross_tenant_ingest_response.json()["code"] == "CONNECTOR_NOT_FOUND"
