@@ -69,7 +69,7 @@
 
 ## Phase 4 Automation Worker Queue（#t52）
 
-当前切片定义后端 worker 队列写入、单轮消费循环、最小调度 API、`asset.scan` worker handler 与 `credential.rotate` worker handler 契约。`AutomationJobQueue` 使用 Redis Streams 风格 `xadd` 写入 `janusgate:automation:jobs`，字段均为字符串，payload 以 `payload_json` 保存，并显式标记 `payload_format=json`。`AutomationWorker` 通过 Redis Streams consumer group 读取消息，按 `job_type` 分发到显式注册的 handler，并仅在 handler 成功后 ack。`AssetScanWorkerHandler` 消费 `asset.scan` 消息时会按当前租户和 active 状态确认资产存在，并只把资产 ID、租户、名称、地址、端口和平台 ID 传给扫描执行器，不传递 legacy credential 字段。`CredentialRotateWorkerHandler` 消费 `credential.rotate` 消息时会按当前租户和 active account 边界确认账号存在，创建 `CredentialRotation` 记录并调用显式改密执行器；队列 payload 只携带 account id 与可选 reason，不携带 secret 引用之外的凭据材料。
+当前切片定义后端 worker 队列写入、单轮消费循环、最小调度 API、`asset.scan` worker handler、`credential.rotate` worker handler 与 `ansible.playbook` worker handler 契约。`AutomationJobQueue` 使用 Redis Streams 风格 `xadd` 写入 `janusgate:automation:jobs`，字段均为字符串，payload 以 `payload_json` 保存，并显式标记 `payload_format=json`。`AutomationWorker` 通过 Redis Streams consumer group 读取消息，按 `job_type` 分发到显式注册的 handler，并仅在 handler 成功后 ack。`AssetScanWorkerHandler` 消费 `asset.scan` 消息时会按当前租户和 active 状态确认资产存在，并只把资产 ID、租户、名称、地址、端口和平台 ID 传给扫描执行器，不传递 legacy credential 字段。`CredentialRotateWorkerHandler` 消费 `credential.rotate` 消息时会按当前租户和 active account 边界确认账号存在，创建 `CredentialRotation` 记录并调用显式改密执行器；队列 payload 只携带 account id 与可选 reason，不携带 secret 引用之外的凭据材料。`AnsiblePlaybookWorkerHandler` 消费 `ansible.playbook` 消息时会按当前租户和 active asset 边界确认全部目标资产存在，并只把 playbook 名称、check mode、请求人和不含 legacy credential 的目标摘要传给显式 runner 契约。
 
 支持的 `job_type` 白名单：
 
@@ -169,7 +169,7 @@
 
 - API payload 只包含 playbook 名称、目标资产 ID 列表和 check mode；额外字段 fail-closed 为请求校验错误。
 - 队列 payload 不携带 extra vars、password、token、secret、私钥或连接串。
-- 当前切片只负责调度入队，不执行真实 Ansible playbook；真实执行器必须作为后续 worker handler 切片单独验收。
+- `ansible.playbook` worker handler 已按租户确认 active 目标资产，并只向显式 runner 契约传递无凭据目标摘要；具体 `ansible-playbook` 运行时 adapter、inventory 渲染和执行沙箱仍需作为后续执行器实现单独验收。
 
 安全语义：
 
