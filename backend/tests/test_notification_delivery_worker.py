@@ -5,12 +5,14 @@ import json
 from collections.abc import AsyncGenerator
 from datetime import UTC, datetime, timedelta
 
+import httpx
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from app.core.database import Base
 from app.models.webhook import NotificationDelivery, NotificationRule, WebhookEndpoint
 from app.services.notification_delivery_worker import (
+    HttpWebhookNotificationSender,
     NotificationDeliverySender,
     NotificationDeliveryWorker,
 )
@@ -149,3 +151,82 @@ async def test_notification_delivery_worker_retries_then_dead_letters(
     assert delivery.attempts == 3
     assert delivery.next_attempt_at.replace(tzinfo=UTC) == now + timedelta(minutes=5)
     assert delivery.last_error == "webhook sink rejected delivery"
+
+
+@pytest.mark.asyncio
+async def test_http_webhook_notification_sender_posts_redacted_payload() -> None:
+    seen: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request)
+        return httpx.Response(202, json={"accepted": True})
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        sender = HttpWebhookNotificationSender(http_client=client)
+        await sender.send(
+            endpoint=WebhookEndpoint(
+                tenant_id="tenant-a",
+                name="security-siem",
+                url="https://siem.example.test/janusgate",
+                event_types_json=json.dumps(["audit.event.created"]),
+                status="active",
+            ),
+            delivery=NotificationDelivery(
+                tenant_id="tenant-a",
+                notification_rule_id=1,
+                webhook_endpoint_id=1,
+                event_type="audit.event.created",
+                payload_json=json.dumps({"audit_event_id": "evt-1"}),
+                status="pending",
+                attempts=0,
+                next_attempt_at=datetime(2026, 7, 4, 5, 40, tzinfo=UTC),
+            ),
+            payload={"audit_event_id": "evt-1", "token": "[REDACTED]"},
+        )
+
+    assert len(seen) == 1
+    request = seen[0]
+    assert str(request.url) == "https://siem.example.test/janusgate"
+    assert request.headers["x-janusgate-event-type"] == "audit.event.created"
+    assert request.headers["x-janusgate-tenant-id"] == "tenant-a"
+    assert request.headers["content-type"] == "application/json"
+    assert json.loads(request.content) == {
+        "event_type": "audit.event.created",
+        "delivery_id": None,
+        "payload": {"audit_event_id": "evt-1", "token": "[REDACTED]"},
+    }
+
+
+@pytest.mark.asyncio
+async def test_http_webhook_notification_sender_fails_closed_without_payload_leak() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(503, text="downstream rejected password=secret")
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        sender = HttpWebhookNotificationSender(http_client=client)
+        with pytest.raises(RuntimeError) as exc_info:
+            await sender.send(
+                endpoint=WebhookEndpoint(
+                    tenant_id="tenant-a",
+                    name="security-siem",
+                    url="https://siem.example.test/janusgate",
+                    event_types_json=json.dumps(["audit.event.created"]),
+                    status="active",
+                ),
+                delivery=NotificationDelivery(
+                    tenant_id="tenant-a",
+                    notification_rule_id=1,
+                    webhook_endpoint_id=1,
+                    event_type="audit.event.created",
+                    payload_json=json.dumps({"password": "secret"}),
+                    status="pending",
+                    attempts=0,
+                    next_attempt_at=datetime(2026, 7, 4, 5, 40, tzinfo=UTC),
+                ),
+                payload={"password": "[REDACTED]"},
+            )
+
+    message = str(exc_info.value)
+    assert message == "webhook delivery failed with status 503"
+    assert "password" not in message
+    assert "secret" not in message

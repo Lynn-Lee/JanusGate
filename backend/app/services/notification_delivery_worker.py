@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
+import httpx
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -33,6 +34,44 @@ class NotificationDeliverySender(ABC):
         payload: dict[str, object],
     ) -> None:
         """Deliver one already-redacted notification payload."""
+
+
+class HttpWebhookNotificationSender(NotificationDeliverySender):
+    """HTTP sender for active webhook endpoints."""
+
+    def __init__(
+        self,
+        *,
+        http_client: httpx.AsyncClient | None = None,
+        timeout_seconds: float = 5.0,
+    ) -> None:
+        self._client = http_client or httpx.AsyncClient(timeout=timeout_seconds)
+
+    async def send(
+        self,
+        *,
+        endpoint: WebhookEndpoint,
+        delivery: NotificationDelivery,
+        payload: dict[str, object],
+    ) -> None:
+        try:
+            response = await self._client.post(
+                endpoint.url,
+                json={
+                    "event_type": delivery.event_type,
+                    "delivery_id": delivery.id,
+                    "payload": payload,
+                },
+                headers={
+                    "X-JanusGate-Event-Type": delivery.event_type,
+                    "X-JanusGate-Tenant-Id": delivery.tenant_id,
+                },
+            )
+        except httpx.HTTPError as exc:
+            raise RuntimeError("webhook delivery transport failed") from exc
+
+        if response.status_code < 200 or response.status_code >= 300:
+            raise RuntimeError(f"webhook delivery failed with status {response.status_code}")
 
 
 class NotificationDeliveryWorker:
