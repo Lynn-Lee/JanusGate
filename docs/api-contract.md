@@ -139,6 +139,38 @@
 - 队列 payload 只包含 account id 和可选 reason，不携带 secret_id、凭据明文、token、私钥或连接串。
 - 当前切片只负责调度入队，不执行真实改密；真实改密 handler 必须作为后续 worker handler 切片单独验收。
 
+### POST `/api/v1/automation/jobs/playbooks`
+
+用途：按当前认证用户租户调度一个 Ansible playbook 后台任务，写入 `ansible.playbook` 队列消息。
+
+鉴权：需要登录态；`automation:write` 或 `admin` 权限可访问。后端使用当前用户 `tenant_id` 和 `id` 写入队列，不接受前端传入 tenant 或 requested_by。
+
+请求体：
+
+```json
+{
+  "playbook_name": "linux-baseline.yml",
+  "target_asset_ids": [42, 43],
+  "check_mode": true
+}
+```
+
+响应 `202`：
+
+```json
+{
+  "job_id": "1700000000000-0",
+  "job_type": "ansible.playbook",
+  "status": "queued"
+}
+```
+
+安全语义：
+
+- API payload 只包含 playbook 名称、目标资产 ID 列表和 check mode；额外字段 fail-closed 为请求校验错误。
+- 队列 payload 不携带 extra vars、password、token、secret、私钥或连接串。
+- 当前切片只负责调度入队，不执行真实 Ansible playbook；真实执行器必须作为后续 worker handler 切片单独验收。
+
 安全语义：
 
 - 队列消息只允许 JSON 序列化 payload，不使用 pickle 或任意 Python 对象派发。

@@ -132,6 +132,63 @@ def test_asset_scan_scheduling_api_requires_automation_write_permission() -> Non
     assert response.status_code == 403
 
 
+def test_playbook_scheduling_api_enqueues_secret_free_job() -> None:
+    stream = RecordingRedisStream()
+    app.dependency_overrides[get_redis] = lambda: stream
+
+    with TestClient(app) as client:
+        install_user(tenant_id="tenant-a", permissions=["automation:write"])
+        response = client.post(
+            "/api/v1/automation/jobs/playbooks",
+            json={
+                "playbook_name": "linux-baseline.yml",
+                "target_asset_ids": [42, 43],
+                "check_mode": True,
+            },
+        )
+
+    app.dependency_overrides.clear()
+
+    assert response.status_code == 202
+    assert response.json() == {
+        "job_id": "1700000000000-0",
+        "job_type": "ansible.playbook",
+        "status": "queued",
+    }
+    assert len(stream.calls) == 1
+    _, fields, _ = stream.calls[0]
+    assert fields["tenant_id"] == "tenant-a"
+    assert fields["job_type"] == "ansible.playbook"
+    assert fields["requested_by"] == "user-1"
+    assert json.loads(fields["payload_json"]) == {
+        "check_mode": True,
+        "playbook_name": "linux-baseline.yml",
+        "target_asset_ids": [42, 43],
+    }
+    assert "secret" not in json.dumps(fields).lower()
+
+
+def test_playbook_scheduling_api_rejects_extra_sensitive_fields() -> None:
+    stream = RecordingRedisStream()
+    app.dependency_overrides[get_redis] = lambda: stream
+
+    with TestClient(app) as client:
+        install_user(tenant_id="tenant-a", permissions=["automation:write"])
+        response = client.post(
+            "/api/v1/automation/jobs/playbooks",
+            json={
+                "playbook_name": "linux-baseline.yml",
+                "target_asset_ids": [42],
+                "extra_vars": {"password": "should-not-enter-queue"},
+            },
+        )
+
+    app.dependency_overrides.clear()
+
+    assert response.status_code == 422
+    assert stream.calls == []
+
+
 @pytest.mark.asyncio
 async def test_credential_rotation_job_api_enqueues_scoped_account(
     session_factory: async_sessionmaker[AsyncSession],
