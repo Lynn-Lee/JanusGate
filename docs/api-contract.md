@@ -176,6 +176,12 @@
 
 鉴权：需要登录态；`admin` 或 `session-recordings:read` 权限可访问。响应按命令发生时间倒序返回 `{items,total}`。
 
+搜索语义：
+
+- PostgreSQL 环境使用 `to_tsvector('simple', command || ' ' || output_excerpt) @@ plainto_tsquery('simple', query)`，并通过 `ix_session_command_events_search_vector` GIN 索引优化命令与输出摘要全文检索。
+- 非 PostgreSQL 测试环境保留 `ILIKE` fallback，便于 SQLite 单元测试覆盖相同租户隔离与脱敏响应契约。
+- 排序使用 `occurred_at DESC, id DESC`，并声明 `ix_session_command_events_tenant_occurred_id` 支撑同租户倒序读取。
+
 ## Phase 4 Tenancy API（#t42）
 
 ### PolicyRule 组织/团队/项目绑定

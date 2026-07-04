@@ -1,7 +1,7 @@
 """Phase 4 session recording metadata and command events."""
 from datetime import datetime
 
-from sqlalchemy import DateTime, ForeignKey, Integer, String, Text, func
+from sqlalchemy import DateTime, ForeignKey, Index, Integer, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
@@ -56,3 +56,17 @@ class SessionCommandEvent(Base):
     )
 
     recording: Mapped[SessionRecording] = relationship(back_populates="commands")
+
+    __table_args__ = (
+        Index(
+            "ix_session_command_events_tenant_occurred_id",
+            "tenant_id",
+            "occurred_at",
+            "id",
+        ),
+        Index(
+            "ix_session_command_events_search_vector",
+            func.to_tsvector("simple", func.concat(command, " ", output_excerpt)),
+            postgresql_using="gin",
+        ).ddl_if(dialect="postgresql"),
+    )
