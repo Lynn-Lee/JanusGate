@@ -137,15 +137,25 @@ class PolicyDecisionService:
             return False
         if not conditions:
             return True
-        if any(key not in {"context_equals"} for key in conditions):
+        if any(key not in {"context_equals", "context_in"} for key in conditions):
             return False
 
         context_equals = conditions.get("context_equals", {})
         if not isinstance(context_equals, dict):
             return False
-        return all(
+        if not all(
             self._selector_value_matches(expected, str(request.context.get(key, "")))
             for key, expected in context_equals.items()
+        ):
+            return False
+
+        context_in = conditions.get("context_in", {})
+        if not isinstance(context_in, dict):
+            return False
+        return all(
+            isinstance(expected_values, list)
+            and str(request.context.get(key, "")) in {str(value) for value in expected_values}
+            for key, expected_values in context_in.items()
         )
 
     def _approval_policy_rollout_includes(
