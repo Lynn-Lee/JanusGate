@@ -117,6 +117,29 @@ async def create_approval_policy_version(
     return ApprovalPolicyResponse.from_model(policy)
 
 
+@router.post(
+    "/approval-policies/{policy_id}/rollback",
+    response_model=ApprovalPolicyResponse,
+)
+async def rollback_approval_policy(
+    policy_id: str,
+    db: AsyncSession = Depends(get_db),
+    user: dict[str, Any] = Depends(current_user),
+) -> ApprovalPolicyResponse:
+    _require_workflow_admin_permission(user)
+    repo = SQLAlchemyWorkflowRepository(db)
+    try:
+        policy = await repo.rollback_approval_policy(
+            tenant_id=str(user.get("tenant_id", "default")),
+            policy_id=policy_id,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="APPROVAL_POLICY_NOT_FOUND") from exc
+    await db.commit()
+    await db.refresh(policy)
+    return ApprovalPolicyResponse.from_model(policy)
+
+
 @router.post("/approval-policies/simulate", response_model=PolicyDecisionResponse)
 async def simulate_approval_policy(
     data: PolicyDecisionRequest,

@@ -240,6 +240,20 @@ class InMemoryWorkflowRepository:
         self._policies[version.id] = version
         return version
 
+    def rollback_approval_policy(
+        self,
+        *,
+        tenant_id: str,
+        policy_id: str,
+    ) -> ApprovalPolicyModel:
+        target = self._policies.get(policy_id)
+        if target is None or target.tenant_id != tenant_id:
+            raise ValueError("Approval policy not found")
+        for policy in self._policies.values():
+            if policy.tenant_id == tenant_id and policy.policy_family_id == target.policy_family_id:
+                policy.is_active = policy.id == target.id
+        return target
+
     def _require_request(self, request_id: str, *, tenant_id: str) -> WorkflowRequestModel:
         request = self.get_request(request_id, tenant_id=tenant_id)
         if request is None:
@@ -475,6 +489,33 @@ class SQLAlchemyWorkflowRepository:
         self._session.add(version)
         await self._session.flush()
         return version
+
+    async def rollback_approval_policy(
+        self,
+        *,
+        tenant_id: str,
+        policy_id: str,
+    ) -> ApprovalPolicyModel:
+        result = await self._session.execute(
+            select(ApprovalPolicyModel).where(
+                ApprovalPolicyModel.id == policy_id,
+                ApprovalPolicyModel.tenant_id == tenant_id,
+            )
+        )
+        target = result.scalar_one_or_none()
+        if target is None:
+            raise ValueError("Approval policy not found")
+
+        family_result = await self._session.execute(
+            select(ApprovalPolicyModel).where(
+                ApprovalPolicyModel.tenant_id == tenant_id,
+                ApprovalPolicyModel.policy_family_id == target.policy_family_id,
+            )
+        )
+        for policy in family_result.scalars().all():
+            policy.is_active = policy.id == target.id
+        await self._session.flush()
+        return target
 
     async def _require_request(self, request_id: str, *, tenant_id: str) -> WorkflowRequestModel:
         request = await self.get_request(request_id, tenant_id=tenant_id)

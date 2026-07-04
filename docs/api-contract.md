@@ -121,7 +121,7 @@
 
 - 策略模板只能写入当前租户；跨租户读取不会返回该策略。
 - `PolicyDecisionService` 可接收已加载的 approval policy template；匹配当前租户、action selector 和 resource selector 的请求会要求 JIT approval，并在 `APPROVAL_REQUIRED` obligations 中返回 approval policy、审批人、MFA、TTL 和风险级别元数据。
-- 当前切片不执行 DSL、不做策略灰度/回滚。
+- 当前切片不执行 DSL、不做策略灰度。
 - Phase 4 #t48 版本管理基础中，响应会返回 `policy_family_id`、`version` 与 `is_active`；新建策略默认为同 family 的 v1 active 版本。
 - 响应不返回凭据、连接 token、审批下游密钥或外部通知 secret。
 
@@ -145,7 +145,21 @@
 
 - 新版本创建只在当前租户 policy family 内生效；不能借此探测或覆盖跨租户策略。
 - 响应仍只返回 selector、审批人、MFA、TTL、风险级别和版本元数据，不返回 DSL、凭据、连接 token、Webhook secret 或任何下游密钥。
-- 当前切片不提供灰度发布、显式回滚或 DSL 执行。
+- 当前切片不提供灰度发布或 DSL 执行。
+
+### POST `/api/v1/workflows/approval-policies/{policy_id}/rollback`
+
+用途：把当前租户内同一 approval policy family 显式回滚到指定版本。`policy_id` 可以是当前 active 版本或历史 inactive 版本。
+
+鉴权：需要登录态；`admin` 或 `workflow:admin` 权限可访问。`policy_id` 必须属于当前租户，否则返回 `404` / `APPROVAL_POLICY_NOT_FOUND`。
+
+响应 `200`：返回被激活的 approval policy version。回滚成功后，同租户同 family 只有该版本 `is_active=true`，默认列表和模拟只读取回滚后的 active 版本。
+
+安全语义：
+
+- 回滚只在当前租户 policy family 内生效；不能借此探测或覆盖跨租户策略。
+- 响应仍只返回 selector、审批人、MFA、TTL、风险级别和版本元数据，不返回 DSL、凭据、连接 token、Webhook secret 或任何下游密钥。
+- 当前切片不提供灰度发布或 DSL 执行。
 
 ### POST `/api/v1/workflows/approval-policies/simulate`
 
@@ -205,7 +219,7 @@
 
 - 模拟结果只基于当前租户策略；跨租户策略不会被读取或命中。
 - 响应只返回决策解释和 obligations，不返回凭据、连接 token、Webhook secret 或任何下游密钥。
-- 当前切片只模拟已保存策略模板，不执行自定义 DSL、不提供灰度发布或回滚。
+- 当前切片只模拟已保存策略模板，不执行自定义 DSL、不提供灰度发布。
 
 ## Phase 4 Webhook Endpoint API（#t47）
 
