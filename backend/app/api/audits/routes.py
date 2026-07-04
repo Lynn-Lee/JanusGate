@@ -3,7 +3,13 @@ from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 
-from app.api.audits.schemas import AuditEvent, AuditEventCreate, AuditEventList, AuditSeverity
+from app.api.audits.schemas import (
+    AuditEvent,
+    AuditEventCreate,
+    AuditEventList,
+    AuditReportSummary,
+    AuditSeverity,
+)
 from app.api.audits.service import audit_service
 from app.core.deps import current_user
 
@@ -41,3 +47,11 @@ def list_audit_events(
         offset=offset,
     )
     return AuditEventList(items=items, total=total, limit=limit, offset=offset)
+
+
+@router.get("/reports/summary", response_model=AuditReportSummary)
+def get_audit_report_summary(
+    user: Annotated[dict[str, Any], Depends(current_user)],
+) -> AuditReportSummary:
+    require_audit_permission("audit:read", user)
+    return audit_service.report_summary(tenant_id=str(user["tenant_id"]))

@@ -60,12 +60,48 @@
 - Sessions：`/api/v1/sessions/*`，会话创建/关闭，JIT grant 绑定。
 - Workflow/JIT：`/api/v1/workflows/*`，申请、提交、审批、拒绝、撤销、active grant。
 - Approval Policies：`/api/v1/workflows/approval-policies`，Phase 4 JIT 策略模板 / 审批策略基础管理与当前租户策略模拟。
-- Audit/SIEM：`/api/v1/audits/events`，审计事件创建和检索。
+- Audit/SIEM：`/api/v1/audits/events` 与 `/api/v1/audits/reports/summary`，审计事件创建、检索和当前租户报表汇总。
 - Tenancy：`/api/v1/tenancy/*`，Phase 4 组织/团队/项目管理与租户隔离 API。
 - Session Recordings：`/api/v1/sessions/{session_id}/recordings` 与 `/api/v1/session-recordings/*`，Phase 4 会话录制元数据、命令事件上报与命令检索。
 - Webhook Endpoints：`/api/v1/webhook-endpoints/*`，Phase 4 WebHook / 通知中心 endpoint 管理基础。
 - Notification Rules：`/api/v1/notification-rules/*`，Phase 4 WebHook / 通知规则管理基础。
 - Notification Deliveries：`/api/v1/notification-rules/{rule_id}/deliveries` 与 `/api/v1/notification-deliveries/*`，Phase 4 WebHook 可靠投递队列基础；`NotificationDeliveryWorker` 负责到期投递、失败重试和 dead-letter 状态推进，`HttpWebhookNotificationSender` 负责向 HTTPS WebHook endpoint 投递已脱敏 payload。
+
+## Phase 4 Audit Report API（#t49）
+
+### GET `/api/v1/audits/reports/summary`
+
+用途：返回当前租户审计事件的报表中心基础汇总，用于 SIEM/告警/合规报表后续页面和导出能力。
+
+鉴权：需要登录态；`audit:read` 权限可访问。接口只读取当前用户 `tenant_id` 的审计事件，不接受前端传入 tenant。
+
+响应 `200`：
+
+```json
+{
+  "tenant_id": "tenant-a",
+  "total": 2,
+  "high_or_critical_total": 2,
+  "by_severity": {
+    "high": 1,
+    "critical": 1
+  },
+  "by_category": {
+    "session": 1,
+    "connector": 1
+  },
+  "by_siem_delivery_status": {
+    "delivered": 1,
+    "failed": 1
+  }
+}
+```
+
+安全语义：
+
+- 响应只返回聚合计数，不返回 audit metadata、message、resource_id、session_id 或任何可能含 token/secret/password 的明细字段。
+- 租户隔离以当前认证用户为准，跨租户事件不会参与统计。
+- `high_or_critical_total` 用于告警中心后续切片的高危事件入口，不等同于已实现告警投递。
 
 ## Phase 4 Approval Policy API（#t48）
 
