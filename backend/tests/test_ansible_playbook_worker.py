@@ -8,6 +8,7 @@ from pathlib import Path
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
+from app.core.config import Settings
 from app.core.database import Base
 from app.models.asset import Asset, Platform
 from app.models.automation import AutomationJobRun
@@ -16,6 +17,7 @@ from app.services.ansible_playbook import (
     AnsiblePlaybookTarget,
     AnsiblePlaybookWorkerHandler,
     LocalAnsiblePlaybookRunner,
+    build_local_ansible_playbook_runner,
 )
 
 
@@ -317,3 +319,51 @@ async def test_local_ansible_runner_rejects_playbook_path_traversal(tmp_path: Pa
                 targets=[],
             )
         )
+
+
+@pytest.mark.asyncio
+async def test_local_ansible_runner_can_be_built_from_settings(tmp_path: Path) -> None:
+    playbook_root = tmp_path / "configured-playbooks"
+    runtime_root = tmp_path / "configured-runtime"
+    playbook_root.mkdir()
+    (playbook_root / "linux-baseline.yml").write_text("---\n- hosts: all\n", encoding="utf-8")
+    calls: list[list[str]] = []
+
+    async def command_runner(
+        args: list[str],
+        *,
+        cwd: Path,
+        env: dict[str, str],
+    ) -> int:
+        del cwd, env
+        calls.append(args)
+        return 0
+
+    settings = Settings(
+        SECRET_KEY="test-secret-key-" + "x" * 48,
+        ANSIBLE_PLAYBOOK_ROOT=str(playbook_root),
+        ANSIBLE_RUNTIME_ROOT=str(runtime_root),
+        ANSIBLE_PLAYBOOK_EXECUTABLE="janusgate-ansible-playbook",
+        _env_file=None,
+    )
+
+    runner = build_local_ansible_playbook_runner(
+        settings=settings,
+        command_runner=command_runner,
+    )
+
+    await runner.run(
+        AnsiblePlaybookRun(
+            tenant_id="tenant-a",
+            requested_by="user-1",
+            playbook_name="linux-baseline.yml",
+            check_mode=False,
+            targets=[],
+        )
+    )
+
+    assert calls[0][:2] == [
+        "janusgate-ansible-playbook",
+        str(playbook_root / "linux-baseline.yml"),
+    ]
+    assert runtime_root.exists()
