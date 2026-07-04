@@ -10,7 +10,15 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 
-from app.api import accounts, assets, auth, sessions, ssh_certificate_authorities, ssh_certificates
+from app.api import (
+    accounts,
+    assets,
+    auth,
+    connectors,
+    sessions,
+    ssh_certificate_authorities,
+    ssh_certificates,
+)
 from app.api.audits.routes import router as audits_router
 from app.api.tenancy.routes import router as tenancy_router
 from app.api.workflows.routes import router as workflows_router
@@ -49,6 +57,7 @@ register_exception_handlers(app)
 app.include_router(auth.router, prefix="/api/v1")
 app.include_router(accounts.router, prefix="/api/v1")
 app.include_router(assets.router, prefix="/api/v1")
+app.include_router(connectors.router, prefix="/api/v1")
 app.include_router(ssh_certificate_authorities.router, prefix="/api/v1")
 app.include_router(ssh_certificates.router, prefix="/api/v1")
 app.include_router(sessions.router, prefix="/api/v1")
