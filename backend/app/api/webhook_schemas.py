@@ -33,3 +33,32 @@ class WebhookEndpointResponse(BaseModel):
 class WebhookEndpointListResponse(BaseModel):
     items: list[WebhookEndpointResponse]
     total: int
+
+
+class NotificationRuleStatus(StrEnum):
+    ACTIVE = "active"
+    DISABLED = "disabled"
+
+
+class NotificationRuleCreate(BaseModel):
+    name: str = Field(min_length=1, max_length=120)
+    event_types: list[str] = Field(min_length=1)
+    webhook_endpoint_id: int
+    status: NotificationRuleStatus = NotificationRuleStatus.ACTIVE
+
+
+class NotificationRuleResponse(BaseModel):
+    id: int
+    tenant_id: str
+    name: str
+    event_types: list[str]
+    webhook_endpoint_id: int
+    webhook_endpoint_name: str
+    status: NotificationRuleStatus
+    created_at: datetime | None
+    updated_at: datetime | None
+
+
+class NotificationRuleListResponse(BaseModel):
+    items: list[NotificationRuleResponse]
+    total: int

@@ -4,7 +4,7 @@ from app.models.session_recording import SessionCommandEvent, SessionRecording
 from app.models.ssh_ca import SshCertificate, SshCertificateAuthority
 from app.models.tenancy import Organization, Project, Team
 from app.models.user import ApiKey, User
-from app.models.webhook import WebhookEndpoint
+from app.models.webhook import NotificationRule, WebhookEndpoint
 from app.models.workflow import ApprovalPolicyModel, JitGrantModel, WorkflowRequestModel
 
 __all__ = [
@@ -14,6 +14,7 @@ __all__ = [
     "Connector",
     "CredentialRotation",
     "JitGrantModel",
+    "NotificationRule",
     "Organization",
     "Project",
     "SessionCommandEvent",

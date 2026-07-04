@@ -107,3 +107,84 @@ async def test_webhook_endpoint_api_rejects_plaintext_http_url(
 
     assert response.status_code == 400
     assert response.json()["code"] == "INVALID_WEBHOOK_URL"
+
+
+@pytest.mark.asyncio
+async def test_notification_rule_api_creates_and_lists_with_tenant_scoped_webhook(
+    session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    install_db(session_factory)
+
+    with TestClient(app) as client:
+        install_user(tenant_id="tenant-a", permissions=["admin"])
+        endpoint_response = client.post(
+            "/api/v1/webhook-endpoints/",
+            json={
+                "name": "security-siem",
+                "url": "https://siem.example.test/janusgate",
+                "event_types": ["session.recording.closed"],
+                "signing_secret": "super-secret-webhook-key",
+            },
+        )
+        endpoint_id = endpoint_response.json()["id"]
+
+        create_response = client.post(
+            "/api/v1/notification-rules/",
+            json={
+                "name": "recording-closed-to-siem",
+                "event_types": ["session.recording.closed"],
+                "webhook_endpoint_id": endpoint_id,
+            },
+        )
+        tenant_a_list = client.get("/api/v1/notification-rules/")
+
+        install_user(tenant_id="tenant-b", permissions=["admin"])
+        tenant_b_list = client.get("/api/v1/notification-rules/")
+
+    assert create_response.status_code == 201
+    created = create_response.json()
+    assert created["tenant_id"] == "tenant-a"
+    assert created["name"] == "recording-closed-to-siem"
+    assert created["event_types"] == ["session.recording.closed"]
+    assert created["webhook_endpoint_id"] == endpoint_id
+    assert created["webhook_endpoint_name"] == "security-siem"
+    assert created["status"] == "active"
+    assert "signing_secret" not in created
+    assert "secret" not in created
+    assert tenant_a_list.status_code == 200
+    assert tenant_a_list.json() == {"items": [created], "total": 1}
+    assert tenant_b_list.status_code == 200
+    assert tenant_b_list.json() == {"items": [], "total": 0}
+
+
+@pytest.mark.asyncio
+async def test_notification_rule_api_rejects_cross_tenant_webhook_endpoint(
+    session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    install_db(session_factory)
+
+    with TestClient(app) as client:
+        install_user(tenant_id="tenant-a", permissions=["admin"])
+        endpoint_response = client.post(
+            "/api/v1/webhook-endpoints/",
+            json={
+                "name": "security-siem",
+                "url": "https://siem.example.test/janusgate",
+                "event_types": ["audit.event.created"],
+                "signing_secret": "super-secret-webhook-key",
+            },
+        )
+        endpoint_id = endpoint_response.json()["id"]
+
+        install_user(tenant_id="tenant-b", permissions=["admin"])
+        response = client.post(
+            "/api/v1/notification-rules/",
+            json={
+                "name": "cross-tenant-rule",
+                "event_types": ["audit.event.created"],
+                "webhook_endpoint_id": endpoint_id,
+            },
+        )
+
+    assert response.status_code == 404
+    assert response.json()["code"] == "WEBHOOK_ENDPOINT_NOT_FOUND"
