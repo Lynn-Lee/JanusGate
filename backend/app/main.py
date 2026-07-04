@@ -14,6 +14,7 @@ from app.api import (
     accounts,
     assets,
     auth,
+    automation,
     connectors,
     notification_deliveries,
     notification_rules,
@@ -62,6 +63,7 @@ register_exception_handlers(app)
 
 app.include_router(auth.router, prefix="/api/v1")
 app.include_router(accounts.router, prefix="/api/v1")
+app.include_router(automation.router, prefix="/api/v1")
 app.include_router(assets.router, prefix="/api/v1")
 app.include_router(connectors.router, prefix="/api/v1")
 app.include_router(notification_deliveries.router, prefix="/api/v1")
