@@ -157,6 +157,7 @@
 
 - 只允许读取当前租户可见录制；跨租户或不存在录制返回 `404 SESSION_RECORDING_NOT_FOUND`。
 - 响应沿用命令事件脱敏后的 `output_excerpt`，不返回凭据、连接 token 或对象存储签名 URL。
+- 前端 `/sessions` 使用该接口按 Recording ID 加载只读回放命令时间线；当前不要求后端提供按 session 自动发现 recording 的额外契约。
 
 ### POST `/api/v1/session-recordings/{recording_id}/close`
 
