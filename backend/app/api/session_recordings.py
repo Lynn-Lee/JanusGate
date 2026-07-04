@@ -18,6 +18,7 @@ from app.api.session_recording_schemas import (
 )
 from app.core.database import get_db
 from app.core.deps import current_user
+from app.models.connector import Connector
 from app.models.session_recording import SessionCommandEvent, SessionRecording
 
 router = APIRouter(tags=["会话录制"])
@@ -68,6 +69,38 @@ async def append_session_command_event(
 ) -> SessionCommandEventResponse:
     _require_recording_permission(user, "session-recordings:write")
     recording = await _get_scoped_recording(db=db, user=user, recording_id=recording_id)
+    _ensure_recording_is_open(recording)
+    event = SessionCommandEvent(
+        tenant_id=recording.tenant_id,
+        recording_id=recording.id,
+        session_id=recording.session_id,
+        sequence=data.sequence,
+        command=data.command,
+        exit_code=data.exit_code,
+        output_excerpt=_redact_command_excerpt(data.output_excerpt),
+    )
+    db.add(event)
+    await db.commit()
+    await db.refresh(event)
+    return _command_response(event)
+
+
+@router.post(
+    "/connectors/{connector_id}/session-recordings/{recording_id}/commands",
+    response_model=SessionCommandEventResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+async def ingest_connector_session_command_event(
+    connector_id: int,
+    recording_id: int,
+    data: SessionCommandEventCreate,
+    db: AsyncSession = Depends(get_db),
+    user: dict[str, Any] = Depends(current_user),
+) -> SessionCommandEventResponse:
+    _require_recording_permission(user, "connectors:write")
+    await _get_active_scoped_connector(db=db, user=user, connector_id=connector_id)
+    recording = await _get_scoped_recording(db=db, user=user, recording_id=recording_id)
+    _ensure_recording_is_open(recording)
     event = SessionCommandEvent(
         tenant_id=recording.tenant_id,
         recording_id=recording.id,
@@ -166,11 +199,31 @@ async def _get_scoped_recording(
     return recording
 
 
+async def _get_active_scoped_connector(
+    *, db: AsyncSession, user: dict[str, Any], connector_id: int
+) -> Connector:
+    tenant_id = str(user.get("tenant_id") or "default")
+    result = await db.execute(
+        select(Connector).where(Connector.id == connector_id).where(Connector.tenant_id == tenant_id)
+    )
+    connector = result.scalar_one_or_none()
+    if connector is None:
+        raise HTTPException(status_code=404, detail="CONNECTOR_NOT_FOUND")
+    if connector.status != "active":
+        raise HTTPException(status_code=403, detail="CONNECTOR_NOT_ACTIVE")
+    return connector
+
+
 def _require_recording_permission(user: dict[str, Any], permission: str) -> None:
     permissions = user.get("permissions", [])
     if "admin" in permissions or permission in permissions:
         return
     raise HTTPException(status_code=403, detail=f"缺少权限: {permission}")
+
+
+def _ensure_recording_is_open(recording: SessionRecording) -> None:
+    if recording.status != "recording":
+        raise HTTPException(status_code=404, detail="SESSION_RECORDING_NOT_FOUND")
 
 
 def _recording_response(recording: SessionRecording) -> SessionRecordingResponse:
