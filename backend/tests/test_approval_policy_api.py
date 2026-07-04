@@ -205,6 +205,59 @@ async def test_approval_policy_rollout_percentage_can_exclude_simulation_subject
 
 
 @pytest.mark.asyncio
+async def test_approval_policy_dsl_context_equals_filters_simulation_requests(
+    session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    install_db(session_factory)
+
+    with TestClient(app) as client:
+        install_user(tenant_id="tenant-a", permissions=["workflow:admin"])
+        create_response = client.post(
+            "/api/v1/workflows/approval-policies",
+            json={
+                "resource_selector": {"asset_id": "asset-1"},
+                "action_selector": "session.connect",
+                "approver_subject_ids": ["manager-1"],
+                "max_grant_ttl_seconds": 900,
+                "risk_level": "high",
+                "dsl_conditions": {"context_equals": {"protocol": "rdp"}},
+            },
+        )
+        ssh_response = client.post(
+            "/api/v1/workflows/approval-policies/simulate",
+            json={
+                "subject": {"id": "user-2", "tenant_id": "tenant-a"},
+                "action": "session.connect",
+                "resource": {"id": "asset-1", "type": "asset", "tenant_id": "tenant-a"},
+                "context": {"protocol": "ssh"},
+                "connector_trusted": True,
+            },
+        )
+        rdp_response = client.post(
+            "/api/v1/workflows/approval-policies/simulate",
+            json={
+                "subject": {"id": "user-2", "tenant_id": "tenant-a"},
+                "action": "session.connect",
+                "resource": {"id": "asset-1", "type": "asset", "tenant_id": "tenant-a"},
+                "context": {"protocol": "rdp"},
+                "connector_trusted": True,
+            },
+        )
+
+    assert create_response.status_code == 201
+    created = create_response.json()
+    assert "dsl_conditions" not in created
+    assert ssh_response.status_code == 200
+    ssh_simulated = ssh_response.json()
+    assert ssh_simulated["reason_code"] == "NO_MATCHING_POLICY"
+    assert f"approval_policy:{created['id']}:dsl_excluded" in ssh_simulated["explain_trace"]
+    assert rdp_response.status_code == 200
+    rdp_simulated = rdp_response.json()
+    assert rdp_simulated["reason_code"] == "APPROVAL_REQUIRED"
+    assert rdp_simulated["obligations"]["approval_policy_id"] == created["id"]
+
+
+@pytest.mark.asyncio
 async def test_approval_policy_version_api_supersedes_current_tenant_policy(
     session_factory: async_sessionmaker[AsyncSession],
 ) -> None:

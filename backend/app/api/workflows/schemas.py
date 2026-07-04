@@ -13,6 +13,7 @@ from app.models.workflow import ApprovalPolicyModel, ApproverMode
 
 class ApprovalPolicyCreate(BaseModel):
     resource_selector: dict[str, Any] = Field(default_factory=dict)
+    dsl_conditions: dict[str, Any] = Field(default_factory=dict)
     action_selector: str = Field(min_length=1, max_length=120)
     approver_subject_ids: list[str] = Field(min_length=1)
     approver_mode: ApproverMode = ApproverMode.named_user

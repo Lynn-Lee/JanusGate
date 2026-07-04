@@ -175,10 +175,12 @@ class InMemoryWorkflowRepository:
         allow_self_approval: bool = False,
         risk_level: str = "medium",
         rollout_percentage: int = 100,
+        dsl_conditions: dict[str, Any] | None = None,
     ) -> ApprovalPolicyModel:
         policy = build_approval_policy(
             tenant_id=tenant_id,
             resource_selector=resource_selector,
+            dsl_conditions=dsl_conditions or {},
             action_selector=action_selector,
             approver_subject_ids=approver_subject_ids,
             approver_mode=approver_mode,
@@ -214,6 +216,7 @@ class InMemoryWorkflowRepository:
         allow_self_approval: bool = False,
         risk_level: str = "medium",
         rollout_percentage: int = 100,
+        dsl_conditions: dict[str, Any] | None = None,
     ) -> ApprovalPolicyModel:
         source = self._policies.get(policy_id)
         if source is None or source.tenant_id != tenant_id:
@@ -229,6 +232,7 @@ class InMemoryWorkflowRepository:
         version = build_approval_policy(
             tenant_id=tenant_id,
             resource_selector=resource_selector,
+            dsl_conditions=dsl_conditions or {},
             action_selector=action_selector,
             approver_subject_ids=approver_subject_ids,
             approver_mode=approver_mode,
@@ -416,10 +420,12 @@ class SQLAlchemyWorkflowRepository:
         allow_self_approval: bool = False,
         risk_level: str = "medium",
         rollout_percentage: int = 100,
+        dsl_conditions: dict[str, Any] | None = None,
     ) -> ApprovalPolicyModel:
         policy = build_approval_policy(
             tenant_id=tenant_id,
             resource_selector=resource_selector,
+            dsl_conditions=dsl_conditions or {},
             action_selector=action_selector,
             approver_subject_ids=approver_subject_ids,
             approver_mode=approver_mode,
@@ -458,6 +464,7 @@ class SQLAlchemyWorkflowRepository:
         allow_self_approval: bool = False,
         risk_level: str = "medium",
         rollout_percentage: int = 100,
+        dsl_conditions: dict[str, Any] | None = None,
     ) -> ApprovalPolicyModel:
         result = await self._session.execute(
             select(ApprovalPolicyModel).where(
@@ -482,6 +489,7 @@ class SQLAlchemyWorkflowRepository:
         version = build_approval_policy(
             tenant_id=tenant_id,
             resource_selector=resource_selector,
+            dsl_conditions=dsl_conditions or {},
             action_selector=action_selector,
             approver_subject_ids=approver_subject_ids,
             approver_mode=approver_mode,
@@ -665,6 +673,7 @@ def build_approval_policy(
     allow_self_approval: bool,
     risk_level: str,
     rollout_percentage: int = 100,
+    dsl_conditions: dict[str, Any] | None = None,
 ) -> ApprovalPolicyModel:
     policy_id = _new_policy_id()
     return ApprovalPolicyModel(
@@ -675,6 +684,7 @@ def build_approval_policy(
         is_active=True,
         rollout_percentage=rollout_percentage,
         resource_selector_json=json.dumps(resource_selector, sort_keys=True),
+        dsl_conditions_json=json.dumps(dsl_conditions or {}, sort_keys=True),
         action_selector=action_selector,
         approver_subject_ids_json=json.dumps(approver_subject_ids, sort_keys=True),
         approver_mode=approver_mode,
