@@ -191,7 +191,54 @@ class InMemoryWorkflowRepository:
         return policy
 
     def list_approval_policies(self, *, tenant_id: str) -> list[ApprovalPolicyModel]:
-        return [policy for policy in self._policies.values() if policy.tenant_id == tenant_id]
+        return [
+            policy
+            for policy in self._policies.values()
+            if policy.tenant_id == tenant_id and policy.is_active
+        ]
+
+    def create_approval_policy_version(
+        self,
+        *,
+        tenant_id: str,
+        policy_id: str,
+        resource_selector: dict[str, Any],
+        action_selector: str,
+        approver_subject_ids: list[str],
+        approver_mode: ApproverMode = ApproverMode.named_user,
+        require_mfa_for_requester: bool = False,
+        require_mfa_for_approver: bool = True,
+        max_grant_ttl_seconds: int = 1800,
+        allow_self_approval: bool = False,
+        risk_level: str = "medium",
+    ) -> ApprovalPolicyModel:
+        source = self._policies.get(policy_id)
+        if source is None or source.tenant_id != tenant_id:
+            raise ValueError("Approval policy not found")
+        family_id = source.policy_family_id
+        family = [
+            policy
+            for policy in self._policies.values()
+            if policy.tenant_id == tenant_id and policy.policy_family_id == family_id
+        ]
+        for policy in family:
+            policy.is_active = False
+        version = build_approval_policy(
+            tenant_id=tenant_id,
+            resource_selector=resource_selector,
+            action_selector=action_selector,
+            approver_subject_ids=approver_subject_ids,
+            approver_mode=approver_mode,
+            require_mfa_for_requester=require_mfa_for_requester,
+            require_mfa_for_approver=require_mfa_for_approver,
+            max_grant_ttl_seconds=max_grant_ttl_seconds,
+            allow_self_approval=allow_self_approval,
+            risk_level=risk_level,
+        )
+        version.policy_family_id = family_id
+        version.version = max((policy.version for policy in family), default=0) + 1
+        self._policies[version.id] = version
+        return version
 
     def _require_request(self, request_id: str, *, tenant_id: str) -> WorkflowRequestModel:
         request = self.get_request(request_id, tenant_id=tenant_id)
@@ -369,9 +416,65 @@ class SQLAlchemyWorkflowRepository:
 
     async def list_approval_policies(self, *, tenant_id: str) -> list[ApprovalPolicyModel]:
         result = await self._session.execute(
-            select(ApprovalPolicyModel).where(ApprovalPolicyModel.tenant_id == tenant_id)
+            select(ApprovalPolicyModel).where(
+                ApprovalPolicyModel.tenant_id == tenant_id,
+                ApprovalPolicyModel.is_active.is_(True),
+            )
         )
         return list(result.scalars().all())
+
+    async def create_approval_policy_version(
+        self,
+        *,
+        tenant_id: str,
+        policy_id: str,
+        resource_selector: dict[str, Any],
+        action_selector: str,
+        approver_subject_ids: list[str],
+        approver_mode: ApproverMode = ApproverMode.named_user,
+        require_mfa_for_requester: bool = False,
+        require_mfa_for_approver: bool = True,
+        max_grant_ttl_seconds: int = 1800,
+        allow_self_approval: bool = False,
+        risk_level: str = "medium",
+    ) -> ApprovalPolicyModel:
+        result = await self._session.execute(
+            select(ApprovalPolicyModel).where(
+                ApprovalPolicyModel.id == policy_id,
+                ApprovalPolicyModel.tenant_id == tenant_id,
+            )
+        )
+        source = result.scalar_one_or_none()
+        if source is None:
+            raise ValueError("Approval policy not found")
+
+        family_result = await self._session.execute(
+            select(ApprovalPolicyModel).where(
+                ApprovalPolicyModel.tenant_id == tenant_id,
+                ApprovalPolicyModel.policy_family_id == source.policy_family_id,
+            )
+        )
+        family = list(family_result.scalars().all())
+        for policy in family:
+            policy.is_active = False
+
+        version = build_approval_policy(
+            tenant_id=tenant_id,
+            resource_selector=resource_selector,
+            action_selector=action_selector,
+            approver_subject_ids=approver_subject_ids,
+            approver_mode=approver_mode,
+            require_mfa_for_requester=require_mfa_for_requester,
+            require_mfa_for_approver=require_mfa_for_approver,
+            max_grant_ttl_seconds=max_grant_ttl_seconds,
+            allow_self_approval=allow_self_approval,
+            risk_level=risk_level,
+        )
+        version.policy_family_id = source.policy_family_id
+        version.version = max((policy.version for policy in family), default=0) + 1
+        self._session.add(version)
+        await self._session.flush()
+        return version
 
     async def _require_request(self, request_id: str, *, tenant_id: str) -> WorkflowRequestModel:
         request = await self.get_request(request_id, tenant_id=tenant_id)
@@ -513,9 +616,13 @@ def build_approval_policy(
     allow_self_approval: bool,
     risk_level: str,
 ) -> ApprovalPolicyModel:
+    policy_id = _new_policy_id()
     return ApprovalPolicyModel(
-        id=_new_policy_id(),
+        id=policy_id,
         tenant_id=tenant_id,
+        policy_family_id=policy_id,
+        version=1,
+        is_active=True,
         resource_selector_json=json.dumps(resource_selector, sort_keys=True),
         action_selector=action_selector,
         approver_subject_ids_json=json.dumps(approver_subject_ids, sort_keys=True),

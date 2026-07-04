@@ -58,6 +58,9 @@ def test_workflow_models_cover_phase2_persistence_fields():
 
     for field in (
         "tenant_id",
+        "policy_family_id",
+        "version",
+        "is_active",
         "resource_selector_json",
         "action_selector",
         "approver_subject_ids_json",

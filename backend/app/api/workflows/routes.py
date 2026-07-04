@@ -83,6 +83,40 @@ async def create_approval_policy(
     return ApprovalPolicyResponse.from_model(policy)
 
 
+@router.post(
+    "/approval-policies/{policy_id}/versions",
+    response_model=ApprovalPolicyResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+async def create_approval_policy_version(
+    policy_id: str,
+    data: ApprovalPolicyCreate,
+    db: AsyncSession = Depends(get_db),
+    user: dict[str, Any] = Depends(current_user),
+) -> ApprovalPolicyResponse:
+    _require_workflow_admin_permission(user)
+    repo = SQLAlchemyWorkflowRepository(db)
+    try:
+        policy = await repo.create_approval_policy_version(
+            tenant_id=str(user.get("tenant_id", "default")),
+            policy_id=policy_id,
+            resource_selector=data.resource_selector,
+            action_selector=data.action_selector,
+            approver_subject_ids=data.approver_subject_ids,
+            approver_mode=data.approver_mode,
+            require_mfa_for_requester=data.require_mfa_for_requester,
+            require_mfa_for_approver=data.require_mfa_for_approver,
+            max_grant_ttl_seconds=data.max_grant_ttl_seconds,
+            allow_self_approval=data.allow_self_approval,
+            risk_level=data.risk_level,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="APPROVAL_POLICY_NOT_FOUND") from exc
+    await db.commit()
+    await db.refresh(policy)
+    return ApprovalPolicyResponse.from_model(policy)
+
+
 @router.post("/approval-policies/simulate", response_model=PolicyDecisionResponse)
 async def simulate_approval_policy(
     data: PolicyDecisionRequest,
