@@ -69,7 +69,7 @@
 
 ## Phase 4 Automation Worker Queue（#t52）
 
-当前切片定义后端 worker 队列写入、单轮消费循环与最小调度 API 契约。`AutomationJobQueue` 使用 Redis Streams 风格 `xadd` 写入 `janusgate:automation:jobs`，字段均为字符串，payload 以 `payload_json` 保存，并显式标记 `payload_format=json`。`AutomationWorker` 通过 Redis Streams consumer group 读取消息，按 `job_type` 分发到显式注册的 handler，并仅在 handler 成功后 ack。
+当前切片定义后端 worker 队列写入、单轮消费循环、最小调度 API 与 `asset.scan` worker handler 契约。`AutomationJobQueue` 使用 Redis Streams 风格 `xadd` 写入 `janusgate:automation:jobs`，字段均为字符串，payload 以 `payload_json` 保存，并显式标记 `payload_format=json`。`AutomationWorker` 通过 Redis Streams consumer group 读取消息，按 `job_type` 分发到显式注册的 handler，并仅在 handler 成功后 ack。`AssetScanWorkerHandler` 消费 `asset.scan` 消息时会按当前租户和 active 状态确认资产存在，并只把资产 ID、租户、名称、地址、端口和平台 ID 传给扫描执行器，不传递 legacy credential 字段。
 
 支持的 `job_type` 白名单：
 
@@ -106,7 +106,7 @@
 
 - API payload 只包含 asset id 与 scan profile，不接受密码、token、secret、私钥或连接串。
 - `AutomationJobQueue` 继续执行敏感字段名拒绝和 JSON-only 序列化约束。
-- 当前切片只负责调度入队，不执行真实网络扫描；真实扫描执行器必须作为后续 worker handler 切片单独验收。
+- `asset.scan` worker handler 已按租户和 active asset 边界接入显式扫描执行器协议；具体网络探测实现仍需作为后续执行器切片单独验收。
 
 ### POST `/api/v1/automation/jobs/credential-rotations`
 
