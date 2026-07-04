@@ -77,6 +77,18 @@ export type SessionRecord = {
   audit_event_ids: string[];
 };
 
+export type SessionCommandEvent = {
+  id: number;
+  tenant_id: string;
+  recording_id: number;
+  session_id: string;
+  sequence: number;
+  command: string;
+  exit_code: number | null;
+  output_excerpt: string;
+  occurred_at: string | null;
+};
+
 export type AuditEvent = {
   id: string;
   tenant_id: string;

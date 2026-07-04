@@ -77,9 +77,16 @@ body,
 }
 
 @media (max-width: 800px) {
+  html,
+  body,
+  #root {
+    overflow-x: hidden;
+  }
+
   .jg-shell,
   .jg-shell.ant-layout-has-sider {
     flex-direction: column;
+    overflow-x: hidden;
   }
 
   .jg-shell > .ant-layout {
@@ -91,11 +98,18 @@ body,
   .jg-shell .ant-layout-sider {
     max-width: 100% !important;
     min-width: 100% !important;
+    overflow: hidden;
     width: 100% !important;
+  }
+
+  .jg-shell .ant-layout-sider-children {
+    max-width: 100vw;
+    overflow-x: auto;
   }
 
   .jg-shell .ant-menu-inline {
     display: flex;
+    max-width: 100%;
     overflow-x: auto;
   }
 

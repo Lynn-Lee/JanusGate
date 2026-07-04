@@ -1,15 +1,24 @@
-import { Button, Card, Space, Table, Tag, Typography } from 'antd';
+import { Button, Card, InputNumber, Space, Table, Tag, Typography } from 'antd';
 import { useState } from 'react';
 import { useAuth } from '../auth/AuthContext';
 import { ErrorState, LoadingState } from '../components/StatusView';
 import { getErrorMessage, useApiData, useApiMessage } from './pageUtils';
-import type { ListResponse, SessionRecord } from './types';
+import type { ListResponse, SessionCommandEvent, SessionRecord } from './types';
 
 export function SessionsPage() {
   const { api } = useAuth();
   const sessions = useApiData(() => api.get<ListResponse<SessionRecord>>('/api/v1/sessions/'), []);
   const [closing, setClosing] = useState('');
+  const [recordingIdInput, setRecordingIdInput] = useState<number | null>(null);
+  const [activeRecordingId, setActiveRecordingId] = useState<number | null>(null);
   const msg = useApiMessage();
+  const timeline = useApiData(
+    () =>
+      activeRecordingId
+        ? api.get<ListResponse<SessionCommandEvent>>(`/api/v1/session-recordings/${activeRecordingId}/commands`)
+        : Promise.resolve({ items: [], total: 0 }),
+    [activeRecordingId]
+  );
 
   const closeSession = async (session: SessionRecord) => {
     setClosing(session.id);
@@ -50,6 +59,44 @@ export function SessionsPage() {
             { title: '开始时间', dataIndex: 'created_at' },
             { title: '关闭时间', dataIndex: 'closed_at', render: (value: string | null) => value || '-' },
             { title: '操作', render: (_: unknown, record: SessionRecord) => <Space><Button disabled={record.status !== 'active'} loading={closing === record.id} onClick={() => void closeSession(record)}>关闭会话</Button><Button href="/audits">查看审计</Button></Space> }
+          ]}
+        />
+      </Card>
+
+      <Card title="录制回放时间线">
+        {timeline.error ? <ErrorState message={timeline.error} onRetry={timeline.reload} /> : null}
+        <Space className="jg-toolbar" wrap>
+          <InputNumber
+            aria-label="Recording ID"
+            min={1}
+            precision={0}
+            placeholder="Recording ID"
+            value={recordingIdInput}
+            onChange={(value) => setRecordingIdInput(value)}
+          />
+          <Button
+            type="primary"
+            disabled={!recordingIdInput}
+            loading={timeline.loading}
+            onClick={() => setActiveRecordingId(recordingIdInput)}
+          >
+            加载回放时间线
+          </Button>
+          <Tag color="cyan">{timeline.data?.total ?? 0} Commands</Tag>
+        </Space>
+        <Table
+          rowKey="id"
+          size="small"
+          loading={timeline.loading}
+          dataSource={timeline.data?.items ?? []}
+          pagination={false}
+          locale={{ emptyText: '输入 Recording ID 后加载命令时间线。' }}
+          columns={[
+            { title: 'Seq', dataIndex: 'sequence', width: 80 },
+            { title: '命令', dataIndex: 'command', ellipsis: true },
+            { title: '退出码', dataIndex: 'exit_code', render: (value: number | null) => value ?? '-' },
+            { title: '输出摘要', dataIndex: 'output_excerpt', ellipsis: true },
+            { title: '发生时间', dataIndex: 'occurred_at', render: (value: string | null) => value ?? '-' }
           ]}
         />
       </Card>
