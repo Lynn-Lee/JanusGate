@@ -61,6 +61,73 @@
 - Workflow/JIT：`/api/v1/workflows/*`，申请、提交、审批、拒绝、撤销、active grant。
 - Audit/SIEM：`/api/v1/audits/events`，审计事件创建和检索。
 - Tenancy：`/api/v1/tenancy/*`，Phase 4 组织/团队/项目管理与租户隔离 API。
+- Session Recordings：`/api/v1/sessions/{session_id}/recordings` 与 `/api/v1/session-recordings/*`，Phase 4 会话录制元数据、命令事件上报与命令检索。
+
+## Phase 4 Session Recording API（#t46）
+
+### POST `/api/v1/sessions/{session_id}/recordings`
+
+用途：为当前租户下的一条会话创建录制元数据记录。
+
+鉴权：需要登录态；`admin` 或 `session-recordings:write` 权限可访问。后端使用当前用户 `tenant_id` 写入，不接受前端传入 tenant。
+
+请求体：
+
+```json
+{
+  "asset_id": "asset-1",
+  "account_id": "account-1",
+  "protocol": "ssh",
+  "storage_uri": "s3://janusgate-recordings/tenant-a/session-a.cast"
+}
+```
+
+响应 `201`：
+
+```json
+{
+  "id": 1,
+  "tenant_id": "tenant-a",
+  "session_id": "session-a",
+  "subject_id": "user-1",
+  "asset_id": "asset-1",
+  "account_id": "account-1",
+  "protocol": "ssh",
+  "status": "recording",
+  "storage_uri": "s3://janusgate-recordings/tenant-a/session-a.cast",
+  "started_at": "2026-07-04T01:00:00Z",
+  "ended_at": null
+}
+```
+
+### POST `/api/v1/session-recordings/{recording_id}/commands`
+
+用途：向当前租户可见的录制追加一条命令审计事件。
+
+鉴权：需要登录态；`admin` 或 `session-recordings:write` 权限可访问。
+
+请求体：
+
+```json
+{
+  "sequence": 1,
+  "command": "sudo systemctl restart nginx",
+  "exit_code": 0,
+  "output_excerpt": "token=raw-secret"
+}
+```
+
+安全语义：
+
+- 只允许追加当前租户可见录制；跨租户或不存在录制返回 `404 SESSION_RECORDING_NOT_FOUND`。
+- `output_excerpt` 返回前会脱敏 `token=`、`password=`、`secret=`、`credential=` 赋值片段。
+- 当前切片只保存命令事件和摘要；真实录制对象存储、实时流和回放 UI 后续补齐。
+
+### GET `/api/v1/session-recordings/commands?query=nginx`
+
+用途：按关键词检索当前租户内的命令事件。
+
+鉴权：需要登录态；`admin` 或 `session-recordings:read` 权限可访问。响应按命令发生时间倒序返回 `{items,total}`。
 
 ## Phase 4 Tenancy API（#t42）
 
