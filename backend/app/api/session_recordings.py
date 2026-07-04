@@ -83,6 +83,28 @@ async def append_session_command_event(
     return _command_response(event)
 
 
+@router.get(
+    "/session-recordings/{recording_id}/commands",
+    response_model=SessionCommandEventListResponse,
+)
+async def list_session_recording_commands(
+    recording_id: int,
+    db: AsyncSession = Depends(get_db),
+    user: dict[str, Any] = Depends(current_user),
+) -> SessionCommandEventListResponse:
+    _require_recording_permission(user, "session-recordings:read")
+    recording = await _get_scoped_recording(db=db, user=user, recording_id=recording_id)
+    result = await db.execute(
+        select(SessionCommandEvent)
+        .where(SessionCommandEvent.tenant_id == recording.tenant_id)
+        .where(SessionCommandEvent.recording_id == recording.id)
+        .order_by(SessionCommandEvent.sequence.asc(), SessionCommandEvent.id.asc())
+    )
+    events = result.scalars().all()
+    items = [_command_response(event) for event in events]
+    return SessionCommandEventListResponse(items=items, total=len(items))
+
+
 @router.post(
     "/session-recordings/{recording_id}/close",
     response_model=SessionRecordingResponse,
