@@ -1,9 +1,9 @@
-import { Card, Descriptions, Drawer, Input, Select, Space, Table, Tag, Typography } from 'antd';
+import { Card, Descriptions, Drawer, Input, Select, Space, Statistic, Table, Tag, Typography } from 'antd';
 import { useState } from 'react';
 import { useAuth } from '../auth/AuthContext';
 import { ErrorState, LoadingState } from '../components/StatusView';
 import { useApiData } from './pageUtils';
-import type { AuditEvent, AuditListResponse } from './types';
+import type { AuditEvent, AuditListResponse, AuditReportSummary } from './types';
 
 export const auditMetadataRedactedKeys = [
   'password',
@@ -34,6 +34,7 @@ export function safeMetadata(metadata: Record<string, unknown>) {
 export function AuditsPage() {
   const { api } = useAuth();
   const [selected, setSelected] = useState<AuditEvent | null>(null);
+  const summary = useApiData(() => api.get<AuditReportSummary>('/api/v1/audits/reports/summary'), []);
   const events = useApiData(() => api.get<AuditListResponse>('/api/v1/audits/events'), []);
 
   return (
@@ -43,6 +44,21 @@ export function AuditsPage() {
           <Typography.Title level={2}>审计日志</Typography.Title>
           <Typography.Text type="secondary">追踪登录、申请、审批、会话创建、撤销和断连等关键安全事件。</Typography.Text>
         </div>
+      </div>
+      <div className="jg-card-grid">
+        <Card>
+          {summary.loading ? <LoadingState /> : null}
+          {summary.error ? <ErrorState message={summary.error} onRetry={summary.reload} /> : null}
+          {!summary.loading && !summary.error ? (
+            <Statistic title="报表总事件" value={summary.data?.total ?? 0} />
+          ) : null}
+        </Card>
+        <Card>
+          <Statistic title="高危事件" value={summary.data?.high_or_critical_total ?? 0} valueStyle={{ color: '#cf1322' }} />
+        </Card>
+        <Card>
+          <Statistic title="SIEM failed" value={summary.data?.by_siem_delivery_status.failed ?? 0} />
+        </Card>
       </div>
       <Card>
         <Space className="jg-block" wrap>

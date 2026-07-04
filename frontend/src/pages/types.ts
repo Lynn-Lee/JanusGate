@@ -109,6 +109,15 @@ export type AuditEvent = {
 
 export type AuditListResponse = { items: AuditEvent[]; total: number; limit: number; offset: number };
 
+export type AuditReportSummary = {
+  tenant_id: string;
+  total: number;
+  high_or_critical_total: number;
+  by_severity: Record<string, number>;
+  by_category: Record<string, number>;
+  by_siem_delivery_status: Record<string, number>;
+};
+
 export type Organization = {
   id: string;
   tenant_id: string;

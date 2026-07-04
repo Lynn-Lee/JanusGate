@@ -9,6 +9,14 @@ const platform = { id: 1, name: 'Linux', category: 'host', protocols: '["ssh"]',
 const request = { id: 'req-1', tenant_id: 'default', requester_id: '1', requester_username: 'admin', asset_id: '1', account_id: 'root', protocol: 'ssh', action: 'session.connect', reason: '排障', requested_ttl_seconds: 1800, status: 'pending', created_at: '2026-07-01T00:00:00Z', submitted_at: null, decided_at: null, expires_at: null, revoked_at: null, decision_reason: '', approver_id: '', approver_username: '', grant_id: '', metadata: {} };
 const grant = { id: 'grant-1', tenant_id: 'default', workflow_request_id: 'req-1', subject_id: '1', asset_id: '1', account_id: 'root', protocol: 'ssh', action: 'session.connect', status: 'active', issued_at: '2026-07-01T00:01:00Z', expires_at: '2026-07-01T00:31:00Z', revoked_at: null, max_session_ttl_seconds: 1800, constraints: {} };
 const audit = { id: 'audit-1', tenant_id: 'default', actor_id: '1', actor_username: 'admin', event_type: 'workflow.request.approved', category: 'workflow', action: 'approve', resource_type: 'workflow_request', resource_id: 'req-1', session_id: null, severity: 'medium', message: '审批通过', metadata: { token: 'secret-token', safe: 'visible' }, sequence_number: 1, created_at: '2026-07-01T00:02:00Z' };
+const auditReportSummary = {
+  tenant_id: 'tenant-a',
+  total: 12,
+  high_or_critical_total: 3,
+  by_severity: { high: 2, critical: 1, medium: 4, low: 5 },
+  by_category: { workflow: 5, session: 4, connector: 3 },
+  by_siem_delivery_status: { delivered: 9, failed: 3 }
+};
 const session = { id: 'session-1', asset_id: '1', account_id: 'root', connector_id: 'connector-1', protocol: 'ssh', status: 'active', connection_url: 'ssh://10.0.0.10', workflow_request_id: 'req-1', jit_grant_id: 'grant-1', created_at: '2026-07-01T00:03:00Z', updated_at: '2026-07-01T00:03:00Z', closed_at: null, audit_event_ids: [] };
 const sessionCommand = {
   id: 11,
@@ -95,6 +103,7 @@ function installFetch() {
     if (url.endsWith('/api/v1/sessions/') && method === 'GET') return Response.json({ items: [session], total: 1 });
     if (url.endsWith('/api/v1/session-recordings/1/commands') && method === 'GET') return Response.json({ items: [sessionCommand], total: 1 });
     if (url.endsWith('/api/v1/audits/events')) return Response.json({ items: [audit], total: 1, limit: 50, offset: 0 });
+    if (url.endsWith('/api/v1/audits/reports/summary')) return Response.json(auditReportSummary);
     if (url.endsWith('/api/v1/tenancy/organizations')) return Response.json({ items: [organization], total: 1 });
     if (url.endsWith('/api/v1/tenancy/teams')) return Response.json({ items: [team], total: 1 });
     if (url.endsWith('/api/v1/tenancy/projects')) return Response.json({ items: [project], total: 1 });
@@ -192,6 +201,27 @@ describe('MVP pages', () => {
     expect(within(drawer).getByText(/visible/)).toBeInTheDocument();
     expect(within(drawer).getByText(/\*\*\*\*\*\*/)).toBeInTheDocument();
     expect(screen.queryByText('secret-token')).not.toBeInTheDocument();
+  });
+
+  it('shows audit report summary without exposing raw audit details', async () => {
+    const fetchMock = installFetch();
+    vi.stubGlobal('fetch', fetchMock);
+    history.pushState(null, '', '/audits');
+    render(<App />);
+
+    expect(await screen.findByRole('heading', { name: '审计日志' })).toBeInTheDocument();
+    expect(await screen.findByText('报表总事件')).toBeInTheDocument();
+    expect(screen.getByText('12')).toBeInTheDocument();
+    expect(screen.getByText('高危事件')).toBeInTheDocument();
+    expect(screen.getByText('SIEM failed')).toBeInTheDocument();
+    expect(screen.getAllByText('3')).toHaveLength(2);
+    expect(screen.queryByText('secret-token')).not.toBeInTheDocument();
+    await waitFor(() =>
+      expect(fetchMock).toHaveBeenCalledWith(
+        '/api/v1/audits/reports/summary',
+        expect.any(Object)
+      )
+    );
   });
 
   it('shows Settings runtime and security summaries', async () => {
