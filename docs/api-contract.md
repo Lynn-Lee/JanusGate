@@ -10,7 +10,7 @@
 - API 前缀：业务接口统一在 `/api/v1/*` 下暴露；健康检查保留 `/health`。
 - 认证：默认使用 Bearer access token；未认证或 token 失效返回 `401`。
 - 租户/权限：接口必须通过 `current_user` / `require_permission` 或业务层 actor-aware 查询控制租户与资源边界。Phase 4 起 `current_user` 会返回 `tenant_id`，以及可选的 `organization_id`、`team_id`、`project_id`；新增 DB 查询优先使用 `app.tenancy.scope.scoped_select()` 注入租户过滤。
-- Connector 信任：连接器注册、心跳、key rotation 和 connection token 签发必须 fail-closed。Phase 4 #t45 起 registry 会维护 `last_heartbeat_at` 租约，过期连接器不得签发 connection token；enrollment token 可绑定 mTLS 证书指纹，签发 token 时 presented fingerprint 必须与注册记录一致；enrollment token 也可绑定 attestation nonce/digest，注册请求必须携带匹配声明；active connector 可轮换 public key fingerprint，并记录 previous/current fingerprint 与轮换时间。
+- Connector 信任：连接器注册、心跳、key rotation 和 connection token 签发必须 fail-closed。Phase 4 #t45 起 registry 会维护 `last_heartbeat_at` 租约，过期连接器不得签发 connection token；enrollment token 可绑定 mTLS 证书指纹，签发 token 时 presented fingerprint 必须与注册记录一致；enrollment token 也可绑定 attestation nonce/digest，注册请求必须携带匹配声明；active connector 可轮换 public key fingerprint，并记录 previous/current fingerprint 与轮换时间；后端 `ConnectorSdkClient` 封装持久化 Connector 管理 API，SDK 异常不得泄露 bearer token。
 - 时间字段：响应中业务时间优先使用 ISO 8601 字符串或 OpenAPI `date-time` schema，不返回本地化展示文案。
 - 分页/列表：现阶段列表响应优先返回 `items + total`；资产等历史接口仍保持数组响应，前端需按 OpenAPI 读取。
 
@@ -567,7 +567,7 @@
 
 ## Phase 4 Connector Trust Chain（#t45）
 
-当前 #t45 已落地 Connector Registry 心跳租约、过期 fail-closed token 签发检查、mTLS 证书指纹绑定、enrollment-token 绑定的 attestation nonce/digest 注册校验、active connector public key rotation，以及租户隔离的持久化 Connector 管理 API。
+当前 #t45 已落地 Connector Registry 心跳租约、过期 fail-closed token 签发检查、mTLS 证书指纹绑定、enrollment-token 绑定的 attestation nonce/digest 注册校验、active connector public key rotation、租户隔离的持久化 Connector 管理 API，以及覆盖 create/heartbeat/rotate-key 的轻量 Connector SDK。
 
 安全语义：
 
@@ -580,10 +580,7 @@
 - 签发 connection token 前，若 Connector 记录存在 mTLS 证书指纹，调用方必须提供相同 presented certificate fingerprint；缺失或不匹配返回 `CONNECTOR_MTLS_CERTIFICATE_MISMATCH`。
 - mTLS 指纹只作为证书绑定引用进入 registry 记录；不得记录证书私钥、client certificate 明文或 TLS session secret。
 - 持久化管理 API 只返回 `mtls_bound` 与 `attestation_bound` 布尔值，不返回 enrollment token、attestation digest、私钥或长期凭据。
-
-后续切片可继续增强：
-
-- Connector SDK。
+- Connector SDK 只注入 `Authorization: Bearer <token>` 请求头，不把 access token 写入 `ConnectorSdkError` 的消息、`code` 或 `detail`；API 失败时保留 HTTP status 与统一错误码供调用方处理。
 
 ### GET `/api/v1/connectors/`
 
@@ -618,7 +615,7 @@
 
 ### POST `/api/v1/connectors/`
 
-用途：在当前租户内创建持久化 Connector 记录，供控制台管理和后续 Connector SDK 对齐。
+用途：在当前租户内创建持久化 Connector 记录，供控制台管理和 Connector SDK 调用。
 
 鉴权：需要登录态；`admin` 或 `connectors:write` 权限可访问。
 
