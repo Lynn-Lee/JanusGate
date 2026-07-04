@@ -246,7 +246,8 @@ JumpServer 上游在 2026-06-26 → 07-01 期间进行了重大技术栈升级�
 5. **Session 持久化与真实通道**：当前 session lifecycle 仍以内存 store 为主；Phase 4 #t46 已启动租户隔离的 SessionRecording 元数据与命令事件持久化，并提供录制创建、Connector 命令事件上报、录制命令时间线读取、命令检索和录制关闭 API；命令检索已补 PostgreSQL `to_tsvector` / `plainto_tsquery` 与 GIN 索引优化，SQLite 测试环境保留 `ILIKE` fallback；前端 `/sessions` 已提供按 Recording ID 加载的只读回放命令时间线入口
 6. **通知/WebHook 集成**：Phase 4 #t47 已启动租户隔离的 `WebhookEndpoint` 持久化模型与 `GET/POST /api/v1/webhook-endpoints/` 管理 API；响应不返回 signing secret 明文或摘要。当前已补 `NotificationRule` 持久化模型与 `GET/POST /api/v1/notification-rules/` 管理 API，规则必须引用当前租户 active WebHook endpoint；并补 `NotificationDelivery` 队列记录与租户隔离的入队/列表 API。`NotificationDeliveryWorker` 已提供到期投递、失败重试与最大次数后 dead-letter 状态机，sender 只接收已脱敏 payload。真实外部 HTTP/IM sender 和多级审批仍待后续切片。
 7. **审计投递可靠性与报表中心**：SIEM 投递失败不阻断；Phase 4 #t49 已启动当前租户审计报表汇总 API，前端 `/audits` 已展示报表总事件、高危事件和 SIEM failed 聚合卡片；可靠队列、告警和合规报表导出仍待后续切片
-8. **运行时安全**：镜像签名、SBOM、漏洞扫描门禁待 Phase 5
+8. **可观测性**：Phase 4 #t51 已启动 Prometheus metrics foundation：后端 `GET /metrics` 以 Prometheus 文本格式暴露 HTTP 请求总数与延迟 histogram，标签只包含 method、路由模板 path 和 status_code；OpenTelemetry 分布式追踪、Loki 日志管道和部署层 scrape 暴露策略仍待后续切片
+9. **运行时安全**：镜像签名、SBOM、漏洞扫描门禁待 Phase 5
 
 ---
 
@@ -634,7 +635,7 @@ User ──┬── WorkflowRequest ──── JitGrant
 | **#t48** | JIT 策略模板、审批策略 DSL | architect + backend | `ApprovalPolicyModel` 已通过租户隔离的 `GET/POST /api/v1/workflows/approval-policies` 提供策略模板创建和列表 API，要求 `workflow:admin` 或 `admin` 权限；`PolicyDecisionService` 已可接收 approval policy template 并对匹配 selector 且落入 deterministic rollout bucket 的请求返回 `APPROVAL_REQUIRED` obligations；`POST /api/v1/workflows/approval-policies/simulate` 已可在当前租户内复用同一决策引擎做策略模拟；approval policy family/version 基础已完成，`POST /api/v1/workflows/approval-policies/{policy_id}/versions` 可在当前租户内创建递增版本并停用旧 active 版本，列表与模拟默认只读取 active/latest 版本；`POST /api/v1/workflows/approval-policies/{policy_id}/rollback` 已可在当前租户内显式回滚到同 family 指定版本；`rollout_percentage` 灰度百分比已完成；DSL `context_equals` 精确匹配、`context_in` 枚举匹配、`context_not_equals` 排除匹配和 `context_not_in` 枚举排除匹配已完成，context 不匹配或 DSL 结构异常时 fail-closed；后续补复杂表达式与更多 DSL 操作符 | 中 |
 | **#t49** | SIEM/告警/报表中心 | backend + frontend | 当前租户审计报表汇总 API `GET /api/v1/audits/reports/summary` 已启动，返回 total、severity、category、SIEM delivery 状态和高危计数且不泄露 metadata；前端 `/audits` 已展示报表总事件、高危事件和 SIEM failed 聚合卡片；后续补可靠队列、告警、合规报表导出和 Dashboard 深化 | 中 |
 | **#t50** | Vault 生产级后端 | backend + security | `KmsKeyProvider` 协议与 `EnvelopeEncryptedSecretProvider` foundation 已启动，支持每条 secret 独立 DEK + KMS-wrapped data key + unwrap fail-closed；后续补真实 DB/KMS/Vault adapter、审批后 unwrap 与 break-glass | 高 |
-| **#t51** | 可观测性体系 | devops | OpenTelemetry 分布式追踪 + Prometheus 标准 metrics + Loki 日志 | 中 |
+| **#t51** | 可观测性体系 | devops | Prometheus metrics foundation 已启动：`GET /metrics` 暴露 HTTP 请求总数与延迟 histogram，指标标签只包含 method、路由模板 path 和 status_code；后续补 OpenTelemetry 分布式追踪、Loki 日志和部署层 scrape 策略 | 中 |
 | **#t52** | Automation Worker | backend | Ansible/扫描/改密独立队列 + Redis Streams/NATS（禁止 pickle） | 中 |
 
 #### 11.2.2 Phase 4 里程碑建议
