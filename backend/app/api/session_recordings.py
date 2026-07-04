@@ -6,8 +6,9 @@ from datetime import UTC, datetime
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import or_, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.sql.elements import ColumnElement
 
 from app.api.session_recording_schemas import (
     SessionCommandEventCreate,
@@ -167,16 +168,11 @@ async def search_session_commands(
 ) -> SessionCommandEventListResponse:
     _require_recording_permission(user, "session-recordings:read")
     tenant_id = str(user.get("tenant_id") or "default")
-    pattern = f"%{query}%"
+    dialect_name = db.get_bind().dialect.name
     result = await db.execute(
         select(SessionCommandEvent)
         .where(SessionCommandEvent.tenant_id == tenant_id)
-        .where(
-            or_(
-                SessionCommandEvent.command.ilike(pattern),
-                SessionCommandEvent.output_excerpt.ilike(pattern),
-            )
-        )
+        .where(_build_command_search_filter(query=query, dialect_name=dialect_name))
         .order_by(SessionCommandEvent.occurred_at.desc(), SessionCommandEvent.id.desc())
     )
     events = result.scalars().all()
@@ -224,6 +220,21 @@ def _require_recording_permission(user: dict[str, Any], permission: str) -> None
 def _ensure_recording_is_open(recording: SessionRecording) -> None:
     if recording.status != "recording":
         raise HTTPException(status_code=404, detail="SESSION_RECORDING_NOT_FOUND")
+
+
+def _build_command_search_filter(*, query: str, dialect_name: str) -> ColumnElement[bool]:
+    if dialect_name == "postgresql":
+        document = func.to_tsvector(
+            "simple",
+            func.concat(SessionCommandEvent.command, " ", SessionCommandEvent.output_excerpt),
+        )
+        return document.bool_op("@@")(func.plainto_tsquery("simple", query))
+
+    pattern = f"%{query}%"
+    return or_(
+        SessionCommandEvent.command.ilike(pattern),
+        SessionCommandEvent.output_excerpt.ilike(pattern),
+    )
 
 
 def _recording_response(recording: SessionRecording) -> SessionRecordingResponse:

@@ -7,9 +7,31 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
+from app.api.session_recordings import _build_command_search_filter
 from app.core.database import Base, get_db
 from app.core.deps import current_user
 from app.main import app
+from app.models.session_recording import SessionCommandEvent
+
+
+def test_session_command_events_define_full_text_search_indexes() -> None:
+    indexes = {index.name: index for index in SessionCommandEvent.__table__.indexes}
+
+    assert "ix_session_command_events_tenant_occurred_id" in indexes
+
+    search_index = indexes["ix_session_command_events_search_vector"]
+    assert search_index.dialect_options["postgresql"]["using"] == "gin"
+    assert search_index._ddl_if is not None
+    assert search_index._ddl_if.dialect == "postgresql"
+    assert "to_tsvector" in str(search_index.expressions[0])
+
+
+def test_session_command_search_uses_postgresql_full_text_predicate() -> None:
+    predicate = _build_command_search_filter(query="nginx restart", dialect_name="postgresql")
+
+    compiled = str(predicate)
+    assert "to_tsvector" in compiled
+    assert "plainto_tsquery" in compiled
 
 
 @pytest.fixture
