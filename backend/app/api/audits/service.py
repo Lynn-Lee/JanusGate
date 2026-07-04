@@ -1,12 +1,14 @@
 """审计事件存储与 SIEM 投递服务首版。"""
 import hashlib
 import json
+from collections import Counter
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from app.api.audits.schemas import (
     AuditEvent,
     AuditEventCreate,
+    AuditReportSummary,
     AuditSeverity,
     SiemDeliveryStatus,
 )
@@ -66,6 +68,23 @@ class AuditEventRepository:
             and (severity is None or event.severity == severity)
         ]
         return matches[offset : offset + limit], len(matches)
+
+    def summary(self, *, tenant_id: str) -> AuditReportSummary:
+        matches = [event for event in self._events if event.tenant_id == tenant_id]
+        severity_counts = Counter(event.severity.value for event in matches)
+        category_counts = Counter(event.category.value for event in matches)
+        siem_counts = Counter(event.siem_delivery_status.value for event in matches)
+        return AuditReportSummary(
+            tenant_id=tenant_id,
+            total=len(matches),
+            high_or_critical_total=sum(
+                severity_counts[severity.value]
+                for severity in (AuditSeverity.high, AuditSeverity.critical)
+            ),
+            by_severity=dict(severity_counts),
+            by_category=dict(category_counts),
+            by_siem_delivery_status=dict(siem_counts),
+        )
 
     def clear(self) -> None:
         self._events.clear()
@@ -139,6 +158,9 @@ class AuditService:
             limit=limit,
             offset=offset,
         )
+
+    def report_summary(self, *, tenant_id: str) -> AuditReportSummary:
+        return self._repository.summary(tenant_id=tenant_id)
 
 
 def calculate_event_hash(event: AuditEvent) -> str:

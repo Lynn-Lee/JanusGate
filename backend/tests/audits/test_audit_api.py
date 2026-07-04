@@ -208,3 +208,65 @@ def test_sensitive_metadata_redaction_covers_headers_credentials_and_siem_payloa
     assert "plain-cookie" not in serialized
     assert "plain-credential" not in serialized
     assert "plain-key" not in serialized
+
+
+def test_audit_report_summary_counts_current_tenant_without_metadata_leak():
+    app.dependency_overrides[current_user] = _audit_user
+    client = TestClient(app)
+
+    client.post(
+        "/api/v1/audits/events",
+        json={
+            "event_type": "session.started",
+            "category": "session",
+            "action": "start_session",
+            "resource_type": "asset",
+            "resource_id": "asset-1",
+            "severity": "high",
+            "metadata": {"token": "raw-session-token"},
+        },
+    )
+    client.post(
+        "/api/v1/audits/events",
+        json={
+            "event_type": "connector.auth.failed",
+            "category": "connector",
+            "action": "authenticate",
+            "resource_type": "connector",
+            "resource_id": "connector-1",
+            "severity": "critical",
+            "metadata": {"force_siem_failure": True, "password": "raw-password"},
+        },
+    )
+
+    app.dependency_overrides[current_user] = lambda: {
+        **_audit_user(),
+        "tenant_id": "tenant-b",
+    }
+    client.post(
+        "/api/v1/audits/events",
+        json={
+            "event_type": "session.started",
+            "category": "session",
+            "action": "start_session",
+            "resource_type": "asset",
+            "resource_id": "asset-2",
+            "severity": "low",
+        },
+    )
+
+    app.dependency_overrides[current_user] = _audit_user
+    response = client.get("/api/v1/audits/reports/summary")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body == {
+        "tenant_id": "tenant-a",
+        "total": 2,
+        "high_or_critical_total": 2,
+        "by_severity": {"high": 1, "critical": 1},
+        "by_category": {"session": 1, "connector": 1},
+        "by_siem_delivery_status": {"delivered": 1, "failed": 1},
+    }
+    assert "raw-session-token" not in str(body)
+    assert "raw-password" not in str(body)

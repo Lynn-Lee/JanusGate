@@ -81,3 +81,12 @@ class AuditEventList(BaseModel):
     total: int
     limit: int
     offset: int
+
+
+class AuditReportSummary(BaseModel):
+    tenant_id: str
+    total: int
+    high_or_critical_total: int
+    by_severity: dict[str, int]
+    by_category: dict[str, int]
+    by_siem_delivery_status: dict[str, int]
