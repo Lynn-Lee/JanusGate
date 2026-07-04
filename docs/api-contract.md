@@ -567,7 +567,7 @@
 
 ## Phase 4 Connector Trust Chain（#t45）
 
-当前 #t45 已落地 Connector Registry 心跳租约、过期 fail-closed token 签发检查、mTLS 证书指纹绑定、enrollment-token 绑定的 attestation nonce/digest 注册校验，以及 active connector public key rotation。
+当前 #t45 已落地 Connector Registry 心跳租约、过期 fail-closed token 签发检查、mTLS 证书指纹绑定、enrollment-token 绑定的 attestation nonce/digest 注册校验、active connector public key rotation，以及租户隔离的持久化 Connector 管理 API。
 
 安全语义：
 
@@ -579,10 +579,110 @@
 - active Connector 可轮换 `public_key_fingerprint`，registry 会保留 `previous_public_key_fingerprint` 与 `key_rotated_at`；inactive/revoked Connector 不允许轮换，缺失或非法 `sha256:` 指纹返回 `INVALID_CONNECTOR_FINGERPRINT`。
 - 签发 connection token 前，若 Connector 记录存在 mTLS 证书指纹，调用方必须提供相同 presented certificate fingerprint；缺失或不匹配返回 `CONNECTOR_MTLS_CERTIFICATE_MISMATCH`。
 - mTLS 指纹只作为证书绑定引用进入 registry 记录；不得记录证书私钥、client certificate 明文或 TLS session secret。
+- 持久化管理 API 只返回 `mtls_bound` 与 `attestation_bound` 布尔值，不返回 enrollment token、attestation digest、私钥或长期凭据。
 
 后续切片可继续增强：
 
-- 持久化 Connector API 与 SDK。
+- Connector SDK。
+
+### GET `/api/v1/connectors/`
+
+用途：返回当前租户下的 Connector 运行态列表。
+
+鉴权：需要登录态；`admin` 或 `connectors:read` 权限可访问。后端使用当前用户 `tenant_id` 过滤，不接受前端传入 tenant。
+
+响应 `200`：
+
+```json
+{
+  "items": [
+    {
+      "id": 1,
+      "tenant_id": "tenant-a",
+      "name": "koko-prod-1",
+      "environment": "prod",
+      "public_key_fingerprint": "sha256:connector-key",
+      "previous_public_key_fingerprint": null,
+      "capabilities": ["ssh", "database"],
+      "status": "active",
+      "mtls_bound": true,
+      "attestation_bound": false,
+      "registered_at": "2026-07-04T00:00:00Z",
+      "last_heartbeat_at": null,
+      "key_rotated_at": null
+    }
+  ],
+  "total": 1
+}
+```
+
+### POST `/api/v1/connectors/`
+
+用途：在当前租户内创建持久化 Connector 记录，供控制台管理和后续 Connector SDK 对齐。
+
+鉴权：需要登录态；`admin` 或 `connectors:write` 权限可访问。
+
+请求体：
+
+```json
+{
+  "name": "koko-prod-1",
+  "environment": "prod",
+  "public_key_fingerprint": "sha256:connector-key",
+  "mtls_certificate_fingerprint": "sha256:client-cert",
+  "capabilities": ["ssh", "database"],
+  "status": "active"
+}
+```
+
+响应 `201`：同 `GET /api/v1/connectors/` 的单条 item。响应不返回 `mtls_certificate_fingerprint`、`attestation_nonce`、`attestation_digest`、enrollment token 或私钥材料。
+
+错误码：
+
+| HTTP | detail | 说明 |
+| --- | --- | --- |
+| 400 | `INVALID_CONNECTOR_FINGERPRINT` | Connector public key fingerprint 不是 `sha256:` 格式 |
+| 400 | `INVALID_CONNECTOR_MTLS_FINGERPRINT` | mTLS certificate fingerprint 不是 `sha256:` 格式 |
+| 403 | `缺少权限: connectors:write` | 当前用户不能创建或更新 Connector |
+
+### POST `/api/v1/connectors/{connector_id}/heartbeat`
+
+用途：刷新当前租户内 active Connector 的 `last_heartbeat_at`。
+
+鉴权：需要登录态；`admin` 或 `connectors:write` 权限可访问。
+
+响应 `200`：同 `GET /api/v1/connectors/` 的单条 item。
+
+错误码：
+
+| HTTP | detail | 说明 |
+| --- | --- | --- |
+| 403 | `CONNECTOR_NOT_ACTIVE` | Connector 已 inactive/revoked，不允许通过 heartbeat 恢复 |
+| 404 | `CONNECTOR_NOT_FOUND` | Connector 不存在或不属于当前租户 |
+
+### POST `/api/v1/connectors/{connector_id}/rotate-key`
+
+用途：轮换当前租户内 active Connector 的 public key fingerprint，并记录 `previous_public_key_fingerprint` 与 `key_rotated_at`。
+
+鉴权：需要登录态；`admin` 或 `connectors:write` 权限可访问。
+
+请求体：
+
+```json
+{
+  "public_key_fingerprint": "sha256:new-key"
+}
+```
+
+响应 `200`：同 `GET /api/v1/connectors/` 的单条 item。
+
+错误码：
+
+| HTTP | detail | 说明 |
+| --- | --- | --- |
+| 400 | `INVALID_CONNECTOR_FINGERPRINT` | 新 public key fingerprint 不是 `sha256:` 格式 |
+| 403 | `CONNECTOR_NOT_ACTIVE` | Connector 已 inactive/revoked，不允许轮换 |
+| 404 | `CONNECTOR_NOT_FOUND` | Connector 不存在或不属于当前租户 |
 
 ## Session connection token（#t42）
 
