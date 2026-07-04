@@ -77,6 +77,37 @@
 - `credential.rotate`
 - `ansible.playbook`
 
+### POST `/api/v1/automation/jobs/asset-scans`
+
+用途：按当前认证用户租户调度一个资产扫描后台任务，写入 `asset.scan` 队列消息。
+
+鉴权：需要登录态；`automation:write` 或 `admin` 权限可访问。后端使用当前用户 `tenant_id` 和 `id` 写入队列，不接受前端传入 tenant 或 requested_by。
+
+请求体：
+
+```json
+{
+  "asset_id": 42,
+  "scan_profile": "ssh-baseline"
+}
+```
+
+响应 `202`：
+
+```json
+{
+  "job_id": "1700000000000-0",
+  "job_type": "asset.scan",
+  "status": "queued"
+}
+```
+
+安全语义：
+
+- API payload 只包含 asset id 与 scan profile，不接受密码、token、secret、私钥或连接串。
+- `AutomationJobQueue` 继续执行敏感字段名拒绝和 JSON-only 序列化约束。
+- 当前切片只负责调度入队，不执行真实网络扫描；真实扫描执行器必须作为后续 worker handler 切片单独验收。
+
 安全语义：
 
 - 队列消息只允许 JSON 序列化 payload，不使用 pickle 或任意 Python 对象派发。
