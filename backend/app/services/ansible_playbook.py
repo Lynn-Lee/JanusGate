@@ -1,8 +1,13 @@
 """Ansible playbook automation worker handler."""
 from __future__ import annotations
 
+import asyncio
+import json
+import os
+import tempfile
 from collections.abc import Awaitable
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Protocol
 
 from sqlalchemy import select
@@ -33,6 +38,60 @@ class AnsiblePlaybookRun:
 
 class AnsiblePlaybookRunner(Protocol):
     def run(self, playbook: AnsiblePlaybookRun) -> Awaitable[None]: ...
+
+
+class AnsibleCommandRunner(Protocol):
+    def __call__(
+        self,
+        args: list[str],
+        *,
+        cwd: Path,
+        env: dict[str, str],
+    ) -> Awaitable[int]: ...
+
+
+class LocalAnsiblePlaybookRunner:
+    def __init__(
+        self,
+        *,
+        playbook_root: Path,
+        runtime_root: Path,
+        command_runner: AnsibleCommandRunner | None = None,
+        executable: str = "ansible-playbook",
+    ) -> None:
+        self._playbook_root = playbook_root.resolve()
+        self._runtime_root = runtime_root.resolve()
+        self._command_runner = command_runner or _run_ansible_command
+        self._executable = executable
+
+    async def run(self, playbook: AnsiblePlaybookRun) -> None:
+        playbook_path = self._resolve_playbook(playbook.playbook_name)
+        self._runtime_root.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(
+            prefix=f"janusgate-ansible-{playbook.tenant_id}-",
+            dir=self._runtime_root,
+        ) as work_dir_name:
+            work_dir = Path(work_dir_name)
+            inventory_path = work_dir / "inventory.json"
+            inventory_path.write_text(
+                json.dumps(_build_inventory(playbook.targets), sort_keys=True),
+                encoding="utf-8",
+            )
+            args = [self._executable, str(playbook_path), "-i", str(inventory_path)]
+            if playbook.check_mode:
+                args.append("--check")
+            result = await self._command_runner(args, cwd=work_dir, env=_safe_ansible_env())
+            if result != 0:
+                raise ValueError("ANSIBLE_PLAYBOOK_FAILED")
+
+    def _resolve_playbook(self, playbook_name: str) -> Path:
+        candidate = Path(playbook_name)
+        if candidate.is_absolute() or candidate.suffix not in {".yml", ".yaml"}:
+            raise ValueError("ANSIBLE_PLAYBOOK_NOT_ALLOWED")
+        playbook_path = (self._playbook_root / candidate).resolve()
+        if not playbook_path.is_relative_to(self._playbook_root) or not playbook_path.is_file():
+            raise ValueError("ANSIBLE_PLAYBOOK_NOT_ALLOWED")
+        return playbook_path
 
 
 class AnsiblePlaybookWorkerHandler:
@@ -129,3 +188,44 @@ def _payload_str(payload: dict[str, JsonValue], key: str) -> str:
     if not isinstance(value, str) or value == "":
         raise ValueError("AUTOMATION_JOB_PAYLOAD_INVALID")
     return value
+
+
+def _build_inventory(targets: list[AnsiblePlaybookTarget]) -> dict[str, object]:
+    return {
+        "all": {
+            "hosts": {
+                f"asset_{target.id}": {
+                    "ansible_host": target.address,
+                    "ansible_port": target.port,
+                    "janusgate_asset_id": target.id,
+                    "janusgate_asset_name": target.name,
+                    "janusgate_platform_id": target.platform_id,
+                    "janusgate_tenant_id": target.tenant_id,
+                }
+                for target in targets
+            }
+        }
+    }
+
+
+def _safe_ansible_env() -> dict[str, str]:
+    env: dict[str, str] = {
+        "ANSIBLE_NOCOWS": "1",
+        "ANSIBLE_RETRY_FILES_ENABLED": "False",
+    }
+    if path := os.environ.get("PATH"):
+        env["PATH"] = path
+    if lang := os.environ.get("LANG"):
+        env["LANG"] = lang
+    return env
+
+
+async def _run_ansible_command(args: list[str], *, cwd: Path, env: dict[str, str]) -> int:
+    process = await asyncio.create_subprocess_exec(
+        *args,
+        cwd=cwd,
+        env=env,
+        stdout=asyncio.subprocess.DEVNULL,
+        stderr=asyncio.subprocess.DEVNULL,
+    )
+    return await process.wait()
