@@ -12,6 +12,7 @@ from app.core.database import Base
 from app.models.account import Account, CredentialRotation
 from app.models.asset import Asset, Platform
 from app.services.credential_rotation import (
+    CredentialRotateWorkerHandler,
     CredentialRotationResult,
     CredentialRotationWorker,
 )
@@ -175,3 +176,54 @@ async def test_rotation_worker_ignores_future_or_non_scheduled_rotations(
     assert processed == 0
     assert rotator.calls == []
     assert rotation_ids == [1]
+
+
+@pytest.mark.asyncio
+async def test_credential_rotate_handler_rotates_current_tenant_account(
+    session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    await seed_account_with_rotation(session_factory, status="completed")
+    rotator = RecordingRotator()
+    handler = CredentialRotateWorkerHandler(session_factory=session_factory, rotator=rotator)
+
+    await handler(
+        tenant_id="tenant-a",
+        requested_by="user-2",
+        payload={"account_id": 1, "reason": "queued rotation"},
+        message_id="1700000000000-0",
+    )
+
+    async with session_factory() as session:
+        account = await session.get(Account, 1)
+        rotations = (
+            await session.execute(select(CredentialRotation).order_by(CredentialRotation.id))
+        ).scalars().all()
+
+    assert rotator.calls == ["deploy:2"]
+    assert account is not None
+    assert account.secret_id == "sec_tenant_a_deploy:v2"
+    assert [(rotation.id, rotation.status, rotation.reason, rotation.requested_by) for rotation in rotations] == [
+        (1, "completed", "quarterly", "user-1"),
+        (2, "completed", "queued rotation", "user-2"),
+    ]
+    assert rotations[1].previous_secret_id == "sec_tenant_a_deploy"
+    assert rotations[1].new_secret_id == "sec_tenant_a_deploy:v2"
+
+
+@pytest.mark.asyncio
+async def test_credential_rotate_handler_rejects_cross_tenant_account(
+    session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    await seed_account_with_rotation(session_factory)
+    rotator = RecordingRotator()
+    handler = CredentialRotateWorkerHandler(session_factory=session_factory, rotator=rotator)
+
+    with pytest.raises(ValueError, match="ACCOUNT_NOT_FOUND"):
+        await handler(
+            tenant_id="tenant-b",
+            requested_by="user-2",
+            payload={"account_id": 1, "reason": "should not cross tenant"},
+            message_id="1700000000000-0",
+        )
+
+    assert rotator.calls == []

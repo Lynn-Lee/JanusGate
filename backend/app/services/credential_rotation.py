@@ -6,9 +6,10 @@ from datetime import UTC, datetime
 from typing import Protocol
 
 from sqlalchemy import Select, or_, select
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.models.account import Account, CredentialRotation
+from app.services.automation_worker import JsonValue
 
 
 @dataclass(frozen=True)
@@ -78,6 +79,58 @@ class CredentialRotationWorker:
         return True
 
 
+class CredentialRotateWorkerHandler:
+    def __init__(
+        self,
+        *,
+        session_factory: async_sessionmaker[AsyncSession],
+        rotator: CredentialRotator,
+    ) -> None:
+        self._session_factory = session_factory
+        self._rotator = rotator
+
+    async def __call__(
+        self,
+        *,
+        tenant_id: str,
+        requested_by: str,
+        payload: dict[str, JsonValue],
+        message_id: str,
+    ) -> None:
+        del message_id
+        account_id = _payload_int(payload, "account_id")
+        reason = _payload_optional_str(payload, "reason")
+
+        async with self._session_factory() as session:
+            account = await _get_active_account(session, tenant_id=tenant_id, account_id=account_id)
+            if account is None:
+                raise ValueError("ACCOUNT_NOT_FOUND")
+
+            rotation = CredentialRotation(
+                tenant_id=account.tenant_id,
+                account_id=account.id,
+                status="scheduled",
+                reason=reason,
+                requested_by=requested_by,
+                scheduled_at=None,
+            )
+            session.add(rotation)
+            await session.flush()
+
+            rotation.previous_secret_id = account.secret_id
+            try:
+                rotated = await self._rotator.rotate(account, rotation)
+            except Exception as exc:
+                rotation.status = "failed"
+                rotation.error_code = _error_code(exc)
+            else:
+                account.secret_id = rotated.secret_id
+                rotation.new_secret_id = rotated.secret_id
+                rotation.error_code = None
+                rotation.status = "completed"
+            await session.commit()
+
+
 def _due_rotation_query(
     now: datetime, limit: int
 ) -> Select[tuple[CredentialRotation, Account]]:
@@ -96,6 +149,21 @@ def _due_rotation_query(
     )
 
 
+async def _get_active_account(
+    session: AsyncSession,
+    *,
+    tenant_id: str,
+    account_id: int,
+) -> Account | None:
+    result = await session.execute(
+        select(Account)
+        .where(Account.id == account_id)
+        .where(Account.tenant_id == tenant_id)
+        .where(Account.status == "active")
+    )
+    return result.scalar_one_or_none()
+
+
 def _as_utc(value: datetime) -> datetime:
     if value.tzinfo is None:
         return value.replace(tzinfo=UTC)
@@ -107,3 +175,19 @@ def _error_code(exc: Exception) -> str:
     if message:
         return message[:120]
     return exc.__class__.__name__[:120]
+
+
+def _payload_int(payload: dict[str, JsonValue], key: str) -> int:
+    value = payload.get(key)
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise ValueError("AUTOMATION_JOB_PAYLOAD_INVALID")
+    return value
+
+
+def _payload_optional_str(payload: dict[str, JsonValue], key: str) -> str | None:
+    value = payload.get(key)
+    if value is None:
+        return None
+    if not isinstance(value, str):
+        raise ValueError("AUTOMATION_JOB_PAYLOAD_INVALID")
+    return value
