@@ -243,7 +243,7 @@ JumpServer 上游在 2026-06-26 → 07-01 期间进行了重大技术栈升级�
 2. **策略持久化**：当前 PolicyDecisionService 为内存规则，需接入持久化策略
 3. **Connector 生产级信任链**：Phase 4 #t45 已启动 Connector Registry 心跳租约，connection token 签发前会 fail-closed 校验 active 状态与 heartbeat TTL；mTLS 证书指纹绑定已接入 registry token 签发路径；enrollment-token 绑定的 attestation nonce/digest 已接入注册路径，缺失或不匹配 attestation 时 fail-closed；active connector public key rotation 已补齐并记录 previous/current fingerprint 与轮换时间；持久化 Connector 管理 API 已补齐租户隔离的列表/创建、heartbeat 和 key rotation；轻量 Connector SDK 已覆盖 create/heartbeat/rotate-key 并避免 SDK 异常泄露 bearer token
 4. **Vault 生产级后端**：当前为内存 AES-GCM，KMS/HSM/云 Vault 待 Phase 4
-5. **Session 持久化与真实通道**：当前 session lifecycle 仍以内存 store 为主；Phase 4 #t46 已启动租户隔离的 SessionRecording 元数据与命令事件持久化，并提供命令检索 API；真实 Connector 实时上报、回放 UI 和全文索引优化待后续切片
+5. **Session 持久化与真实通道**：当前 session lifecycle 仍以内存 store 为主；Phase 4 #t46 已启动租户隔离的 SessionRecording 元数据与命令事件持久化，并提供录制创建、命令检索和录制关闭 API；真实 Connector 实时上报、回放 UI 和全文索引优化待后续切片
 6. **审计投递可靠性**：SIEM 投递失败不阻断，需补可靠队列/重试/死信
 7. **运行时安全**：镜像签名、SBOM、漏洞扫描门禁待 Phase 5
 
@@ -628,7 +628,7 @@ User ──┬── WorkflowRequest ──── JitGrant
 | **#t43** | 资产账号托管与凭据轮换 | backend + frontend | Account 模型 + 租户/项目作用域账号列表与创建 API 已启动；CredentialRotation 调度 API、到期轮换执行 worker、旧/新 secret 引用记录与 completed rotation 回滚已完成；前端 `/accounts` 账号托管页已可查看 secret 引用、轮换记录并调度凭据轮换 | 高 |
 | **#t44** | SSH CA / 临时证书 | backend + security | `SshCertificateAuthority` / `SshCertificate` 模型 + `Asset.trusted_ssh_ca_id` 信任配置字段 + CA 管理/禁用 API + 后端签发/撤销服务契约 + 临时证书签发/撤销 REST API + API 路由可用的 Vault-backed OpenSSH signer + SSH CA trust bundle API + 前端 `/ssh-ca` CA/trust bundle/临时证书入口已完成；后续补连接器生产级信任链或签发体验增强 | 高 |
 | **#t45** | 连接器/边缘网关架构 | architect + backend | Connector Registry 心跳租约与过期 fail-closed 签发检查已启动；mTLS 证书指纹绑定已接入注册与 token 签发路径；enrollment-token 绑定的 attestation nonce/digest 已接入注册路径；active connector public key rotation 已完成；持久化 Connector 管理 API 已提供租户隔离的列表/创建、heartbeat 和 key rotation，响应不泄露 token、attestation digest 或私钥材料；轻量 Connector SDK 已覆盖 create/heartbeat/rotate-key 并保留不泄露 bearer token 的错误契约 | 高 |
-| **#t46** | 会话录制、回放、命令检索 | backend + frontend | SessionRecording 与命令事件持久化模型已启动；录制创建、命令事件追加和租户隔离命令检索 API 已完成，命令输出摘要会脱敏 token/password/secret/credential 赋值文本；后续补实时上报通道、回放 UI 与全文索引优化 | 中 |
+| **#t46** | 会话录制、回放、命令检索 | backend + frontend | SessionRecording 与命令事件持久化模型已启动；录制创建、命令事件追加、录制关闭和租户隔离命令检索 API 已完成，命令输出摘要会脱敏 token/password/secret/credential 赋值文本；后续补实时上报通道、回放 UI 与全文索引优化 | 中 |
 | **#t47** | WebHook / 通知中心 / 工单系统增强 | backend | WebhookEndpoint + NotificationRule + 真实 IM 通知 + 多级审批 | 中 |
 | **#t48** | JIT 策略模板、审批策略 DSL | architect + backend | 策略持久化 + 版本管理 + 灰度/回滚 + 策略模拟 + DSL | 中 |
 | **#t49** | SIEM/告警/报表中心 | backend + frontend | 可靠队列 + 重试/死信/告警 + 合规报表 + Dashboard | 中 |

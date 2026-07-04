@@ -123,6 +123,17 @@
 - `output_excerpt` 返回前会脱敏 `token=`、`password=`、`secret=`、`credential=` 赋值片段。
 - 当前切片只保存命令事件和摘要；真实录制对象存储、实时流和回放 UI 后续补齐。
 
+### POST `/api/v1/session-recordings/{recording_id}/close`
+
+用途：关闭当前租户可见且仍处于 `recording` 状态的录制，写入 `ended_at` 并返回录制元数据。
+
+鉴权：需要登录态；`admin` 或 `session-recordings:write` 权限可访问。
+
+安全语义：
+
+- 只允许关闭当前租户可见录制；跨租户、不存在或已关闭录制统一返回 `404 SESSION_RECORDING_NOT_FOUND`。
+- 响应不包含命令输出、凭据、连接 token 或对象存储签名 URL。
+
 ### GET `/api/v1/session-recordings/commands?query=nginx`
 
 用途：按关键词检索当前租户内的命令事件。

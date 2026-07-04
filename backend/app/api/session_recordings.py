@@ -83,6 +83,27 @@ async def append_session_command_event(
     return _command_response(event)
 
 
+@router.post(
+    "/session-recordings/{recording_id}/close",
+    response_model=SessionRecordingResponse,
+)
+async def close_session_recording(
+    recording_id: int,
+    db: AsyncSession = Depends(get_db),
+    user: dict[str, Any] = Depends(current_user),
+) -> SessionRecordingResponse:
+    _require_recording_permission(user, "session-recordings:write")
+    recording = await _get_scoped_recording(db=db, user=user, recording_id=recording_id)
+    if recording.status != "recording":
+        raise HTTPException(status_code=404, detail="SESSION_RECORDING_NOT_FOUND")
+
+    recording.status = "closed"
+    recording.ended_at = datetime.now(UTC)
+    await db.commit()
+    await db.refresh(recording)
+    return _recording_response(recording)
+
+
 @router.get("/session-recordings/commands", response_model=SessionCommandEventListResponse)
 async def search_session_commands(
     query: str = Query(min_length=1, max_length=120),
