@@ -138,7 +138,7 @@ class PolicyDecisionService:
         if not conditions:
             return True
         if any(
-            key not in {"context_equals", "context_in", "context_not_equals"}
+            key not in {"context_equals", "context_in", "context_not_equals", "context_not_in"}
             for key in conditions
         ):
             return False
@@ -165,9 +165,20 @@ class PolicyDecisionService:
         context_not_equals = conditions.get("context_not_equals", {})
         if not isinstance(context_not_equals, dict):
             return False
-        return all(
+        if not all(
             not self._selector_value_matches(disallowed, str(request.context.get(key, "")))
             for key, disallowed in context_not_equals.items()
+        ):
+            return False
+
+        context_not_in = conditions.get("context_not_in", {})
+        if not isinstance(context_not_in, dict):
+            return False
+        return all(
+            isinstance(disallowed_values, list)
+            and str(request.context.get(key, ""))
+            not in {str(value) for value in disallowed_values}
+            for key, disallowed_values in context_not_in.items()
         )
 
     def _approval_policy_rollout_includes(
