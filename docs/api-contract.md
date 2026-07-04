@@ -62,6 +62,55 @@
 - Audit/SIEM：`/api/v1/audits/events`，审计事件创建和检索。
 - Tenancy：`/api/v1/tenancy/*`，Phase 4 组织/团队/项目管理与租户隔离 API。
 - Session Recordings：`/api/v1/sessions/{session_id}/recordings` 与 `/api/v1/session-recordings/*`，Phase 4 会话录制元数据、命令事件上报与命令检索。
+- Webhook Endpoints：`/api/v1/webhook-endpoints/*`，Phase 4 WebHook / 通知中心 endpoint 管理基础。
+
+## Phase 4 Webhook Endpoint API（#t47）
+
+### POST `/api/v1/webhook-endpoints/`
+
+用途：在当前租户内创建一个用于后续通知、SIEM 或工单集成的 HTTPS webhook endpoint。
+
+鉴权：需要登录态；`admin` 或 `webhooks:write` 权限可访问。后端使用当前用户 `tenant_id` 写入，不接受前端传入 tenant。
+
+请求体：
+
+```json
+{
+  "name": "security-siem",
+  "url": "https://siem.example.test/janusgate",
+  "event_types": ["session.recording.closed", "audit.event.created"],
+  "signing_secret": "super-secret-webhook-key"
+}
+```
+
+响应 `201`：
+
+```json
+{
+  "id": 1,
+  "tenant_id": "tenant-a",
+  "name": "security-siem",
+  "url": "https://siem.example.test/janusgate",
+  "event_types": ["session.recording.closed", "audit.event.created"],
+  "status": "active",
+  "signing_secret_configured": true,
+  "created_at": "2026-07-04T04:00:00Z",
+  "updated_at": "2026-07-04T04:00:00Z"
+}
+```
+
+安全语义：
+
+- signing secret 只以 digest 形式持久化；响应不返回 signing secret 明文或摘要。
+- endpoint URL 必须使用 `https://`，明文 HTTP 返回 `400 INVALID_WEBHOOK_URL`。
+- 只允许创建当前租户 endpoint；跨租户读取不会返回该 endpoint。
+- 当前切片只落 endpoint 管理基础，不执行外部通知投递。
+
+### GET `/api/v1/webhook-endpoints/`
+
+用途：返回当前租户可见的 webhook endpoint 列表。
+
+鉴权：需要登录态；`admin` 或 `webhooks:read` 权限可访问。响应按 endpoint ID 升序返回 `{items,total}`。
 
 ## Phase 4 Session Recording API（#t46）
 
