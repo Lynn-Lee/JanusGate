@@ -19,6 +19,7 @@ from app.api import (
     sessions,
     ssh_certificate_authorities,
     ssh_certificates,
+    webhook_endpoints,
 )
 from app.api.audits.routes import router as audits_router
 from app.api.tenancy.routes import router as tenancy_router
@@ -62,6 +63,7 @@ app.include_router(connectors.router, prefix="/api/v1")
 app.include_router(session_recordings.router, prefix="/api/v1")
 app.include_router(ssh_certificate_authorities.router, prefix="/api/v1")
 app.include_router(ssh_certificates.router, prefix="/api/v1")
+app.include_router(webhook_endpoints.router, prefix="/api/v1")
 app.include_router(sessions.router, prefix="/api/v1")
 app.include_router(workflows_router, prefix="/api/v1")
 app.include_router(tenancy_router, prefix="/api/v1")

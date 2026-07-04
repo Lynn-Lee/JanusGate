@@ -244,8 +244,9 @@ JumpServer 上游在 2026-06-26 → 07-01 期间进行了重大技术栈升级�
 3. **Connector 生产级信任链**：Phase 4 #t45 已启动 Connector Registry 心跳租约，connection token 签发前会 fail-closed 校验 active 状态与 heartbeat TTL；mTLS 证书指纹绑定已接入 registry token 签发路径；enrollment-token 绑定的 attestation nonce/digest 已接入注册路径，缺失或不匹配 attestation 时 fail-closed；active connector public key rotation 已补齐并记录 previous/current fingerprint 与轮换时间；持久化 Connector 管理 API 已补齐租户隔离的列表/创建、heartbeat 和 key rotation；轻量 Connector SDK 已覆盖 create/heartbeat/rotate-key 并避免 SDK 异常泄露 bearer token
 4. **Vault 生产级后端**：当前为内存 AES-GCM，KMS/HSM/云 Vault 待 Phase 4
 5. **Session 持久化与真实通道**：当前 session lifecycle 仍以内存 store 为主；Phase 4 #t46 已启动租户隔离的 SessionRecording 元数据与命令事件持久化，并提供录制创建、Connector 命令事件上报、录制命令时间线读取、命令检索和录制关闭 API；命令检索已补 PostgreSQL `to_tsvector` / `plainto_tsquery` 与 GIN 索引优化，SQLite 测试环境保留 `ILIKE` fallback；前端 `/sessions` 已提供按 Recording ID 加载的只读回放命令时间线入口
-6. **审计投递可靠性**：SIEM 投递失败不阻断，需补可靠队列/重试/死信
-7. **运行时安全**：镜像签名、SBOM、漏洞扫描门禁待 Phase 5
+6. **通知/WebHook 集成**：Phase 4 #t47 已启动租户隔离的 `WebhookEndpoint` 持久化模型与 `GET/POST /api/v1/webhook-endpoints/` 管理 API；响应不返回 signing secret 明文或摘要。NotificationRule、真实 IM 通知、多级审批与可靠投递仍待后续切片。
+7. **审计投递可靠性**：SIEM 投递失败不阻断，需补可靠队列/重试/死信
+8. **运行时安全**：镜像签名、SBOM、漏洞扫描门禁待 Phase 5
 
 ---
 
@@ -400,7 +401,7 @@ User ──┬── WorkflowRequest ──── JitGrant
 - `SshCertificateAuthority` / `SshCertificate`（已启动后端模型与服务契约）
 - `SessionRecording` / `CommandLog`
 - `NotificationRule` / `NotificationChannel`
-- `WebhookEndpoint`
+- `WebhookEndpoint`（已启动后端模型与管理 API）
 
 ---
 
@@ -629,7 +630,7 @@ User ──┬── WorkflowRequest ──── JitGrant
 | **#t44** | SSH CA / 临时证书 | backend + security | `SshCertificateAuthority` / `SshCertificate` 模型 + `Asset.trusted_ssh_ca_id` 信任配置字段 + CA 管理/禁用 API + 后端签发/撤销服务契约 + 临时证书签发/撤销 REST API + API 路由可用的 Vault-backed OpenSSH signer + SSH CA trust bundle API + 前端 `/ssh-ca` CA/trust bundle/临时证书入口已完成；后续补连接器生产级信任链或签发体验增强 | 高 |
 | **#t45** | 连接器/边缘网关架构 | architect + backend | Connector Registry 心跳租约与过期 fail-closed 签发检查已启动；mTLS 证书指纹绑定已接入注册与 token 签发路径；enrollment-token 绑定的 attestation nonce/digest 已接入注册路径；active connector public key rotation 已完成；持久化 Connector 管理 API 已提供租户隔离的列表/创建、heartbeat 和 key rotation，响应不泄露 token、attestation digest 或私钥材料；轻量 Connector SDK 已覆盖 create/heartbeat/rotate-key 并保留不泄露 bearer token 的错误契约 | 高 |
 | **#t46** | 会话录制、回放、命令检索 | backend + frontend | SessionRecording 与命令事件持久化模型已启动；录制创建、命令事件追加、Connector 命令事件上报、录制命令时间线读取、录制关闭和租户隔离命令检索 API 已完成，命令输出摘要会脱敏 token/password/secret/credential 赋值文本；命令检索已补 PostgreSQL full-text predicate、GIN 搜索索引和同租户倒序读取索引；前端 `/sessions` 已提供按 Recording ID 加载的只读回放命令时间线入口 | 中 |
-| **#t47** | WebHook / 通知中心 / 工单系统增强 | backend | WebhookEndpoint + NotificationRule + 真实 IM 通知 + 多级审批 | 中 |
+| **#t47** | WebHook / 通知中心 / 工单系统增强 | backend | WebhookEndpoint 持久化模型与租户隔离 `GET/POST /api/v1/webhook-endpoints/` 管理 API 已启动，响应不泄露 signing secret；后续补 NotificationRule、真实 IM 通知和多级审批 | 中 |
 | **#t48** | JIT 策略模板、审批策略 DSL | architect + backend | 策略持久化 + 版本管理 + 灰度/回滚 + 策略模拟 + DSL | 中 |
 | **#t49** | SIEM/告警/报表中心 | backend + frontend | 可靠队列 + 重试/死信/告警 + 合规报表 + Dashboard | 中 |
 | **#t50** | Vault 生产级后端 | backend + security | KMSProvider / VaultProvider + envelope encryption + 审批后 unwrap + break-glass | 高 |
