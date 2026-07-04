@@ -235,3 +235,71 @@ async def test_approval_policy_version_api_supersedes_current_tenant_policy(
     assert simulated["obligations"]["approver_subject_ids"] == ["director-1"]
     assert simulated["obligations"]["risk_level"] == "critical"
     assert cross_tenant_version_response.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_approval_policy_rollback_reactivates_selected_tenant_version(
+    session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    install_db(session_factory)
+
+    with TestClient(app) as client:
+        install_user(tenant_id="tenant-a", permissions=["workflow:admin"])
+        create_response = client.post(
+            "/api/v1/workflows/approval-policies",
+            json={
+                "resource_selector": {"asset_id": "asset-1", "protocol": "ssh"},
+                "action_selector": "session.connect",
+                "approver_subject_ids": ["manager-1"],
+                "max_grant_ttl_seconds": 900,
+                "risk_level": "high",
+            },
+        )
+        created = create_response.json()
+        version_response = client.post(
+            f"/api/v1/workflows/approval-policies/{created['id']}/versions",
+            json={
+                "resource_selector": {"asset_id": "asset-1", "protocol": "ssh"},
+                "action_selector": "session.connect",
+                "approver_subject_ids": ["director-1"],
+                "max_grant_ttl_seconds": 600,
+                "risk_level": "critical",
+            },
+        )
+        rollback_response = client.post(
+            f"/api/v1/workflows/approval-policies/{created['id']}/rollback"
+        )
+        latest_list = client.get("/api/v1/workflows/approval-policies")
+        simulate_response = client.post(
+            "/api/v1/workflows/approval-policies/simulate",
+            json={
+                "subject": {"id": "user-2", "tenant_id": "tenant-a"},
+                "action": "session.connect",
+                "resource": {"id": "asset-1", "type": "asset", "tenant_id": "tenant-a"},
+                "context": {"protocol": "ssh"},
+                "connector_trusted": True,
+            },
+        )
+
+        install_user(tenant_id="tenant-b", permissions=["workflow:admin"])
+        cross_tenant_rollback_response = client.post(
+            f"/api/v1/workflows/approval-policies/{created['id']}/rollback"
+        )
+
+    assert create_response.status_code == 201
+    assert version_response.status_code == 201
+    assert rollback_response.status_code == 200
+    rolled_back = rollback_response.json()
+    assert rolled_back["id"] == created["id"]
+    assert rolled_back["policy_family_id"] == created["policy_family_id"]
+    assert rolled_back["version"] == 1
+    assert rolled_back["is_active"] is True
+    assert rolled_back["approver_subject_ids"] == ["manager-1"]
+    assert latest_list.status_code == 200
+    assert latest_list.json()["items"] == [rolled_back]
+    assert simulate_response.status_code == 200
+    simulated = simulate_response.json()
+    assert simulated["obligations"]["approval_policy_id"] == created["id"]
+    assert simulated["obligations"]["approver_subject_ids"] == ["manager-1"]
+    assert simulated["obligations"]["risk_level"] == "high"
+    assert cross_tenant_rollback_response.status_code == 404
