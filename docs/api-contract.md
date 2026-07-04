@@ -59,7 +59,7 @@
 - Accounts：`/api/v1/accounts/*`，Phase 4 资产账号托管与 Vault secret 引用。
 - Sessions：`/api/v1/sessions/*`，会话创建/关闭，JIT grant 绑定。
 - Workflow/JIT：`/api/v1/workflows/*`，申请、提交、审批、拒绝、撤销、active grant。
-- Approval Policies：`/api/v1/workflows/approval-policies`，Phase 4 JIT 策略模板 / 审批策略基础管理。
+- Approval Policies：`/api/v1/workflows/approval-policies`，Phase 4 JIT 策略模板 / 审批策略基础管理与当前租户策略模拟。
 - Audit/SIEM：`/api/v1/audits/events`，审计事件创建和检索。
 - Tenancy：`/api/v1/tenancy/*`，Phase 4 组织/团队/项目管理与租户隔离 API。
 - Session Recordings：`/api/v1/sessions/{session_id}/recordings` 与 `/api/v1/session-recordings/*`，Phase 4 会话录制元数据、命令事件上报与命令检索。
@@ -121,7 +121,7 @@
 
 - 策略模板只能写入当前租户；跨租户读取不会返回该策略。
 - `PolicyDecisionService` 可接收已加载的 approval policy template；匹配当前租户、action selector 和 resource selector 的请求会要求 JIT approval，并在 `APPROVAL_REQUIRED` obligations 中返回 approval policy、审批人、MFA、TTL 和风险级别元数据。
-- 当前切片不执行 DSL、不做策略灰度/回滚或策略模拟。
+- 当前切片不执行 DSL、不做策略灰度/回滚。
 - 响应不返回凭据、连接 token、审批下游密钥或外部通知 secret。
 
 ### GET `/api/v1/workflows/approval-policies`
@@ -129,6 +129,66 @@
 用途：返回当前租户可见的 approval policy template 列表。
 
 鉴权：需要登录态；`admin` 或 `workflow:admin` 权限可访问。响应按 repository 当前顺序返回 `{items,total}`。
+
+### POST `/api/v1/workflows/approval-policies/simulate`
+
+用途：在当前租户内使用已保存的 approval policy templates 运行一次策略模拟，返回与 `PolicyDecisionService` 一致的 `decision`、`reason_code`、`explain_trace`、`obligations` 和 `ttl_seconds`，用于后续策略 DSL、版本管理和灰度发布前的预检。
+
+鉴权：需要登录态；`admin` 或 `workflow:admin` 权限可访问。后端只读取当前用户 `tenant_id` 下的策略模板，并把模拟请求的 subject/resource 租户锁定到当前租户，不接受前端传入 tenant 作为策略选择依据。
+
+请求体：
+
+```json
+{
+  "subject": {
+    "id": "user-2",
+    "type": "user",
+    "tenant_id": "tenant-a"
+  },
+  "action": "session.connect",
+  "resource": {
+    "id": "asset-1",
+    "type": "asset",
+    "tenant_id": "tenant-a"
+  },
+  "context": {
+    "protocol": "ssh",
+    "account_id": "account-1"
+  },
+  "connector_trusted": true,
+  "mfa_verified": false
+}
+```
+
+响应 `200`：
+
+```json
+{
+  "decision": "deny",
+  "reason_code": "APPROVAL_REQUIRED",
+  "explain_trace": [
+    "subject=user:user-2",
+    "action=session.connect",
+    "resource=asset:asset-1",
+    "approval_policy:ap_...:matched",
+    "approval_required_but_missing"
+  ],
+  "obligations": {
+    "workflow_required": true,
+    "approval_policy_id": "ap_...",
+    "approver_subject_ids": ["manager-1"],
+    "risk_level": "high"
+  },
+  "ttl_seconds": 0,
+  "audit_event_id": "audit_..."
+}
+```
+
+安全语义：
+
+- 模拟结果只基于当前租户策略；跨租户策略不会被读取或命中。
+- 响应只返回决策解释和 obligations，不返回凭据、连接 token、Webhook secret 或任何下游密钥。
+- 当前切片只模拟已保存策略模板，不执行自定义 DSL、不提供灰度发布或回滚。
 
 ## Phase 4 Webhook Endpoint API（#t47）
 
