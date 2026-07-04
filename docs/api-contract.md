@@ -75,6 +75,8 @@
 
 鉴权：需要登录态；`audit:read` 权限可访问。接口只读取当前用户 `tenant_id` 的审计事件，不接受前端传入 tenant。
 
+前端：`/audits` 审计日志页读取该接口展示报表总事件、高危事件和 SIEM failed 聚合卡片；页面不展示该接口之外的原始 metadata、message、resource_id、session_id 明细。
+
 响应 `200`：
 
 ```json
