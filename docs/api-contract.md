@@ -63,8 +63,53 @@
 - Tenancy：`/api/v1/tenancy/*`，Phase 4 组织/团队/项目管理与租户隔离 API。
 - Session Recordings：`/api/v1/sessions/{session_id}/recordings` 与 `/api/v1/session-recordings/*`，Phase 4 会话录制元数据、命令事件上报与命令检索。
 - Webhook Endpoints：`/api/v1/webhook-endpoints/*`，Phase 4 WebHook / 通知中心 endpoint 管理基础。
+- Notification Rules：`/api/v1/notification-rules/*`，Phase 4 WebHook / 通知规则管理基础。
 
 ## Phase 4 Webhook Endpoint API（#t47）
+
+### POST `/api/v1/notification-rules/`
+
+用途：在当前租户内创建一条事件通知规则，将事件类型绑定到已配置的 active WebHook endpoint。
+
+鉴权：需要登录态；`admin` 或 `notifications:write` 权限可访问。后端使用当前用户 `tenant_id` 写入，不接受前端传入 tenant。
+
+请求体：
+
+```json
+{
+  "name": "recording-closed-to-siem",
+  "event_types": ["session.recording.closed"],
+  "webhook_endpoint_id": 1
+}
+```
+
+响应 `201`：
+
+```json
+{
+  "id": 1,
+  "tenant_id": "tenant-a",
+  "name": "recording-closed-to-siem",
+  "event_types": ["session.recording.closed"],
+  "webhook_endpoint_id": 1,
+  "webhook_endpoint_name": "security-siem",
+  "status": "active",
+  "created_at": "2026-07-04T04:30:00Z",
+  "updated_at": "2026-07-04T04:30:00Z"
+}
+```
+
+安全语义：
+
+- 规则只能引用当前租户 active WebHook endpoint；跨租户、缺失或 disabled endpoint 返回 `404 WEBHOOK_ENDPOINT_NOT_FOUND`。
+- 响应不返回 WebHook signing secret 明文、摘要、连接 token 或任何外部投递凭据。
+- 当前切片只落规则管理基础，不执行外部通知投递。
+
+### GET `/api/v1/notification-rules/`
+
+用途：返回当前租户可见的通知规则列表。
+
+鉴权：需要登录态；`admin` 或 `notifications:read` 权限可访问。响应按 rule ID 升序返回 `{items,total}`。
 
 ### POST `/api/v1/webhook-endpoints/`
 
