@@ -13,7 +13,7 @@ from redis.asyncio import Redis
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.database import get_db
+from app.core.database import get_read_db
 from app.core.redis import create_redis_client
 from app.core.security import decode_token
 from app.models.user import User
@@ -36,7 +36,7 @@ async def get_redis() -> AsyncGenerator[Redis, None]:
 
 async def current_user(
     credentials: HTTPAuthorizationCredentials = Depends(security_scheme),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_read_db),
     redis: Redis = Depends(get_redis),
 ) -> dict[str, Any]:
     token = credentials.credentials

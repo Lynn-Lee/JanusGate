@@ -7,7 +7,7 @@ from redis.asyncio import Redis
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.database import get_db
+from app.core.database import get_db, get_read_db
 from app.core.deps import current_user, get_redis
 from app.core.security import (
     create_access_token,
@@ -131,7 +131,7 @@ async def refresh_token_endpoint(
 
 @router.get("/me", response_model=UserMeResponse)
 async def get_me(
-    user: dict[str, Any] = Depends(current_user), db: AsyncSession = Depends(get_db)
+    user: dict[str, Any] = Depends(current_user), db: AsyncSession = Depends(get_read_db)
 ) -> UserMeResponse:
     result = await db.execute(select(User).where(User.id == user["id"]))
     db_user = result.scalar_one_or_none()

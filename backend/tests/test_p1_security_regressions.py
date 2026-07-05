@@ -7,7 +7,7 @@ from typing import Any
 import pytest
 from fastapi.testclient import TestClient
 
-from app.core.database import get_db
+from app.core.database import get_db, get_read_db
 from app.core.deps import current_user, get_redis
 from app.core.security import (
     create_access_token,
@@ -91,6 +91,7 @@ def user(**overrides: Any) -> User:
 
 def install_auth_dependencies(db_user: User, redis: FakeRedis | None = None) -> None:
     app.dependency_overrides[get_db] = lambda: FakeDB(db_user)
+    app.dependency_overrides[get_read_db] = lambda: FakeDB(db_user)
     app.dependency_overrides[get_redis] = lambda: redis or FakeRedis()
 
 
