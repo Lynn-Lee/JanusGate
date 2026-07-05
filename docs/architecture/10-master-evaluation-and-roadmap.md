@@ -662,7 +662,7 @@ User ──┬── WorkflowRequest ──── JitGrant
 
 | 任务 ID | 任务 | Owner | 范围 |
 |---------|------|-------|------|
-| **#t53** | 高可用部署与水平扩展 | devops + architect | 无状态 Core 前置切片已启动：Session connection token store 可通过 `SESSION_CONNECTION_TOKEN_STORE=redis` 切换到 Redis-backed 单次消费存储，使用 `REDIS_URL` 和 `SESSION_CONNECTION_TOKEN_REDIS_KEY_PREFIX` 装配；Redis 模式只保存 token digest key 和 JSON 元数据，签发时写入 TTL，消费时通过 `GETDEL` 原子删除，默认 `memory` store 继续服务本地开发和单副本部署；后端 Redis client 已支持 `REDIS_MODE=single|sentinel|cluster`，Sentinel 通过 `REDIS_SENTINEL_URLS` / `REDIS_SENTINEL_MASTER_NAME` 装配，Cluster 通过 `REDIS_CLUSTER_URLS` 装配，Helm chart 已暴露对应 `config.redis*` 参数；Helm chart 已提供可选 HPA 模板，启用 `autoscaling.enabled=true` 时必须显式设置 `config.sessionConnectionTokenStore=redis`，否则模板渲染 fail-closed；后续补 PG 主从/读写分离与完整多副本 smoke |
+| **#t53** | 高可用部署与水平扩展 | devops + architect | 无状态 Core 前置切片已启动：Session connection token store 可通过 `SESSION_CONNECTION_TOKEN_STORE=redis` 切换到 Redis-backed 单次消费存储，使用 `REDIS_URL` 和 `SESSION_CONNECTION_TOKEN_REDIS_KEY_PREFIX` 装配；Redis 模式只保存 token digest key 和 JSON 元数据，签发时写入 TTL，消费时通过 `GETDEL` 原子删除，默认 `memory` store 继续服务本地开发和单副本部署；后端 Redis client 已支持 `REDIS_MODE=single|sentinel|cluster`，Sentinel 通过 `REDIS_SENTINEL_URLS` / `REDIS_SENTINEL_MASTER_NAME` 装配，Cluster 通过 `REDIS_CLUSTER_URLS` 装配，Helm chart 已暴露对应 `config.redis*` 参数；Helm chart 已提供可选 HPA 模板，启用 `autoscaling.enabled=true` 时必须显式设置 `config.sessionConnectionTokenStore=redis`，否则模板渲染 fail-closed；数据库读副本 foundation 已启动，`DATABASE_READ_REPLICA_URL` 可配置独立只读 engine，默认空值复用写库 engine，Compose/Helm 已提供可选注入；后续补读写路由接入与完整多副本 smoke |
 | **#t54** | 审计合规报表 | backend + frontend | WORM 存储 + 合规模板 + 导出 + 签名 |
 | **#t55** | 性能压测与容量模型 | qa + devops | 压测脚本 + 容量基线 + SLO 定义 |
 | **#t56** | 安全基线扫描与 SBOM | security + devops | 镜像签名 + SBOM 生成 + 漏洞扫描门禁 + 运行时监控 |

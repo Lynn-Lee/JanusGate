@@ -20,6 +20,7 @@ class Settings(BaseSettings):
 
     # ── Database ──
     DATABASE_URL: str = "postgresql+asyncpg://janusgate:janusgate@localhost:5432/janusgate"
+    DATABASE_READ_REPLICA_URL: str = ""
     DB_POOL_SIZE: int = 20
     DB_MAX_OVERFLOW: int = 10
     DB_POOL_TIMEOUT: int = 30
