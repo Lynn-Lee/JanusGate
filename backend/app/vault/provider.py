@@ -34,6 +34,23 @@ class KmsKeyProvider(Protocol):
     def unwrap_key(self, wrapped_key: str) -> bytes: ...
 
 
+class SecretRecordStore(Protocol):
+    def put(self, record: SecretRecord) -> None: ...
+
+    def get(self, secret_id: str) -> SecretRecord | None: ...
+
+
+class InMemorySecretRecordStore:
+    def __init__(self) -> None:
+        self._records: dict[str, SecretRecord] = {}
+
+    def put(self, record: SecretRecord) -> None:
+        self._records[record.id] = record
+
+    def get(self, secret_id: str) -> SecretRecord | None:
+        return self._records.get(secret_id)
+
+
 class LocalEncryptedSecretProvider:
     """Development SecretProvider backed by in-memory AES-GCM records.
 
@@ -103,20 +120,24 @@ class LocalEncryptedSecretProvider:
 
 
 class EnvelopeEncryptedSecretProvider:
-    """In-memory envelope-encrypted provider backed by an external KMS contract."""
+    """Envelope-encrypted provider backed by an external KMS contract."""
 
-    def __init__(self, kms_provider: KmsKeyProvider) -> None:
+    def __init__(
+        self,
+        kms_provider: KmsKeyProvider,
+        record_store: SecretRecordStore | None = None,
+    ) -> None:
         self._kms_provider = kms_provider
-        self._records: dict[str, SecretRecord] = {}
+        self._record_store = record_store or InMemorySecretRecordStore()
 
     def create_secret(self, name: str, plaintext: str) -> SecretRecord:
         secret_id = f"sec_{uuid4().hex}"
         record = self._encrypt_record(secret_id=secret_id, name=name, plaintext=plaintext, version=1)
-        self._records[secret_id] = record
+        self._record_store.put(record)
         return record
 
     def get_record(self, secret_id: str) -> SecretRecord:
-        record = self._records.get(secret_id)
+        record = self._record_store.get(secret_id)
         if record is None:
             raise ValueError("SECRET_NOT_FOUND")
         return record
@@ -137,12 +158,13 @@ class EnvelopeEncryptedSecretProvider:
             plaintext=new_plaintext,
             version=current.version + 1,
         )
-        self._records[secret_id] = rotated
+        self._record_store.put(rotated)
         return rotated
 
     def revoke(self, secret_id: str) -> None:
         current = self.get_record(secret_id)
         current.status = SecretStatus.REVOKED
+        self._record_store.put(current)
 
     def _encrypt_record(self, secret_id: str, name: str, plaintext: str, version: int) -> SecretRecord:
         data_key = os.urandom(32)
