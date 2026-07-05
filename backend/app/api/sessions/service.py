@@ -6,6 +6,7 @@ shared ORM/model owner area before persistence contracts are finalized.
 from __future__ import annotations
 
 import hashlib
+import json
 import secrets
 import uuid
 from collections.abc import Callable
@@ -103,6 +104,14 @@ class ConnectionTokenStore(Protocol):
 
     async def consume(self, token_id: str, now: datetime) -> ConnectionToken:
         """Consume and return a short-lived connection token."""
+
+
+class RedisConnectionTokenClient(Protocol):
+    async def set(self, key: str, value: str, *, ex: int, nx: bool) -> bool | None:
+        """Set a Redis key with TTL and NX semantics."""
+
+    async def getdel(self, key: str) -> str | bytes | None:
+        """Atomically read and delete a Redis key."""
 
 
 class ConnectorScheduler(Protocol):
@@ -227,6 +236,66 @@ class InMemoryConnectionTokenStore:
         token = self._tokens_by_digest.pop(self._digest(token_id), None)
         if token is None:
             raise ValueError("CONNECTION_TOKEN_NOT_FOUND")
+        return token
+
+    @staticmethod
+    def _digest(token_id: str) -> str:
+        return hashlib.sha256(token_id.encode("utf-8")).hexdigest()
+
+
+class RedisConnectionTokenStore:
+    """Redis-backed single-use connection token store for stateless API replicas."""
+
+    def __init__(
+        self,
+        redis: RedisConnectionTokenClient,
+        *,
+        token_id_factory: Callable[[], str] | None = None,
+        key_prefix: str = "janusgate:session:connection-token:",
+    ) -> None:
+        self._redis = redis
+        self._token_id_factory = token_id_factory or (lambda: f"jgt_{secrets.token_urlsafe(32)}")
+        self._key_prefix = key_prefix
+
+    async def issue(
+        self,
+        token: ConnectionToken,
+        *,
+        now: datetime | None = None,
+    ) -> ConnectionTokenIssue:
+        current_time = now or datetime.now(UTC)
+        raw_token = self._token_id_factory()
+        token_digest = self._digest(raw_token)
+        stored_token = token.model_copy(update={"token_id": token_digest})
+        expires_in = max(1, int((_comparable_datetime(token.expires_at, current_time) - current_time).total_seconds()))
+        stored = await self._redis.set(
+            f"{self._key_prefix}{token_digest}",
+            stored_token.model_dump_json(),
+            ex=expires_in,
+            nx=True,
+        )
+        if not stored:
+            raise ValueError("CONNECTION_TOKEN_COLLISION")
+        return ConnectionTokenIssue(
+            connection_token=raw_token,
+            expires_at=token.expires_at,
+            subject_id=token.subject_id,
+            tenant_id=token.tenant_id,
+            asset_id=token.asset_id,
+            account_id=token.account_id,
+            protocol=token.protocol,
+            action=token.action,
+            jit_grant_id=token.jit_grant_id,
+            workflow_request_id=token.workflow_request_id,
+        )
+
+    async def consume(self, token_id: str, now: datetime) -> ConnectionToken:
+        payload = await self._redis.getdel(f"{self._key_prefix}{self._digest(token_id)}")
+        if payload is None:
+            raise ValueError("CONNECTION_TOKEN_NOT_FOUND")
+        if isinstance(payload, bytes):
+            payload = payload.decode("utf-8")
+        token = ConnectionToken.model_validate(json.loads(payload))
         return token
 
     @staticmethod

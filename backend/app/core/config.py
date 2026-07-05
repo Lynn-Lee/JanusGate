@@ -26,6 +26,8 @@ class Settings(BaseSettings):
 
     # ── Redis ──
     REDIS_URL: str = "redis://localhost:6379/0"
+    SESSION_CONNECTION_TOKEN_STORE: Literal["memory", "redis"] = "memory"
+    SESSION_CONNECTION_TOKEN_REDIS_KEY_PREFIX: str = "janusgate:session:connection-token:"
 
     # ── Vault / KMS ──
     VAULT_LOCAL_KMS_MASTER_KEY: str = ""
