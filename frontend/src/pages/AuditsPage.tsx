@@ -1,9 +1,9 @@
-import { Card, Descriptions, Drawer, Input, Select, Space, Statistic, Table, Tag, Typography } from 'antd';
+import { Button, Card, Descriptions, Drawer, Input, Select, Space, Statistic, Table, Tag, Typography } from 'antd';
 import { useState } from 'react';
 import { useAuth } from '../auth/AuthContext';
 import { ErrorState, LoadingState } from '../components/StatusView';
-import { useApiData } from './pageUtils';
-import type { AuditEvent, AuditListResponse, AuditReportSummary } from './types';
+import { getErrorMessage, useApiData, useApiMessage } from './pageUtils';
+import type { AuditComplianceReport, AuditEvent, AuditListResponse, AuditReportSummary } from './types';
 
 export const auditMetadataRedactedKeys = [
   'password',
@@ -33,9 +33,34 @@ export function safeMetadata(metadata: Record<string, unknown>) {
 
 export function AuditsPage() {
   const { api } = useAuth();
+  const apiMessage = useApiMessage();
   const [selected, setSelected] = useState<AuditEvent | null>(null);
+  const [downloadingCompliance, setDownloadingCompliance] = useState(false);
+  const [complianceReport, setComplianceReport] = useState<AuditComplianceReport | null>(null);
   const summary = useApiData(() => api.get<AuditReportSummary>('/api/v1/audits/reports/summary'), []);
   const events = useApiData(() => api.get<AuditListResponse>('/api/v1/audits/events'), []);
+
+  const downloadComplianceReport = async () => {
+    setDownloadingCompliance(true);
+    try {
+      const report = await api.get<AuditComplianceReport>('/api/v1/audits/reports/compliance?template=soc2-access');
+      setComplianceReport(report);
+      const blob = new Blob([JSON.stringify(report, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `janusgate-${report.template}-compliance-report.json`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+      apiMessage.success('合规报表已生成');
+    } catch (error) {
+      apiMessage.error(getErrorMessage(error));
+    } finally {
+      setDownloadingCompliance(false);
+    }
+  };
 
   return (
     <section className="jg-page">
@@ -44,6 +69,9 @@ export function AuditsPage() {
           <Typography.Title level={2}>审计日志</Typography.Title>
           <Typography.Text type="secondary">追踪登录、申请、审批、会话创建、撤销和断连等关键安全事件。</Typography.Text>
         </div>
+        <Button type="primary" loading={downloadingCompliance} onClick={downloadComplianceReport}>
+          下载 SOC2 报表
+        </Button>
       </div>
       <div className="jg-card-grid">
         <Card>
@@ -58,6 +86,14 @@ export function AuditsPage() {
         </Card>
         <Card>
           <Statistic title="SIEM failed" value={summary.data?.by_siem_delivery_status.failed ?? 0} />
+        </Card>
+        <Card>
+          <Statistic title="合规报表事件" value={complianceReport?.total ?? 0} />
+          {complianceReport ? (
+            <Typography.Text type="secondary" copyable>
+              {complianceReport.report_signature}
+            </Typography.Text>
+          ) : null}
         </Card>
       </div>
       <Card>

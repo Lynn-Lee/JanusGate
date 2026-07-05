@@ -289,6 +289,7 @@ template=soc2-access
 - 响应只返回事件 ID、hash chain 起止、报告期间、模板和 HMAC-SHA256 报表签名。
 - 响应不返回 audit metadata、message、resource_id、session_id、SIEM 下游错误或任何可能含 token/secret/password 的明细字段。
 - 租户隔离以当前认证用户为准，跨租户事件不会进入 `event_ids`、hash chain 起止或 total。
+- 前端 `/audits` 使用该接口生成 SOC2 合规报表 JSON 下载文件，并只展示事件数量与报表签名摘要，不展示原始审计明细。
 
 ## Phase 4 Approval Policy API（#t48）
 

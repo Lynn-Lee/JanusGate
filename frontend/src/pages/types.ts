@@ -118,6 +118,19 @@ export type AuditReportSummary = {
   by_siem_delivery_status: Record<string, number>;
 };
 
+export type AuditComplianceReport = {
+  tenant_id: string;
+  template: string;
+  total: number;
+  event_ids: string[];
+  hash_chain_start: string;
+  hash_chain_end: string;
+  period_start: string | null;
+  period_end: string | null;
+  generated_at: string;
+  report_signature: string;
+};
+
 export type Organization = {
   id: string;
   tenant_id: string;
