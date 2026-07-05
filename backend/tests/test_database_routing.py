@@ -3,8 +3,11 @@ from __future__ import annotations
 
 from typing import Any
 
+from fastapi.routing import APIRoute
+
+from app.api.assets import router as assets_router
 from app.core.config import Settings
-from app.core.database import create_database_engines
+from app.core.database import create_database_engines, get_db, get_read_db
 
 
 def test_create_database_engines_defaults_read_engine_to_writer() -> None:
@@ -50,3 +53,38 @@ def test_create_database_engines_uses_configured_read_replica() -> None:
         "postgresql+asyncpg://writer/janusgate",
         "postgresql+asyncpg://reader/janusgate",
     ]
+
+
+def test_asset_read_routes_use_read_database_dependency() -> None:
+    read_routes = [
+        ("GET", "/assets/"),
+        ("GET", "/assets/platforms"),
+        ("GET", "/assets/{asset_id}"),
+    ]
+
+    for method, path in read_routes:
+        dependencies = _route_dependency_calls(method=method, path=path)
+        assert get_read_db in dependencies
+        assert get_db not in dependencies
+
+
+def test_asset_write_routes_keep_writer_database_dependency() -> None:
+    write_routes = [
+        ("POST", "/assets/"),
+        ("DELETE", "/assets/{asset_id}"),
+        ("POST", "/assets/platforms"),
+    ]
+
+    for method, path in write_routes:
+        dependencies = _route_dependency_calls(method=method, path=path)
+        assert get_db in dependencies
+        assert get_read_db not in dependencies
+
+
+def _route_dependency_calls(*, method: str, path: str) -> set[Any]:
+    for route in assets_router.routes:
+        if not isinstance(route, APIRoute):
+            continue
+        if route.path == path and method in route.methods:
+            return {dependency.call for dependency in route.dependant.dependencies}
+    raise AssertionError(f"Route not found: {method} {path}")

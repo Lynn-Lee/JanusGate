@@ -113,7 +113,7 @@ Redis 模式只保存 token digest key 和 JSON 元数据，签发时使用 TTL�
 
 生产推荐方案是启用 Redis-backed shared token store，要求 token 短 TTL、一次性消费、撤销状态和审计事件在副本间一致；完成 Redis 模式主链路验证前，不把无粘性多副本视为可放行生产形态。
 
-数据库默认仍使用 `DATABASE_URL` 单写库连接。Phase 5 #t53 起可通过 `DATABASE_READ_REPLICA_URL` 配置可选只读副本；未设置时只读 session factory 复用写库 engine，保持本地开发、Compose 和单副本部署行为不变。该值属于数据库连接串，Helm 中通过 Secret 注入，不写入 ConfigMap 或普通 values 明文；启用前应确认 PostgreSQL 主从复制延迟不会影响需要强一致的写后读路径。
+数据库默认仍使用 `DATABASE_URL` 单写库连接。Phase 5 #t53 起可通过 `DATABASE_READ_REPLICA_URL` 配置可选只读副本；未设置时只读 session factory 复用写库 engine，保持本地开发、Compose 和单副本部署行为不变。资产列表、资产详情和平台列表 GET 路由已接入 read session dependency，写入、删除和连接测试等可能改变状态或要求强一致的路径仍走 writer session。该值属于数据库连接串，Helm 中通过 Secret 注入，不写入 ConfigMap 或普通 values 明文；启用前应确认 PostgreSQL 主从复制延迟不会影响需要强一致的写后读路径。
 
 后端 Redis client 支持三种部署形态：
 

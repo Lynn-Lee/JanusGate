@@ -6,7 +6,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
-from app.core.database import get_db
+from app.core.database import get_db, get_read_db
 from app.core.deps import require_permission
 from app.models.asset import Platform
 from app.schemas.asset import AssetCreate, AssetResponse, PlatformCreate, PlatformResponse
@@ -19,7 +19,7 @@ router = APIRouter(prefix="/assets", tags=["资产管理"])
 async def list_assets(
     skip: int = Query(0, ge=0),
     limit: int = Query(50, ge=1, le=200),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_read_db),
     _user: dict[str, Any] = Depends(require_permission("assets:read")),
 ) -> list[AssetResponse]:
     assets = await AssetService.list_assets(db, skip, limit)
@@ -89,7 +89,7 @@ async def create_platform(
 
 @router.get("/platforms", response_model=list[PlatformResponse])
 async def list_platforms(
-    db: AsyncSession = Depends(get_db), _user: dict[str, Any] = Depends(require_permission("assets:read"))
+    db: AsyncSession = Depends(get_read_db), _user: dict[str, Any] = Depends(require_permission("assets:read"))
 ) -> list[PlatformResponse]:
     result = await db.execute(select(Platform).order_by(Platform.id))
     platforms = result.scalars().all()
@@ -104,7 +104,7 @@ async def list_platforms(
 
 @router.get("/{asset_id}", response_model=AssetResponse)
 async def get_asset(
-    asset_id: int, db: AsyncSession = Depends(get_db), _user: dict[str, Any] = Depends(require_permission("assets:read"))
+    asset_id: int, db: AsyncSession = Depends(get_read_db), _user: dict[str, Any] = Depends(require_permission("assets:read"))
 ) -> AssetResponse:
     asset = await AssetService.get_asset(db, asset_id)
     if not asset:
