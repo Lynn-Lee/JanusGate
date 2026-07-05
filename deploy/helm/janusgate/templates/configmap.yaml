@@ -8,6 +8,8 @@ data:
   APP_ENV: {{ .Values.config.appEnv | quote }}
   LOG_LEVEL: {{ .Values.config.logLevel | quote }}
   REDIS_URL: {{ .Values.config.redisUrl | quote }}
+  SESSION_CONNECTION_TOKEN_STORE: {{ .Values.config.sessionConnectionTokenStore | quote }}
+  SESSION_CONNECTION_TOKEN_REDIS_KEY_PREFIX: {{ .Values.config.sessionConnectionTokenRedisKeyPrefix | quote }}
   CORS_ORIGINS: {{ .Values.config.corsOrigins | quote }}
   RATE_LIMIT_LOGIN_PER_MINUTE: {{ .Values.config.rateLimitLoginPerMinute | quote }}
   RATE_LIMIT_GLOBAL_PER_MINUTE: {{ .Values.config.rateLimitGlobalPerMinute | quote }}

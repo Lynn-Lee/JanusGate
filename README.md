@@ -93,4 +93,4 @@ Phase 4 #t52 已启动 Automation Worker 队列、消费循环与调度 API 基�
 
 ## Phase 5 高可用与水平扩展
 
-Phase 5 #t53 已启动无状态 Core 的前置切片：Session connection token store 现在可通过 `SESSION_CONNECTION_TOKEN_STORE=redis` 切换到 Redis-backed 单次消费存储，使用 `REDIS_URL` 与 `SESSION_CONNECTION_TOKEN_REDIS_KEY_PREFIX` 装配。Redis 模式只保存 token digest key 和 JSON 元数据，签发时使用 TTL，消费时通过 Redis `GETDEL` 原子删除，避免多副本下 token 签发和消费必须落在同一后端进程。默认仍为 `memory`，本地开发和单副本部署无需额外 Redis 配置。
+Phase 5 #t53 已启动无状态 Core 的前置切片：Session connection token store 现在可通过 `SESSION_CONNECTION_TOKEN_STORE=redis` 切换到 Redis-backed 单次消费存储，使用 `REDIS_URL` 与 `SESSION_CONNECTION_TOKEN_REDIS_KEY_PREFIX` 装配。Redis 模式只保存 token digest key 和 JSON 元数据，签发时使用 TTL，消费时通过 Redis `GETDEL` 原子删除，避免多副本下 token 签发和消费必须落在同一后端进程。默认仍为 `memory`，本地开发和单副本部署无需额外 Redis 配置。Helm chart 已提供可选 HPA 模板；启用 `autoscaling.enabled=true` 时必须同时设置 `config.sessionConnectionTokenStore=redis`，否则模板渲染 fail-closed。

@@ -28,3 +28,24 @@ def test_compose_internal_dependencies_do_not_bind_fixed_host_ports() -> None:
 
     assert "ports" not in compose["services"]["postgres"]
     assert "ports" not in compose["services"]["redis"]
+
+
+def test_helm_chart_supports_hpa_without_static_replicas_when_enabled() -> None:
+    values = yaml.safe_load((REPO_ROOT / "deploy/helm/janusgate/values.yaml").read_text())
+    hpa_template = (REPO_ROOT / "deploy/helm/janusgate/templates/hpa.yaml").read_text()
+    deployment_template = (
+        REPO_ROOT / "deploy/helm/janusgate/templates/deployment.yaml"
+    ).read_text()
+
+    assert values["autoscaling"] == {
+        "enabled": False,
+        "minReplicas": 2,
+        "maxReplicas": 5,
+        "targetCPUUtilizationPercentage": 70,
+        "targetMemoryUtilizationPercentage": 80,
+    }
+    assert values["config"]["sessionConnectionTokenStore"] == "memory"
+    assert "kind: HorizontalPodAutoscaler" in hpa_template
+    assert "scaleTargetRef:" in hpa_template
+    assert "autoscaling requires config.sessionConnectionTokenStore=redis" in hpa_template
+    assert "{{- if not .Values.autoscaling.enabled }}" in deployment_template
