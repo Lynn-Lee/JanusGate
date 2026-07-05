@@ -159,6 +159,18 @@ scripts/phase5-ha-config-smoke.sh
 
 该脚本执行 `docker compose config`，确认 Compose read-replica 环境变量可渲染；随后验证 Helm 在 `autoscaling.enabled=true` 且 `config.sessionConnectionTokenStore=memory` 时 fail-closed；最后渲染 Redis-backed connection token store、Sentinel Redis 配置、HPA 和 `DATABASE_READ_REPLICA_URL` Secret 注入的多副本配置。它是配置级 smoke，不会启动真实多副本集群；发布前仍需在目标 Kubernetes 环境执行 connection token 主链路和读副本延迟验收。
 
+真实 Kubernetes 多副本 smoke 使用当前 kube context 部署 Helm release，等待 Deployment rollout 和至少 2 个 ready Pod，并通过 Service port-forward 请求 `/health`：
+
+```bash
+export SECRET_KEY="$(python -c 'import secrets; print(secrets.token_hex(32))')"
+export DATABASE_URL='postgresql+asyncpg://janusgate:***@postgres-writer:5432/janusgate'
+export DATABASE_READ_REPLICA_URL='postgresql+asyncpg://janusgate_reader:***@postgres-read:5432/janusgate'
+export REDIS_URL='redis://redis-master:6379/0'
+scripts/phase5-k8s-multi-replica-smoke.sh
+```
+
+脚本要求 `helm`、`kubectl` 和 `curl` 可用，当前 Kubernetes 身份可创建 namespace，并且外部 PostgreSQL writer/read replica 与 Redis 已可被集群内 Pod 访问。它会把敏感值写入本地权限为 `0600` 的临时 Helm values 文件，不通过命令行 `--set` 打印 secret；退出时会卸载 smoke release，并在本轮创建 namespace 时删除 namespace。GitHub Actions 中该 smoke 默认不运行；只有显式设置 repository variable `JANUSGATE_RUN_K8S_SMOKE=1` 且提供 `JANUSGATE_SMOKE_SECRET_KEY`、`JANUSGATE_SMOKE_DATABASE_URL`、`JANUSGATE_SMOKE_DATABASE_READ_REPLICA_URL` 和 `JANUSGATE_SMOKE_REDIS_URL` secrets 时才会执行。
+
 ## 5. 发布与回滚
 
 发布最小步骤：

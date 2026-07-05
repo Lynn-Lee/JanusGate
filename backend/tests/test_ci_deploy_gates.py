@@ -29,6 +29,12 @@ def test_ci_runs_phase5_ha_config_smoke_gate() -> None:
     assert "scripts/phase5-ha-config-smoke.sh" in workflow
 
 
+def test_ci_runs_phase5_k8s_multi_replica_smoke_gate() -> None:
+    workflow = (REPO_ROOT / ".github/workflows/ci.yml").read_text()
+
+    assert "scripts/phase5-k8s-multi-replica-smoke.sh" in workflow
+
+
 def test_phase5_ha_config_smoke_covers_redis_hpa_and_read_replica() -> None:
     script = (REPO_ROOT / "scripts/phase5-ha-config-smoke.sh").read_text()
 
@@ -37,6 +43,23 @@ def test_phase5_ha_config_smoke_covers_redis_hpa_and_read_replica() -> None:
     assert "DATABASE_READ_REPLICA_URL" in script
     assert "autoscaling requires config.sessionConnectionTokenStore=redis" in script
     assert "docker compose config" in script
+
+
+def test_phase5_k8s_multi_replica_smoke_verifies_live_cluster_rollout() -> None:
+    script = (REPO_ROOT / "scripts/phase5-k8s-multi-replica-smoke.sh").read_text()
+
+    assert "command -v kubectl" in script
+    assert "kubectl auth can-i create namespace" in script
+    assert "autoscaling:" in script
+    assert "enabled: true" in script
+    assert "sessionConnectionTokenStore: redis" in script
+    assert "kubectl rollout status deployment/" in script
+    assert "kubectl wait --for=condition=ready pod" in script
+    assert "jsonpath='{.items[*].metadata.name}'" in script
+    assert "wc -w" in script
+    assert "kubectl port-forward svc/" in script
+    assert "http://127.0.0.1:${local_port}/health" in script
+    assert "helm uninstall" in script
 
 
 def test_compose_internal_dependencies_do_not_bind_fixed_host_ports() -> None:
