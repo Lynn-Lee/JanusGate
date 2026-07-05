@@ -181,3 +181,6 @@ jobs:
 
       - name: Render JanusGate chart
         run: helm template janusgate deploy/helm/janusgate
+
+      - name: Phase 5 HA config smoke
+        run: scripts/phase5-ha-config-smoke.sh
