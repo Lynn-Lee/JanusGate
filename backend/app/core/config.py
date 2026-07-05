@@ -27,6 +27,9 @@ class Settings(BaseSettings):
     # ── Redis ──
     REDIS_URL: str = "redis://localhost:6379/0"
 
+    # ── Vault / KMS ──
+    VAULT_LOCAL_KMS_MASTER_KEY: str = ""
+
     # ── Security ──
     SECRET_KEY: str = ""
     JWT_ALGORITHM: str = "HS256"
