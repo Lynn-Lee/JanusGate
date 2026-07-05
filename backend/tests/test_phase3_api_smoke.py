@@ -6,7 +6,7 @@ from datetime import UTC, datetime
 from fastapi.testclient import TestClient
 
 from app.api.audits.service import audit_service
-from app.api.sessions.routes import get_session_gateway_service
+from app.api.sessions.routes import get_read_session_gateway_service, get_session_gateway_service
 from app.api.sessions.service import (
     InMemoryConnectionTokenStore,
     InMemorySessionStore,
@@ -66,6 +66,7 @@ def test_phase3_api_smoke_runs_jit_session_revoke_audit_chain() -> None:
 
     app.dependency_overrides[get_workflow_service] = lambda: workflow_service
     app.dependency_overrides[get_session_gateway_service] = lambda: session_service
+    app.dependency_overrides[get_read_session_gateway_service] = lambda: session_service
     app.dependency_overrides[current_user] = requester_user
     try:
         with TestClient(app, client=("198.51.100.30", 50000)) as client:

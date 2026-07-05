@@ -25,7 +25,7 @@ from app.api.sessions.service import (
     SessionGatewayService,
 )
 from app.core.config import settings
-from app.core.database import get_db
+from app.core.database import get_db, get_read_db
 from app.core.deps import current_user
 from app.core.redis import create_redis_client
 from app.policy.decision import PolicyDecisionService
@@ -76,6 +76,16 @@ def get_session_revoker() -> SessionGatewayService:
 
 
 def get_session_gateway_service(db: AsyncSession = Depends(get_db)) -> SessionGatewayService:
+    return _build_session_gateway_service(db)
+
+
+def get_read_session_gateway_service(
+    db: AsyncSession = Depends(get_read_db),
+) -> SessionGatewayService:
+    return _build_session_gateway_service(db)
+
+
+def _build_session_gateway_service(db: AsyncSession) -> SessionGatewayService:
     from app.api.workflows.service import SQLAlchemyWorkflowStore, WorkflowService
 
     workflow_service = WorkflowService(
@@ -131,7 +141,7 @@ async def issue_connection_token(
 @router.get("/", response_model=SessionListResponse)
 async def list_sessions(
     user: dict[str, Any] = Depends(current_user),
-    service: SessionGatewayService = Depends(get_session_gateway_service),
+    service: SessionGatewayService = Depends(get_read_session_gateway_service),
 ) -> SessionListResponse:
     sessions = await service.list_sessions(
         subject_id=str(user["id"]),
