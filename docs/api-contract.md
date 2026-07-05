@@ -60,7 +60,7 @@
 - Sessions：`/api/v1/sessions/*`，会话创建/关闭，JIT grant 绑定。
 - Workflow/JIT：`/api/v1/workflows/*`，申请、提交、审批、拒绝、撤销、active grant。
 - Approval Policies：`/api/v1/workflows/approval-policies`，Phase 4 JIT 策略模板 / 审批策略基础管理与当前租户策略模拟。
-- Audit/SIEM：`/api/v1/audits/events` 与 `/api/v1/audits/reports/summary`，审计事件创建、检索和当前租户报表汇总。
+- Audit/SIEM：`/api/v1/audits/events`、`/api/v1/audits/reports/summary` 与 `/api/v1/audits/reports/compliance`，审计事件创建、检索、当前租户报表汇总和合规报表导出基础。
 - Tenancy：`/api/v1/tenancy/*`，Phase 4 组织/团队/项目管理与租户隔离 API。
 - Session Recordings：`/api/v1/sessions/{session_id}/recordings` 与 `/api/v1/session-recordings/*`，Phase 4 会话录制元数据、命令事件上报与命令检索。
 - Webhook Endpoints：`/api/v1/webhook-endpoints/*`，Phase 4 WebHook / 通知中心 endpoint 管理基础。
@@ -73,7 +73,7 @@
 
 ## Phase 5 Database Read Routing（#t53）
 
-可配置只读副本通过 `DATABASE_READ_REPLICA_URL` 装配；未配置时 read session factory 复用 writer engine，不改变本地开发和单副本部署行为。资产列表、资产详情、平台列表、账号列表、账号轮换列表、会话列表、会话录制命令时间线、命令检索、Tenancy Organization/Team/Project 列表、WebHook endpoint 列表、通知规则列表、通知投递列表、Connector 列表、SSH CA 列表、SSH CA trust bundle、SSH certificate 列表、Automation job run 列表、approval policy 列表、认证态用户详情 `/api/v1/auth/me`、Workflow request 列表/详情以及 active JIT grant 列表 GET 路由已通过 read database dependency 或 read session service factory 读取。当前 `GET /api/v1/audits/events` 与 `GET /api/v1/audits/reports/summary` 仍读取进程内 audit service，不接入 SQLAlchemy session；`tests/test_database_routing.py` 已把这两个 audit GET 路由登记为显式 DB-free 例外，并覆盖所有 GET 路由必须被归类。登录、2FA、refresh token、MFA/密码/API key 变更、Session connection token 签发、Session 创建和关闭，以及 Workflow request 创建、提交、审批、拒绝、撤销继续使用 writer session，以保证 token 消费、状态机变更、grant 生成、审计和 session revoke 相关路径强一致。
+可配置只读副本通过 `DATABASE_READ_REPLICA_URL` 装配；未配置时 read session factory 复用 writer engine，不改变本地开发和单副本部署行为。资产列表、资产详情、平台列表、账号列表、账号轮换列表、会话列表、会话录制命令时间线、命令检索、Tenancy Organization/Team/Project 列表、WebHook endpoint 列表、通知规则列表、通知投递列表、Connector 列表、SSH CA 列表、SSH CA trust bundle、SSH certificate 列表、Automation job run 列表、approval policy 列表、认证态用户详情 `/api/v1/auth/me`、Workflow request 列表/详情以及 active JIT grant 列表 GET 路由已通过 read database dependency 或 read session service factory 读取。当前 `GET /api/v1/audits/events`、`GET /api/v1/audits/reports/summary` 与 `GET /api/v1/audits/reports/compliance` 仍读取进程内 audit service，不接入 SQLAlchemy session；`tests/test_database_routing.py` 已把这些 audit GET 路由登记为显式 DB-free 例外，并覆盖所有 GET 路由必须被归类。登录、2FA、refresh token、MFA/密码/API key 变更、Session connection token 签发、Session 创建和关闭，以及 Workflow request 创建、提交、审批、拒绝、撤销继续使用 writer session，以保证 token 消费、状态机变更、grant 生成、审计和 session revoke 相关路径强一致。
 
 支持的 `job_type` 白名单：
 
@@ -252,6 +252,43 @@
 - 响应只返回聚合计数，不返回 audit metadata、message、resource_id、session_id 或任何可能含 token/secret/password 的明细字段。
 - 租户隔离以当前认证用户为准，跨租户事件不会参与统计。
 - `high_or_critical_total` 用于告警中心后续切片的高危事件入口，不等同于已实现告警投递。
+
+## Phase 5 Audit Compliance Report API（#t54）
+
+### GET `/api/v1/audits/reports/compliance`
+
+用途：导出当前租户指定合规模板的审计完整性证明基础，用于 SOC2/ISO 类访问审计材料的后续文件导出与签章能力。
+
+鉴权：需要登录态；`audit:read` 权限可访问。接口只读取当前用户 `tenant_id` 的审计事件，不接受前端传入 tenant。
+
+查询参数：
+
+```text
+template=soc2-access
+```
+
+响应 `200`：
+
+```json
+{
+  "tenant_id": "tenant-a",
+  "template": "soc2-access",
+  "total": 2,
+  "event_ids": ["audit-1", "audit-2"],
+  "hash_chain_start": "sha256...",
+  "hash_chain_end": "sha256...",
+  "period_start": "2026-07-05T15:30:00Z",
+  "period_end": "2026-07-05T15:35:00Z",
+  "generated_at": "2026-07-05T15:40:00Z",
+  "report_signature": "hmac-sha256..."
+}
+```
+
+安全语义：
+
+- 响应只返回事件 ID、hash chain 起止、报告期间、模板和 HMAC-SHA256 报表签名。
+- 响应不返回 audit metadata、message、resource_id、session_id、SIEM 下游错误或任何可能含 token/secret/password 的明细字段。
+- 租户隔离以当前认证用户为准，跨租户事件不会进入 `event_ids`、hash chain 起止或 total。
 
 ## Phase 4 Approval Policy API（#t48）
 
