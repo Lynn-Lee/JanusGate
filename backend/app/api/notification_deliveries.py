@@ -14,7 +14,7 @@ from app.api.webhook_schemas import (
     NotificationDeliveryResponse,
     NotificationDeliveryStatus,
 )
-from app.core.database import get_db
+from app.core.database import get_db, get_read_db
 from app.core.deps import current_user
 from app.models.webhook import NotificationDelivery, NotificationRule, WebhookEndpoint
 
@@ -31,7 +31,7 @@ _SENSITIVE_ASSIGNMENT = re.compile(
     response_model=NotificationDeliveryListResponse,
 )
 async def list_notification_deliveries(
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_read_db),
     user: dict[str, Any] = Depends(current_user),
 ) -> NotificationDeliveryListResponse:
     _require_notification_permission(user, "notifications:read")

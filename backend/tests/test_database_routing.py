@@ -7,6 +7,8 @@ from fastapi.routing import APIRoute
 
 from app.api.accounts import router as accounts_router
 from app.api.assets import router as assets_router
+from app.api.notification_deliveries import router as notification_deliveries_router
+from app.api.notification_rules import router as notification_rules_router
 from app.api.session_recordings import router as session_recordings_router
 from app.core.config import Settings
 from app.core.database import create_database_engines, get_db, get_read_db
@@ -133,6 +135,30 @@ def test_session_recording_write_routes_keep_writer_database_dependency() -> Non
         dependencies = _route_dependency_calls(
             router=session_recordings_router, method=method, path=path
         )
+        assert get_db in dependencies
+        assert get_read_db not in dependencies
+
+
+def test_notification_read_routes_use_read_database_dependency() -> None:
+    read_routes = [
+        (notification_rules_router, "GET", "/notification-rules/"),
+        (notification_deliveries_router, "GET", "/notification-deliveries/"),
+    ]
+
+    for router, method, path in read_routes:
+        dependencies = _route_dependency_calls(router=router, method=method, path=path)
+        assert get_read_db in dependencies
+        assert get_db not in dependencies
+
+
+def test_notification_write_routes_keep_writer_database_dependency() -> None:
+    write_routes = [
+        (notification_rules_router, "POST", "/notification-rules/"),
+        (notification_deliveries_router, "POST", "/notification-rules/{rule_id}/deliveries"),
+    ]
+
+    for router, method, path in write_routes:
+        dependencies = _route_dependency_calls(router=router, method=method, path=path)
         assert get_db in dependencies
         assert get_read_db not in dependencies
 
