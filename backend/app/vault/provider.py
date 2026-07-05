@@ -10,6 +10,10 @@ from uuid import uuid4
 
 from cryptography.exceptions import InvalidTag
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.models.vault import SecretRecordModel
 
 
 class SecretStatus(StrEnum):
@@ -40,6 +44,12 @@ class SecretRecordStore(Protocol):
     def get(self, secret_id: str) -> SecretRecord | None: ...
 
 
+class AsyncSecretRecordStore(Protocol):
+    async def put(self, record: SecretRecord) -> None: ...
+
+    async def get(self, secret_id: str) -> SecretRecord | None: ...
+
+
 class InMemorySecretRecordStore:
     def __init__(self) -> None:
         self._records: dict[str, SecretRecord] = {}
@@ -49,6 +59,44 @@ class InMemorySecretRecordStore:
 
     def get(self, secret_id: str) -> SecretRecord | None:
         return self._records.get(secret_id)
+
+
+class SqlAlchemySecretRecordStore:
+    """AsyncSession-backed store for envelope-encrypted secret records."""
+
+    def __init__(self, session: AsyncSession) -> None:
+        self._session = session
+
+    async def put(self, record: SecretRecord) -> None:
+        model = await self._session.get(SecretRecordModel, record.id)
+        if model is None:
+            model = SecretRecordModel(id=record.id)
+            self._session.add(model)
+
+        model.name = record.name
+        model.nonce = record.nonce
+        model.ciphertext = record.ciphertext
+        model.version = record.version
+        model.encrypted_data_key = record.encrypted_data_key
+        model.status = record.status.value
+        await self._session.flush()
+
+    async def get(self, secret_id: str) -> SecretRecord | None:
+        result = await self._session.execute(
+            select(SecretRecordModel).where(SecretRecordModel.id == secret_id)
+        )
+        model = result.scalar_one_or_none()
+        if model is None:
+            return None
+        return SecretRecord(
+            id=model.id,
+            name=model.name,
+            nonce=model.nonce,
+            ciphertext=model.ciphertext,
+            version=model.version,
+            encrypted_data_key=model.encrypted_data_key,
+            status=SecretStatus(model.status),
+        )
 
 
 class LocalEncryptedSecretProvider:
@@ -165,6 +213,80 @@ class EnvelopeEncryptedSecretProvider:
         current = self.get_record(secret_id)
         current.status = SecretStatus.REVOKED
         self._record_store.put(current)
+
+    def _encrypt_record(self, secret_id: str, name: str, plaintext: str, version: int) -> SecretRecord:
+        data_key = os.urandom(32)
+        nonce = os.urandom(12)
+        ciphertext = AESGCM(data_key).encrypt(nonce, plaintext.encode(), secret_id.encode())
+        return SecretRecord(
+            id=secret_id,
+            name=name,
+            nonce=base64.urlsafe_b64encode(nonce).decode(),
+            ciphertext=base64.urlsafe_b64encode(ciphertext).decode(),
+            version=version,
+            encrypted_data_key=self._kms_provider.wrap_key(data_key),
+        )
+
+    def _decrypt_record(self, record: SecretRecord) -> str:
+        if record.encrypted_data_key is None:
+            raise ValueError("SECRET_DATA_KEY_MISSING")
+        data_key = self._kms_provider.unwrap_key(record.encrypted_data_key)
+        if len(data_key) != 32:
+            raise ValueError("SECRET_DATA_KEY_INVALID")
+        try:
+            nonce = base64.urlsafe_b64decode(record.nonce.encode())
+            ciphertext = base64.urlsafe_b64decode(record.ciphertext.encode())
+            return AESGCM(data_key).decrypt(nonce, ciphertext, record.id.encode()).decode()
+        except (InvalidTag, ValueError) as exc:
+            raise ValueError("SECRET_DECRYPT_FAILED") from exc
+
+
+class AsyncEnvelopeEncryptedSecretProvider:
+    """Envelope-encrypted provider backed by an async record store."""
+
+    def __init__(
+        self,
+        kms_provider: KmsKeyProvider,
+        record_store: AsyncSecretRecordStore,
+    ) -> None:
+        self._kms_provider = kms_provider
+        self._record_store = record_store
+
+    async def create_secret(self, name: str, plaintext: str) -> SecretRecord:
+        secret_id = f"sec_{uuid4().hex}"
+        record = self._encrypt_record(secret_id=secret_id, name=name, plaintext=plaintext, version=1)
+        await self._record_store.put(record)
+        return record
+
+    async def get_record(self, secret_id: str) -> SecretRecord:
+        record = await self._record_store.get(secret_id)
+        if record is None:
+            raise ValueError("SECRET_NOT_FOUND")
+        return record
+
+    async def unwrap(self, secret_id: str) -> str:
+        record = await self.get_record(secret_id)
+        if record.status == SecretStatus.REVOKED:
+            raise ValueError("SECRET_REVOKED")
+        return self._decrypt_record(record)
+
+    async def rotate(self, secret_id: str, new_plaintext: str) -> SecretRecord:
+        current = await self.get_record(secret_id)
+        if current.status == SecretStatus.REVOKED:
+            raise ValueError("SECRET_REVOKED")
+        rotated = self._encrypt_record(
+            secret_id=secret_id,
+            name=current.name,
+            plaintext=new_plaintext,
+            version=current.version + 1,
+        )
+        await self._record_store.put(rotated)
+        return rotated
+
+    async def revoke(self, secret_id: str) -> None:
+        current = await self.get_record(secret_id)
+        current.status = SecretStatus.REVOKED
+        await self._record_store.put(current)
 
     def _encrypt_record(self, secret_id: str, name: str, plaintext: str, version: int) -> SecretRecord:
         data_key = os.urandom(32)
