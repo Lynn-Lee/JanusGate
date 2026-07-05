@@ -1447,6 +1447,21 @@ janusgate_http_request_duration_seconds_bucket{method="GET",path="/health",statu
 - 不记录请求体、响应体、Authorization header、token、secret、连接串或用户输入。
 - `/metrics` 自身不会计入 HTTP 请求指标，避免采集周期污染业务请求统计。
 
+## Phase 4 Vault KMS Adapter（#t50）
+
+当前 #t50 已提供 envelope encryption provider 与本地 AES-GCM KMS adapter。`EnvelopeEncryptedSecretProvider` 每条 secret 生成独立 32 字节 DEK，secret ciphertext 使用 secret id 作为 AAD；DEK 只以 KMS-wrapped 形式随 record 保存，不保存凭据明文。
+
+配置：
+
+- `VAULT_LOCAL_KMS_MASTER_KEY`：可选，本地 KMS adapter 的 base64 编码 32 字节 master key。未配置时不会自动启用本地 adapter。
+
+安全语义：
+
+- `LocalKmsEnvelopeKeyProvider` 只接受 32 字节 master key；长度不匹配 fail-closed 为 `KMS_MASTER_KEY_MUST_BE_32_BYTES`。
+- wrapped DEK 使用带版本前缀的 AES-GCM 格式保存，不等于 DEK 明文或 hex 表示。
+- 错误 master key、损坏 wrapped key 或不支持格式均 fail-closed 为 `KMS_UNWRAP_DENIED`。
+- 真实云 KMS/HSM/Vault adapter、审批后 unwrap 与 break-glass 流程仍是后续切片；新增 API 不得返回 wrapped DEK、plaintext DEK 或凭据明文。
+
 ## 前端解析建议
 
 1. 先读 `code` 做流程判断；业务码优先于 HTTP 状态。

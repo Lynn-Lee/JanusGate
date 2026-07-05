@@ -1,9 +1,12 @@
+import base64
+
 import pytest
 
 from app.vault.provider import (
     EnvelopeEncryptedSecretProvider,
     InMemorySecretRecordStore,
     LocalEncryptedSecretProvider,
+    LocalKmsEnvelopeKeyProvider,
 )
 
 
@@ -103,3 +106,34 @@ def test_envelope_provider_can_reload_records_from_persistent_store():
 
     reloaded_provider = EnvelopeEncryptedSecretProvider(kms_provider=kms, record_store=store)
     assert reloaded_provider.unwrap(secret.id) == "S3cret!"
+
+
+def test_local_kms_provider_encrypts_wrapped_data_keys():
+    kms = LocalKmsEnvelopeKeyProvider(master_key=b"k" * 32)
+    data_key = b"d" * 32
+
+    wrapped = kms.wrap_key(data_key)
+
+    assert wrapped != data_key.hex()
+    assert "d" * 64 not in wrapped
+    assert kms.unwrap_key(wrapped) == data_key
+
+
+def test_local_kms_provider_requires_32_byte_master_key():
+    with pytest.raises(ValueError, match="KMS_MASTER_KEY_MUST_BE_32_BYTES"):
+        LocalKmsEnvelopeKeyProvider(master_key=b"short")
+
+
+def test_local_kms_provider_fails_closed_for_wrong_key():
+    wrapped = LocalKmsEnvelopeKeyProvider(master_key=b"a" * 32).wrap_key(b"d" * 32)
+
+    with pytest.raises(ValueError, match="KMS_UNWRAP_DENIED"):
+        LocalKmsEnvelopeKeyProvider(master_key=b"b" * 32).unwrap_key(wrapped)
+
+
+def test_local_kms_provider_can_load_base64_master_key():
+    encoded_key = base64.urlsafe_b64encode(b"k" * 32).decode()
+
+    kms = LocalKmsEnvelopeKeyProvider.from_base64_master_key(encoded_key)
+
+    assert kms.unwrap_key(kms.wrap_key(b"d" * 32)) == b"d" * 32

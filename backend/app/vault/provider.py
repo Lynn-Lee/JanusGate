@@ -38,6 +38,60 @@ class KmsKeyProvider(Protocol):
     def unwrap_key(self, wrapped_key: str) -> bytes: ...
 
 
+class LocalKmsEnvelopeKeyProvider:
+    """AES-GCM KMS adapter for self-hosted or development deployments."""
+
+    _WRAPPED_KEY_PREFIX = "local-aesgcm-v1"
+
+    def __init__(self, master_key: bytes) -> None:
+        if len(master_key) != 32:
+            raise ValueError("KMS_MASTER_KEY_MUST_BE_32_BYTES")
+        self._master_key = master_key
+
+    @classmethod
+    def from_base64_master_key(cls, encoded_master_key: str) -> LocalKmsEnvelopeKeyProvider:
+        try:
+            master_key = base64.urlsafe_b64decode(encoded_master_key.encode())
+        except ValueError as exc:
+            raise ValueError("KMS_MASTER_KEY_INVALID") from exc
+        return cls(master_key=master_key)
+
+    def wrap_key(self, plaintext_key: bytes) -> str:
+        if len(plaintext_key) != 32:
+            raise ValueError("SECRET_DATA_KEY_INVALID")
+        nonce = os.urandom(12)
+        ciphertext = AESGCM(self._master_key).encrypt(
+            nonce,
+            plaintext_key,
+            self._WRAPPED_KEY_PREFIX.encode(),
+        )
+        return ":".join(
+            [
+                self._WRAPPED_KEY_PREFIX,
+                base64.urlsafe_b64encode(nonce).decode(),
+                base64.urlsafe_b64encode(ciphertext).decode(),
+            ]
+        )
+
+    def unwrap_key(self, wrapped_key: str) -> bytes:
+        try:
+            prefix, encoded_nonce, encoded_ciphertext = wrapped_key.split(":", maxsplit=2)
+            if prefix != self._WRAPPED_KEY_PREFIX:
+                raise ValueError("UNSUPPORTED_KMS_WRAPPED_KEY")
+            nonce = base64.urlsafe_b64decode(encoded_nonce.encode())
+            ciphertext = base64.urlsafe_b64decode(encoded_ciphertext.encode())
+            data_key = AESGCM(self._master_key).decrypt(
+                nonce,
+                ciphertext,
+                self._WRAPPED_KEY_PREFIX.encode(),
+            )
+        except (InvalidTag, ValueError) as exc:
+            raise ValueError("KMS_UNWRAP_DENIED") from exc
+        if len(data_key) != 32:
+            raise ValueError("SECRET_DATA_KEY_INVALID")
+        return data_key
+
+
 class SecretRecordStore(Protocol):
     def put(self, record: SecretRecord) -> None: ...
 
