@@ -11,6 +11,8 @@ from app.api.connectors import router as connectors_router
 from app.api.notification_deliveries import router as notification_deliveries_router
 from app.api.notification_rules import router as notification_rules_router
 from app.api.session_recordings import router as session_recordings_router
+from app.api.ssh_certificate_authorities import router as ssh_ca_router
+from app.api.ssh_certificates import router as ssh_certificates_router
 from app.api.webhook_endpoints import router as webhook_endpoints_router
 from app.core.config import Settings
 from app.core.database import create_database_engines, get_db, get_read_db
@@ -211,6 +213,33 @@ def test_connector_write_routes_keep_writer_database_dependency() -> None:
 
     for method, path in write_routes:
         dependencies = _route_dependency_calls(router=connectors_router, method=method, path=path)
+        assert get_db in dependencies
+        assert get_read_db not in dependencies
+
+
+def test_ssh_ca_read_routes_use_read_database_dependency() -> None:
+    read_routes = [
+        (ssh_ca_router, "GET", "/ssh-certificate-authorities/"),
+        (ssh_ca_router, "GET", "/ssh-certificate-authorities/trust-bundle"),
+        (ssh_certificates_router, "GET", "/ssh-certificates/"),
+    ]
+
+    for router, method, path in read_routes:
+        dependencies = _route_dependency_calls(router=router, method=method, path=path)
+        assert get_read_db in dependencies
+        assert get_db not in dependencies
+
+
+def test_ssh_ca_write_routes_keep_writer_database_dependency() -> None:
+    write_routes = [
+        (ssh_ca_router, "POST", "/ssh-certificate-authorities/"),
+        (ssh_ca_router, "POST", "/ssh-certificate-authorities/{authority_id}/disable"),
+        (ssh_certificates_router, "POST", "/ssh-certificates/"),
+        (ssh_certificates_router, "POST", "/ssh-certificates/{certificate_id}/revoke"),
+    ]
+
+    for router, method, path in write_routes:
+        dependencies = _route_dependency_calls(router=router, method=method, path=path)
         assert get_db in dependencies
         assert get_read_db not in dependencies
 
