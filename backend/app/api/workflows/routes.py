@@ -22,7 +22,7 @@ from app.api.workflows.schemas import (
     WorkflowRevokeRequest,
 )
 from app.api.workflows.service import SQLAlchemyWorkflowStore, WorkflowService
-from app.core.database import get_db
+from app.core.database import get_db, get_read_db
 from app.core.deps import current_user
 from app.policy.decision import PolicyDecisionService
 from app.policy.schemas import PolicyDecisionRequest, PolicyDecisionResponse
@@ -44,7 +44,7 @@ def get_workflow_service(db: AsyncSession = Depends(get_db)) -> WorkflowService:
 
 @router.get("/approval-policies", response_model=ApprovalPolicyListResponse)
 async def list_approval_policies(
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_read_db),
     user: dict[str, Any] = Depends(current_user),
 ) -> ApprovalPolicyListResponse:
     _require_workflow_admin_permission(user)
