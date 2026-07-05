@@ -92,15 +92,25 @@ curl -fsS http://localhost:8000/health
 
 ## 4. Connection token store 与多副本部署
 
-当前 Phase 3 MVP 的 session connection token store 是后端进程内短期存储。为避免 token 签发和消费落到不同 Pod，默认 Helm `replicaCount` 保持为 `1`。在未接入共享 token store 前，不得无粘性地水平扩容 backend。
+默认 session connection token store 仍为后端进程内短期存储，适合本地开发和单副本部署。为避免 token 签发和消费落到不同 Pod，默认 Helm `replicaCount` 保持为 `1`。
 
-如果必须临时多副本部署，只允许作为过渡方案并满足以下条件：
+Phase 5 #t53 起可通过共享 Redis token store 支撑无状态 Core 前置验证：
+
+```bash
+SESSION_CONNECTION_TOKEN_STORE=redis
+REDIS_URL=redis://redis-master:6379/0
+SESSION_CONNECTION_TOKEN_REDIS_KEY_PREFIX=janusgate:session:connection-token:
+```
+
+Redis 模式只保存 token digest key 和 JSON 元数据，签发时使用 TTL，消费时通过 Redis `GETDEL` 原子删除，原始 connection token 不写入 Redis。启用多副本前必须确认 Redis 可用性、持久连接配置和 `/api/v1/sessions/connection-token` → `/api/v1/sessions/` 主链路 smoke。
+
+如果必须在 memory store 下临时多副本部署，只允许作为过渡方案并满足以下条件：
 
 1. 入口负载均衡启用粘性会话，确保同一 connection token 生命周期内的签发、消费、撤销请求固定到同一后端实例。
 2. 发布前执行 connection token smoke：申请 JIT grant → 签发 connection token → 创建会话 → revoke → 查询审计事件。
 3. 回滚时优先回滚到上一版单副本或同样具备粘性策略的版本，避免 token 消费路径跨实例失败。
 
-生产推荐方案是改造为 Redis/DB-backed shared token store，要求 token 短 TTL、一次性消费、撤销状态和审计事件在副本间一致；完成该改造前，不把无粘性多副本视为可放行生产形态。
+生产推荐方案是启用 Redis-backed shared token store，要求 token 短 TTL、一次性消费、撤销状态和审计事件在副本间一致；完成 Redis 模式主链路验证前，不把无粘性多副本视为可放行生产形态。
 
 ## 5. 发布与回滚
 

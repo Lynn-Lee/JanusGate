@@ -7,13 +7,14 @@ from datetime import UTC, datetime, timedelta
 import pytest
 from fastapi.testclient import TestClient
 
-from app.api.sessions.routes import get_session_gateway_service
+from app.api.sessions.routes import build_connection_token_store, get_session_gateway_service
 from app.api.sessions.service import (
     ConnectionToken,
     InMemoryConnectionTokenStore,
     InMemorySessionStore,
     JitGrantSessionBinding,
     PolicyDecisionServiceClient,
+    RedisConnectionTokenStore,
     SessionGatewayService,
     SessionRecord,
     SessionStatus,
@@ -55,6 +56,24 @@ class FakeTokenStore:
         assert token_id == self.token.token_id
         self.consumed = True
         return self.token
+
+
+class FakeRedisClient:
+    def __init__(self) -> None:
+        self.values: dict[str, str] = {}
+        self.set_calls: list[tuple[str, str, int, bool]] = []
+        self.getdel_calls: list[str] = []
+
+    async def set(self, key: str, value: str, *, ex: int, nx: bool) -> bool:
+        self.set_calls.append((key, value, ex, nx))
+        if nx and key in self.values:
+            return False
+        self.values[key] = value
+        return True
+
+    async def getdel(self, key: str) -> str | None:
+        self.getdel_calls.append(key)
+        return self.values.pop(key, None)
 
 
 class MultiTokenStore:
@@ -339,6 +358,65 @@ async def test_policy_deny_does_not_consume_real_single_use_jit_grant() -> None:
     assert grant is not None
     assert grant.status is JitGrantStatus.ACTIVE
     assert grant.constraints["used_count"] == 0
+
+
+@pytest.mark.asyncio
+async def test_redis_connection_token_store_persists_digest_key_and_consumes_once() -> None:
+    now = datetime(2026, 6, 29, 15, 0, tzinfo=UTC)
+    redis = FakeRedisClient()
+    store = RedisConnectionTokenStore(
+        redis,
+        token_id_factory=lambda: "raw-redis-connection-token",
+        key_prefix="test:connection-token:",
+    )
+    token = ConnectionToken(
+        token_id="",
+        subject_id="user-1",
+        tenant_id="tenant-a",
+        asset_id="asset-1",
+        account_id="account-1",
+        protocol="ssh",
+        jit_grant_id="grant-1",
+        workflow_request_id="wr-1",
+        connector_id="connector-1",
+        expires_at=now + timedelta(minutes=5),
+    )
+
+    issue = await store.issue(token, now=now)
+    consumed = await store.consume(issue.connection_token, now)
+
+    assert issue.connection_token == "raw-redis-connection-token"
+    assert redis.set_calls[0][0].startswith("test:connection-token:")
+    assert "raw-redis-connection-token" not in redis.set_calls[0][0]
+    assert "raw-redis-connection-token" not in redis.set_calls[0][1]
+    assert redis.set_calls[0][2:] == (300, True)
+    assert redis.getdel_calls == [redis.set_calls[0][0]]
+    assert consumed.token_id == redis.set_calls[0][0].removeprefix("test:connection-token:")
+    assert consumed.subject_id == "user-1"
+    assert consumed.tenant_id == "tenant-a"
+    assert await redis.getdel(redis.set_calls[0][0]) is None
+
+
+@pytest.mark.asyncio
+async def test_redis_connection_token_store_rejects_missing_or_replayed_token() -> None:
+    now = datetime(2026, 6, 29, 15, 0, tzinfo=UTC)
+    store = RedisConnectionTokenStore(FakeRedisClient())
+
+    with pytest.raises(ValueError, match="CONNECTION_TOKEN_NOT_FOUND"):
+        await store.consume("missing-token", now)
+
+
+def test_connection_token_store_factory_can_select_redis_backend() -> None:
+    redis = FakeRedisClient()
+
+    store = build_connection_token_store(
+        store="redis",
+        redis_url="redis://redis.example/0",
+        redis_key_prefix="test:connection-token:",
+        redis_factory=lambda url: redis,
+    )
+
+    assert isinstance(store, RedisConnectionTokenStore)
 
 
 @pytest.mark.asyncio

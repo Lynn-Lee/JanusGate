@@ -1,9 +1,11 @@
 """Session Gateway API routes."""
 from __future__ import annotations
 
-from typing import Any
+from collections.abc import Callable
+from typing import Any, cast
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
+from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.audits.service import audit_service
@@ -16,10 +18,14 @@ from app.api.sessions.schemas import (
     SessionResponse,
 )
 from app.api.sessions.service import (
+    ConnectionTokenStore,
     InMemoryConnectionTokenStore,
     PolicyDecisionServiceClient,
+    RedisConnectionTokenClient,
+    RedisConnectionTokenStore,
     SessionGatewayService,
 )
+from app.core.config import settings
 from app.core.database import get_db
 from app.core.deps import current_user
 from app.policy.decision import PolicyDecisionService
@@ -28,7 +34,25 @@ from app.workflows.audit import WorkflowAuditSink
 
 router = APIRouter(prefix="/sessions", tags=["会话网关"])
 
-_session_gateway_service = SessionGatewayService(token_store=InMemoryConnectionTokenStore())
+
+def build_connection_token_store(
+    *,
+    store: str = settings.SESSION_CONNECTION_TOKEN_STORE,
+    redis_url: str = settings.REDIS_URL,
+    redis_key_prefix: str = settings.SESSION_CONNECTION_TOKEN_REDIS_KEY_PREFIX,
+    redis_factory: Callable[[str], RedisConnectionTokenClient] | None = None,
+) -> ConnectionTokenStore:
+    if store == "memory":
+        return InMemoryConnectionTokenStore()
+    if store == "redis":
+        factory = redis_factory or (
+            lambda url: cast(RedisConnectionTokenClient, Redis.from_url(url, decode_responses=True))
+        )
+        return RedisConnectionTokenStore(factory(redis_url), key_prefix=redis_key_prefix)
+    raise ValueError("UNSUPPORTED_SESSION_CONNECTION_TOKEN_STORE")
+
+
+_session_gateway_service = SessionGatewayService(token_store=build_connection_token_store())
 _workflow_audit_sink = WorkflowAuditSink(audit_service)
 _session_policy_client = PolicyDecisionServiceClient(
     PolicyDecisionService(
