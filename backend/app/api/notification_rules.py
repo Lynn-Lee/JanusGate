@@ -13,7 +13,7 @@ from app.api.webhook_schemas import (
     NotificationRuleResponse,
     NotificationRuleStatus,
 )
-from app.core.database import get_db
+from app.core.database import get_db, get_read_db
 from app.core.deps import current_user
 from app.models.webhook import NotificationRule, WebhookEndpoint
 
@@ -22,7 +22,7 @@ router = APIRouter(prefix="/notification-rules", tags=["Notification Rules"])
 
 @router.get("/", response_model=NotificationRuleListResponse)
 async def list_notification_rules(
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_read_db),
     user: dict[str, Any] = Depends(current_user),
 ) -> NotificationRuleListResponse:
     _require_notification_permission(user, "notifications:read")
