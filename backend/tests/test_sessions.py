@@ -7,7 +7,11 @@ from datetime import UTC, datetime, timedelta
 import pytest
 from fastapi.testclient import TestClient
 
-from app.api.sessions.routes import build_connection_token_store, get_session_gateway_service
+from app.api.sessions.routes import (
+    build_connection_token_store,
+    get_read_session_gateway_service,
+    get_session_gateway_service,
+)
 from app.api.sessions.service import (
     ConnectionToken,
     InMemoryConnectionTokenStore,
@@ -924,6 +928,7 @@ def test_session_api_lists_only_current_user_sessions() -> None:
         "permissions": ["sessions:connect"],
     }
     app.dependency_overrides[get_session_gateway_service] = lambda: service
+    app.dependency_overrides[get_read_session_gateway_service] = lambda: service
     try:
         with TestClient(app) as client:
             create_response = client.post(

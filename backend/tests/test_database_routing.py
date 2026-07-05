@@ -12,6 +12,7 @@ from app.api.connectors import router as connectors_router
 from app.api.notification_deliveries import router as notification_deliveries_router
 from app.api.notification_rules import router as notification_rules_router
 from app.api.session_recordings import router as session_recordings_router
+from app.api.sessions.routes import router as sessions_router
 from app.api.ssh_certificate_authorities import router as ssh_ca_router
 from app.api.ssh_certificates import router as ssh_certificates_router
 from app.api.webhook_endpoints import router as webhook_endpoints_router
@@ -266,6 +267,30 @@ def test_automation_job_write_routes_keep_writer_database_dependency() -> None:
         dependencies = _route_dependency_calls(router=automation_router, method=method, path=path)
         assert get_db in dependencies
         assert get_read_db not in dependencies
+
+
+def test_session_list_read_route_uses_read_service_dependency() -> None:
+    dependency_names = _route_dependency_names(
+        router=sessions_router, method="GET", path="/sessions/"
+    )
+
+    assert "get_read_session_gateway_service" in dependency_names
+    assert "get_session_gateway_service" not in dependency_names
+
+
+def test_session_write_routes_keep_writer_service_dependency() -> None:
+    write_routes = [
+        ("POST", "/sessions/connection-token"),
+        ("POST", "/sessions/"),
+        ("POST", "/sessions/{session_id}/close"),
+    ]
+
+    for method, path in write_routes:
+        dependency_names = _route_dependency_names(
+            router=sessions_router, method=method, path=path
+        )
+        assert "get_session_gateway_service" in dependency_names
+        assert "get_read_session_gateway_service" not in dependency_names
 
 
 def test_workflow_approval_policy_read_routes_use_read_database_dependency() -> None:
