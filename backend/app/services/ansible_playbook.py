@@ -4,8 +4,9 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import resource
 import tempfile
-from collections.abc import Awaitable
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol
@@ -38,6 +39,12 @@ class AnsiblePlaybookRun:
     targets: list[AnsiblePlaybookTarget]
 
 
+@dataclass(frozen=True)
+class AnsibleProcessLimits:
+    memory_limit_bytes: int | None = None
+    cpu_limit_seconds: int | None = None
+
+
 class AnsiblePlaybookRunner(Protocol):
     def run(self, playbook: AnsiblePlaybookRun) -> Awaitable[None]: ...
 
@@ -49,6 +56,7 @@ class AnsibleCommandRunner(Protocol):
         *,
         cwd: Path,
         env: dict[str, str],
+        process_limits: AnsibleProcessLimits,
     ) -> Awaitable[int]: ...
 
 
@@ -61,12 +69,14 @@ class LocalAnsiblePlaybookRunner:
         command_runner: AnsibleCommandRunner | None = None,
         executable: str = "ansible-playbook",
         timeout_seconds: float = 300.0,
+        process_limits: AnsibleProcessLimits | None = None,
     ) -> None:
         self._playbook_root = playbook_root.resolve()
         self._runtime_root = runtime_root.resolve()
         self._command_runner = command_runner or _run_ansible_command
         self._executable = executable
         self._timeout_seconds = timeout_seconds
+        self._process_limits = process_limits or AnsibleProcessLimits()
 
     async def run(self, playbook: AnsiblePlaybookRun) -> None:
         playbook_path = self._resolve_playbook(playbook.playbook_name)
@@ -86,7 +96,12 @@ class LocalAnsiblePlaybookRunner:
                 args.append("--check")
             try:
                 result = await asyncio.wait_for(
-                    self._command_runner(args, cwd=work_dir, env=_safe_ansible_env()),
+                    self._command_runner(
+                        args,
+                        cwd=work_dir,
+                        env=_safe_ansible_env(),
+                        process_limits=self._process_limits,
+                    ),
                     timeout=self._timeout_seconds,
                 )
             except TimeoutError as exc:
@@ -115,6 +130,10 @@ def build_local_ansible_playbook_runner(
         command_runner=command_runner,
         executable=settings.ANSIBLE_PLAYBOOK_EXECUTABLE,
         timeout_seconds=settings.ANSIBLE_PLAYBOOK_TIMEOUT_SECONDS,
+        process_limits=AnsibleProcessLimits(
+            memory_limit_bytes=_optional_megabytes(settings.ANSIBLE_PLAYBOOK_MEMORY_LIMIT_MB),
+            cpu_limit_seconds=_optional_positive_int(settings.ANSIBLE_PLAYBOOK_CPU_LIMIT_SECONDS),
+        ),
     )
 
 
@@ -310,11 +329,49 @@ def _safe_ansible_env() -> dict[str, str]:
     return env
 
 
-async def _run_ansible_command(args: list[str], *, cwd: Path, env: dict[str, str]) -> int:
+def _optional_megabytes(value: int) -> int | None:
+    if value <= 0:
+        return None
+    return value * 1024 * 1024
+
+
+def _optional_positive_int(value: int) -> int | None:
+    if value <= 0:
+        return None
+    return value
+
+
+def _build_process_limit_preexec(process_limits: AnsibleProcessLimits) -> Callable[[], None] | None:
+    if process_limits.memory_limit_bytes is None and process_limits.cpu_limit_seconds is None:
+        return None
+
+    def apply_limits() -> None:
+        if process_limits.memory_limit_bytes is not None:
+            resource.setrlimit(
+                resource.RLIMIT_AS,
+                (process_limits.memory_limit_bytes, process_limits.memory_limit_bytes),
+            )
+        if process_limits.cpu_limit_seconds is not None:
+            resource.setrlimit(
+                resource.RLIMIT_CPU,
+                (process_limits.cpu_limit_seconds, process_limits.cpu_limit_seconds),
+            )
+
+    return apply_limits
+
+
+async def _run_ansible_command(
+    args: list[str],
+    *,
+    cwd: Path,
+    env: dict[str, str],
+    process_limits: AnsibleProcessLimits,
+) -> int:
     process = await asyncio.create_subprocess_exec(
         *args,
         cwd=cwd,
         env=env,
+        preexec_fn=_build_process_limit_preexec(process_limits),
         stdout=asyncio.subprocess.DEVNULL,
         stderr=asyncio.subprocess.DEVNULL,
     )

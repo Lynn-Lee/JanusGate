@@ -48,6 +48,8 @@ class Settings(BaseSettings):
     ANSIBLE_RUNTIME_ROOT: str = "/var/lib/janusgate/ansible-runtime"
     ANSIBLE_PLAYBOOK_EXECUTABLE: str = "ansible-playbook"
     ANSIBLE_PLAYBOOK_TIMEOUT_SECONDS: float = 300.0
+    ANSIBLE_PLAYBOOK_MEMORY_LIMIT_MB: int = 0
+    ANSIBLE_PLAYBOOK_CPU_LIMIT_SECONDS: int = 0
 
     @model_validator(mode="after")
     def enforce_secrets(self) -> "Settings":

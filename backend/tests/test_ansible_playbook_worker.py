@@ -18,6 +18,7 @@ from app.services.ansible_playbook import (
     AnsiblePlaybookRun,
     AnsiblePlaybookTarget,
     AnsiblePlaybookWorkerHandler,
+    AnsibleProcessLimits,
     LocalAnsiblePlaybookRunner,
     build_local_ansible_playbook_runner,
 )
@@ -250,7 +251,9 @@ async def test_local_ansible_runner_renders_inventory_and_runs_check_mode(
         *,
         cwd: Path,
         env: dict[str, str],
+        process_limits: AnsibleProcessLimits,
     ) -> int:
+        del process_limits
         inventory_index = args.index("-i") + 1
         inventory = json.loads(Path(args[inventory_index]).read_text(encoding="utf-8"))
         calls.append((args, cwd, env, inventory))
@@ -336,8 +339,9 @@ async def test_local_ansible_runner_times_out_long_running_playbook(tmp_path: Pa
         *,
         cwd: Path,
         env: dict[str, str],
+        process_limits: AnsibleProcessLimits,
     ) -> int:
-        del args, cwd, env
+        del args, cwd, env, process_limits
         await asyncio.sleep(1)
         return 0
 
@@ -376,8 +380,9 @@ async def test_local_ansible_runner_can_be_built_from_settings(tmp_path: Path) -
         *,
         cwd: Path,
         env: dict[str, str],
+        process_limits: AnsibleProcessLimits,
     ) -> int:
-        del cwd, env
+        del cwd, env, process_limits
         calls.append(args)
         return 0
 
@@ -409,3 +414,53 @@ async def test_local_ansible_runner_can_be_built_from_settings(tmp_path: Path) -
         str(playbook_root / "linux-baseline.yml"),
     ]
     assert runtime_root.exists()
+
+
+@pytest.mark.asyncio
+async def test_local_ansible_runner_applies_configured_process_limits(
+    tmp_path: Path,
+) -> None:
+    playbook_root = tmp_path / "configured-playbooks"
+    runtime_root = tmp_path / "configured-runtime"
+    playbook_root.mkdir()
+    (playbook_root / "linux-baseline.yml").write_text("---\n- hosts: all\n", encoding="utf-8")
+    captured_limits: list[AnsibleProcessLimits] = []
+
+    async def command_runner(
+        args: list[str],
+        *,
+        cwd: Path,
+        env: dict[str, str],
+        process_limits: AnsibleProcessLimits,
+    ) -> int:
+        del args, cwd, env
+        captured_limits.append(process_limits)
+        return 0
+
+    settings = Settings(
+        SECRET_KEY="test-secret-key-" + "x" * 48,
+        ANSIBLE_PLAYBOOK_ROOT=str(playbook_root),
+        ANSIBLE_RUNTIME_ROOT=str(runtime_root),
+        ANSIBLE_PLAYBOOK_MEMORY_LIMIT_MB=128,
+        ANSIBLE_PLAYBOOK_CPU_LIMIT_SECONDS=2,
+        _env_file=None,
+    )
+
+    runner = build_local_ansible_playbook_runner(
+        settings=settings,
+        command_runner=command_runner,
+    )
+
+    await runner.run(
+        AnsiblePlaybookRun(
+            tenant_id="tenant-a",
+            requested_by="user-1",
+            playbook_name="linux-baseline.yml",
+            check_mode=False,
+            targets=[],
+        )
+    )
+
+    assert captured_limits == [
+        AnsibleProcessLimits(memory_limit_bytes=128 * 1024 * 1024, cpu_limit_seconds=2)
+    ]
