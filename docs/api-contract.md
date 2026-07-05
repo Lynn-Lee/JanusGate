@@ -73,7 +73,7 @@
 
 ## Phase 5 Database Read Routing（#t53）
 
-可配置只读副本通过 `DATABASE_READ_REPLICA_URL` 装配；未配置时 read session factory 复用 writer engine，不改变本地开发和单副本部署行为。`GET /api/v1/sessions/`、`GET /api/v1/workflows/requests`、`GET /api/v1/workflows/requests/{request_id}` 与 `GET /api/v1/workflows/grants/active` 现在通过 read session service factory 读取当前用户可见的 Session / Workflow / JIT 记录。Session connection token 签发、Session 创建和关闭，以及 Workflow request 创建、提交、审批、拒绝、撤销继续使用 writer session，以保证 token 消费、状态机变更、grant 生成、审计和 session revoke 相关路径强一致。
+可配置只读副本通过 `DATABASE_READ_REPLICA_URL` 装配；未配置时 read session factory 复用 writer engine，不改变本地开发和单副本部署行为。`GET /api/v1/auth/me`、`GET /api/v1/sessions/`、`GET /api/v1/workflows/requests`、`GET /api/v1/workflows/requests/{request_id}` 与 `GET /api/v1/workflows/grants/active` 现在通过 read session service factory 读取当前用户可见的认证态用户详情、Session / Workflow / JIT 记录。登录、2FA、refresh token、MFA/密码/API key 变更、Session connection token 签发、Session 创建和关闭，以及 Workflow request 创建、提交、审批、拒绝、撤销继续使用 writer session，以保证 token 消费、状态机变更、grant 生成、审计和 session revoke 相关路径强一致。
 
 支持的 `job_type` 白名单：
 

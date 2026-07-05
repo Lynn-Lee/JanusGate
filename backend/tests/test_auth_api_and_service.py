@@ -10,7 +10,7 @@ from fastapi.security import HTTPAuthorizationCredentials
 from fastapi.testclient import TestClient
 
 from app.api import auth as auth_api
-from app.core.database import get_db
+from app.core.database import get_db, get_read_db
 from app.core.deps import current_user, get_redis, require_permission
 from app.core.security import create_access_token, create_refresh_token
 from app.main import app
@@ -101,6 +101,7 @@ def clear_dependency_overrides() -> None:
 
 def install_db(fake_db: FakeDB) -> None:
     app.dependency_overrides[get_db] = lambda: fake_db
+    app.dependency_overrides[get_read_db] = lambda: fake_db
 
 
 def install_redis(fake_redis: FakeRedis | None = None) -> FakeRedis:

@@ -7,6 +7,7 @@ from fastapi.routing import APIRoute
 
 from app.api.accounts import router as accounts_router
 from app.api.assets import router as assets_router
+from app.api.auth import router as auth_router
 from app.api.automation import router as automation_router
 from app.api.connectors import router as connectors_router
 from app.api.notification_deliveries import router as notification_deliveries_router
@@ -269,6 +270,33 @@ def test_automation_job_write_routes_keep_writer_database_dependency() -> None:
         assert get_read_db not in dependencies
 
 
+def test_auth_me_read_route_uses_read_database_dependency() -> None:
+    dependencies = _route_dependency_calls(
+        router=auth_router, method="GET", path="/auth/me", recursive=True
+    )
+
+    assert get_read_db in dependencies
+    assert get_db not in dependencies
+
+
+def test_auth_write_routes_keep_writer_database_dependency() -> None:
+    write_routes = [
+        ("POST", "/auth/login"),
+        ("POST", "/auth/login/2fa"),
+        ("POST", "/auth/token/refresh"),
+        ("POST", "/auth/2fa/setup"),
+        ("POST", "/auth/2fa/verify"),
+        ("POST", "/auth/2fa/disable"),
+        ("POST", "/auth/password/change"),
+        ("POST", "/auth/apikeys"),
+    ]
+
+    for method, path in write_routes:
+        dependencies = _route_dependency_calls(router=auth_router, method=method, path=path)
+        assert get_db in dependencies
+        assert get_read_db not in dependencies
+
+
 def test_session_list_read_route_uses_read_service_dependency() -> None:
     dependency_names = _route_dependency_names(
         router=sessions_router, method="GET", path="/sessions/"
@@ -349,12 +377,17 @@ def test_workflow_request_write_routes_keep_writer_service_dependency() -> None:
         assert "get_read_workflow_service" not in dependency_names
 
 
-def _route_dependency_calls(*, router: Any = assets_router, method: str, path: str) -> set[Any]:
+def _route_dependency_calls(
+    *, router: Any = assets_router, method: str, path: str, recursive: bool = False
+) -> set[Any]:
     for route in router.routes:
         if not isinstance(route, APIRoute):
             continue
         if route.path == path and method in route.methods:
-            return {dependency.call for dependency in route.dependant.dependencies}
+            dependencies = route.dependant.dependencies
+            if recursive:
+                return _dependency_calls_recursive(dependencies)
+            return {dependency.call for dependency in dependencies}
     raise AssertionError(f"Route not found: {method} {path}")
 
 
@@ -363,3 +396,13 @@ def _route_dependency_names(*, router: Any, method: str, path: str) -> set[str]:
         getattr(call, "__name__", repr(call))
         for call in _route_dependency_calls(router=router, method=method, path=path)
     }
+
+
+def _dependency_calls_recursive(dependencies: Any) -> set[Any]:
+    calls: set[Any] = set()
+    stack = list(dependencies)
+    while stack:
+        dependency = stack.pop()
+        calls.add(dependency.call)
+        stack.extend(dependency.dependencies)
+    return calls
