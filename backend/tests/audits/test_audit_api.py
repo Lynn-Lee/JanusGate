@@ -377,3 +377,31 @@ def test_compliance_report_export_records_append_only_worm_archive_metadata():
     assert "raw-session-token" not in serialized
     assert "metadata" not in first
     assert "resource_id" not in first
+
+
+def test_compliance_report_export_includes_formal_file_metadata():
+    app.dependency_overrides[current_user] = _audit_user
+    client = TestClient(app)
+
+    client.post(
+        "/api/v1/audits/events",
+        json={
+            "event_type": "session.started",
+            "category": "session",
+            "action": "start_session",
+            "resource_type": "asset",
+            "resource_id": "asset-1",
+            "severity": "high",
+            "metadata": {"token": "raw-session-token"},
+        },
+    )
+
+    body = client.get("/api/v1/audits/reports/compliance?template=soc2-access").json()
+
+    assert body["schema_version"] == "janusgate.audit-compliance.v1"
+    assert body["export_format"] == "json"
+    assert body["content_type"] == "application/vnd.janusgate.audit-compliance+json;version=1"
+    assert body["download_filename"].startswith("janusgate-soc2-access-tenant-a-")
+    assert body["download_filename"].endswith(".json")
+    assert "/" not in body["download_filename"]
+    assert "raw-session-token" not in str(body)

@@ -119,6 +119,10 @@ export type AuditReportSummary = {
 };
 
 export type AuditComplianceReport = {
+  schema_version: string;
+  export_format: string;
+  content_type: string;
+  download_filename: string;
   tenant_id: string;
   template: string;
   total: number;

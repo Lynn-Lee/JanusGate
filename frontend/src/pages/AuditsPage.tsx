@@ -45,11 +45,11 @@ export function AuditsPage() {
     try {
       const report = await api.get<AuditComplianceReport>('/api/v1/audits/reports/compliance?template=soc2-access');
       setComplianceReport(report);
-      const blob = new Blob([JSON.stringify(report, null, 2)], { type: 'application/json' });
+      const blob = new Blob([JSON.stringify(report, null, 2)], { type: report.content_type });
       const url = URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = url;
-      link.download = `janusgate-${report.template}-compliance-report.json`;
+      link.download = report.download_filename;
       document.body.appendChild(link);
       link.click();
       link.remove();
