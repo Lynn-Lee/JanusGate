@@ -1,6 +1,10 @@
 import pytest
 
-from app.vault.provider import EnvelopeEncryptedSecretProvider, LocalEncryptedSecretProvider
+from app.vault.provider import (
+    EnvelopeEncryptedSecretProvider,
+    InMemorySecretRecordStore,
+    LocalEncryptedSecretProvider,
+)
 
 
 def test_local_provider_never_persists_plaintext():
@@ -88,3 +92,14 @@ def test_envelope_provider_fails_closed_when_kms_unwrap_denied():
 
     with pytest.raises(ValueError, match="KMS_UNWRAP_DENIED"):
         provider.unwrap(secret.id)
+
+
+def test_envelope_provider_can_reload_records_from_persistent_store():
+    kms = RecordingKmsProvider()
+    store = InMemorySecretRecordStore()
+    first_provider = EnvelopeEncryptedSecretProvider(kms_provider=kms, record_store=store)
+
+    secret = first_provider.create_secret(name="root-password", plaintext="S3cret!")
+
+    reloaded_provider = EnvelopeEncryptedSecretProvider(kms_provider=kms, record_store=store)
+    assert reloaded_provider.unwrap(secret.id) == "S3cret!"
