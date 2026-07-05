@@ -15,7 +15,7 @@ from app.api.tenancy.schemas import (
     TeamListResponse,
     TeamResponse,
 )
-from app.core.database import get_db
+from app.core.database import get_db, get_read_db
 from app.core.deps import current_user
 from app.models.tenancy import Organization, Project, Team
 from app.tenancy.scope import actor_scope_from_user, scoped_select
@@ -25,7 +25,7 @@ router = APIRouter(prefix="/tenancy", tags=["多租户"])
 
 @router.get("/organizations", response_model=OrganizationListResponse)
 async def list_organizations(
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_read_db),
     user: dict[str, Any] = Depends(current_user),
 ) -> OrganizationListResponse:
     _require_tenancy_permission(user, "tenancy:read")
@@ -82,7 +82,7 @@ async def create_organization(
 
 @router.get("/teams", response_model=TeamListResponse)
 async def list_teams(
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_read_db),
     user: dict[str, Any] = Depends(current_user),
 ) -> TeamListResponse:
     _require_tenancy_permission(user, "tenancy:read")
@@ -132,7 +132,7 @@ async def create_team(
 
 @router.get("/projects", response_model=ProjectListResponse)
 async def list_projects(
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_read_db),
     user: dict[str, Any] = Depends(current_user),
 ) -> ProjectListResponse:
     _require_tenancy_permission(user, "tenancy:read")

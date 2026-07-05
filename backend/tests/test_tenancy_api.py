@@ -7,7 +7,7 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
-from app.core.database import Base, get_db
+from app.core.database import Base, get_db, get_read_db
 from app.core.deps import current_user
 from app.main import app
 
@@ -35,6 +35,25 @@ def install_db(session_factory: async_sessionmaker[AsyncSession]) -> None:
                 await session.close()
 
     app.dependency_overrides[get_db] = override_db
+    app.dependency_overrides[get_read_db] = override_db
+
+
+def install_read_db(
+    session_factory: async_sessionmaker[AsyncSession],
+    read_calls: list[str],
+) -> None:
+    async def override_read_db() -> AsyncGenerator[AsyncSession, None]:
+        read_calls.append("read")
+        async with session_factory() as session:
+            try:
+                yield session
+            except Exception:
+                await session.rollback()
+                raise
+            finally:
+                await session.close()
+
+    app.dependency_overrides[get_read_db] = override_read_db
 
 
 def install_user(
@@ -89,6 +108,40 @@ async def test_tenancy_organization_api_is_tenant_scoped(
     }
     assert tenant_b_list.status_code == 200
     assert tenant_b_list.json() == {"items": [], "total": 0}
+
+
+@pytest.mark.asyncio
+async def test_tenancy_read_routes_use_read_database_session(
+    session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    install_db(session_factory)
+    read_calls: list[str] = []
+    install_read_db(session_factory, read_calls)
+
+    with TestClient(app) as client:
+        install_user(tenant_id="tenant-a", permissions=["admin"])
+        client.post(
+            "/api/v1/tenancy/organizations",
+            json={"id": "org-a", "name": "Tenant A Ops"},
+        )
+        client.post(
+            "/api/v1/tenancy/teams",
+            json={"id": "team-a", "organization_id": "org-a", "name": "Ops"},
+        )
+        client.post(
+            "/api/v1/tenancy/projects",
+            json={"id": "project-a", "organization_id": "org-a", "name": "Production"},
+        )
+
+        read_calls.clear()
+        organizations = client.get("/api/v1/tenancy/organizations")
+        teams = client.get("/api/v1/tenancy/teams")
+        projects = client.get("/api/v1/tenancy/projects")
+
+    assert organizations.status_code == 200
+    assert teams.status_code == 200
+    assert projects.status_code == 200
+    assert read_calls == ["read", "read", "read"]
 
 
 @pytest.mark.asyncio
