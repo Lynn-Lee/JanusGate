@@ -3,8 +3,10 @@ import hashlib
 import hmac
 import json
 from collections import Counter
+from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Any
+from uuid import uuid4
 
 from app.api.audits.schemas import (
     AuditComplianceReport,
@@ -33,6 +35,17 @@ SENSITIVE_KEYS = {
 }
 
 
+@dataclass(frozen=True)
+class ComplianceReportArchiveRecord:
+    id: str
+    tenant_id: str
+    template: str
+    sequence_number: int
+    content_hash: str
+    report_signature: str
+    created_at: datetime
+
+
 class AuditEventRepository:
     """进程内 append-only 审计事件仓库。
 
@@ -41,6 +54,7 @@ class AuditEventRepository:
 
     def __init__(self) -> None:
         self._events: list[AuditEvent] = []
+        self._compliance_report_archive: list[ComplianceReportArchiveRecord] = []
 
     def append(self, event: AuditEvent) -> AuditEvent:
         self._events.append(event)
@@ -101,12 +115,37 @@ class AuditEventRepository:
             period_start=matches[0].created_at if matches else None,
             period_end=matches[-1].created_at if matches else None,
             report_signature="",
+            worm_storage_status="pending",
+            worm_record_id="",
+            worm_sequence_number=0,
+            worm_content_hash="",
         )
         report.report_signature = sign_compliance_report(report)
+        archive_record = self._append_compliance_report_archive(report)
+        report.worm_storage_status = "recorded"
+        report.worm_record_id = archive_record.id
+        report.worm_sequence_number = archive_record.sequence_number
+        report.worm_content_hash = archive_record.content_hash
         return report
+
+    def _append_compliance_report_archive(
+        self, report: AuditComplianceReport
+    ) -> ComplianceReportArchiveRecord:
+        archive_record = ComplianceReportArchiveRecord(
+            id=str(uuid4()),
+            tenant_id=report.tenant_id,
+            template=report.template,
+            sequence_number=len(self._compliance_report_archive) + 1,
+            content_hash=calculate_compliance_report_content_hash(report),
+            report_signature=report.report_signature,
+            created_at=datetime.now(UTC),
+        )
+        self._compliance_report_archive.append(archive_record)
+        return archive_record
 
     def clear(self) -> None:
         self._events.clear()
+        self._compliance_report_archive.clear()
 
 
 class SiemDeliveryError(RuntimeError):
@@ -201,9 +240,34 @@ def calculate_event_hash(event: AuditEvent) -> str:
 
 
 def sign_compliance_report(report: AuditComplianceReport) -> str:
-    canonical = report.model_dump(mode="json", exclude={"report_signature"})
+    canonical = report.model_dump(
+        mode="json",
+        exclude={
+            "report_signature",
+            "worm_storage_status",
+            "worm_record_id",
+            "worm_sequence_number",
+            "worm_content_hash",
+        },
+    )
     encoded = json.dumps(canonical, sort_keys=True, separators=(",", ":")).encode("utf-8")
     return hmac.new(settings.SECRET_KEY.encode("utf-8"), encoded, hashlib.sha256).hexdigest()
+
+
+def calculate_compliance_report_content_hash(report: AuditComplianceReport) -> str:
+    canonical = report.model_dump(
+        mode="json",
+        exclude={
+            "generated_at",
+            "report_signature",
+            "worm_storage_status",
+            "worm_record_id",
+            "worm_sequence_number",
+            "worm_content_hash",
+        },
+    )
+    encoded = json.dumps(canonical, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
 
 
 def redact_metadata(value: Any) -> Any:
