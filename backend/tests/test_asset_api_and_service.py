@@ -8,7 +8,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.api import assets as assets_api
-from app.core.database import get_db
+from app.core.database import get_db, get_read_db
 from app.core.deps import current_user
 from app.main import app
 from app.models.asset import Asset, Platform
@@ -72,6 +72,7 @@ def install_auth_and_db(fake_db: FakeDB | None = None) -> FakeDB:
     db = fake_db or FakeDB()
     app.dependency_overrides[current_user] = lambda: {"id": 1, "username": "alice", "permissions": ["assets:read", "assets:write", "assets:test"]}
     app.dependency_overrides[get_db] = lambda: db
+    app.dependency_overrides[get_read_db] = lambda: db
     return db
 
 

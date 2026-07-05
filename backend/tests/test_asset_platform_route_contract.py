@@ -6,7 +6,7 @@ from typing import Any
 import pytest
 from fastapi.testclient import TestClient
 
-from app.core.database import get_db
+from app.core.database import get_read_db
 from app.core.deps import current_user
 from app.main import app
 from app.models.asset import Platform
@@ -39,7 +39,7 @@ def clear_dependency_overrides() -> None:
 
 def test_platform_list_api_contract_uses_static_route() -> None:
     app.dependency_overrides[current_user] = lambda: {"id": 1, "username": "alice", "permissions": ["assets:read"]}
-    app.dependency_overrides[get_db] = lambda: FakeDB()
+    app.dependency_overrides[get_read_db] = lambda: FakeDB()
 
     with TestClient(app) as client:
         response = client.get("/api/v1/assets/platforms")
