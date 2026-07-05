@@ -49,3 +49,21 @@ def test_helm_chart_supports_hpa_without_static_replicas_when_enabled() -> None:
     assert "scaleTargetRef:" in hpa_template
     assert "autoscaling requires config.sessionConnectionTokenStore=redis" in hpa_template
     assert "{{- if not .Values.autoscaling.enabled }}" in deployment_template
+
+
+def test_helm_chart_exposes_redis_ha_configuration() -> None:
+    values = yaml.safe_load((REPO_ROOT / "deploy/helm/janusgate/values.yaml").read_text())
+    configmap_template = (
+        REPO_ROOT / "deploy/helm/janusgate/templates/configmap.yaml"
+    ).read_text()
+
+    assert values["config"]["redisMode"] == "single"
+    assert values["config"]["redisSentinelUrls"] == ""
+    assert values["config"]["redisSentinelMasterName"] == "mymaster"
+    assert values["config"]["redisClusterUrls"] == ""
+    assert values["config"]["redisSocketTimeoutSeconds"] == "5"
+    assert "REDIS_MODE:" in configmap_template
+    assert "REDIS_SENTINEL_URLS:" in configmap_template
+    assert "REDIS_SENTINEL_MASTER_NAME:" in configmap_template
+    assert "REDIS_CLUSTER_URLS:" in configmap_template
+    assert "REDIS_SOCKET_TIMEOUT_SECONDS:" in configmap_template

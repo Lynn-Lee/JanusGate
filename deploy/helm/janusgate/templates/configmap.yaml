@@ -8,6 +8,11 @@ data:
   APP_ENV: {{ .Values.config.appEnv | quote }}
   LOG_LEVEL: {{ .Values.config.logLevel | quote }}
   REDIS_URL: {{ .Values.config.redisUrl | quote }}
+  REDIS_MODE: {{ .Values.config.redisMode | quote }}
+  REDIS_SENTINEL_URLS: {{ .Values.config.redisSentinelUrls | quote }}
+  REDIS_SENTINEL_MASTER_NAME: {{ .Values.config.redisSentinelMasterName | quote }}
+  REDIS_CLUSTER_URLS: {{ .Values.config.redisClusterUrls | quote }}
+  REDIS_SOCKET_TIMEOUT_SECONDS: {{ .Values.config.redisSocketTimeoutSeconds | quote }}
   SESSION_CONNECTION_TOKEN_STORE: {{ .Values.config.sessionConnectionTokenStore | quote }}
   SESSION_CONNECTION_TOKEN_REDIS_KEY_PREFIX: {{ .Values.config.sessionConnectionTokenRedisKeyPrefix | quote }}
   CORS_ORIGINS: {{ .Values.config.corsOrigins | quote }}

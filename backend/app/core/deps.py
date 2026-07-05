@@ -13,8 +13,8 @@ from redis.asyncio import Redis
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.config import settings
 from app.core.database import get_db
+from app.core.redis import create_redis_client
 from app.core.security import decode_token
 from app.models.user import User
 
@@ -27,7 +27,7 @@ _UNAUTHORIZED = HTTPException(
 
 
 async def get_redis() -> AsyncGenerator[Redis, None]:
-    r = Redis.from_url(settings.REDIS_URL, decode_responses=True)
+    r = create_redis_client()
     try:
         yield r
     finally:

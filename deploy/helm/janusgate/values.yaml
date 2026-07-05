@@ -38,6 +38,11 @@ config:
   appEnv: production
   logLevel: INFO
   redisUrl: redis://redis-master:6379/0
+  redisMode: single
+  redisSentinelUrls: ""
+  redisSentinelMasterName: mymaster
+  redisClusterUrls: ""
+  redisSocketTimeoutSeconds: "5"
   sessionConnectionTokenStore: memory
   sessionConnectionTokenRedisKeyPrefix: "janusgate:session:connection-token:"
   corsOrigins: '["https://janusgate.example.com"]'

@@ -99,6 +99,7 @@ Phase 5 #t53 起可通过共享 Redis token store 支撑无状态 Core 前置验
 ```bash
 SESSION_CONNECTION_TOKEN_STORE=redis
 REDIS_URL=redis://redis-master:6379/0
+REDIS_MODE=single
 SESSION_CONNECTION_TOKEN_REDIS_KEY_PREFIX=janusgate:session:connection-token:
 ```
 
@@ -112,6 +113,25 @@ Redis 模式只保存 token digest key 和 JSON 元数据，签发时使用 TTL�
 
 生产推荐方案是启用 Redis-backed shared token store，要求 token 短 TTL、一次性消费、撤销状态和审计事件在副本间一致；完成 Redis 模式主链路验证前，不把无粘性多副本视为可放行生产形态。
 
+后端 Redis client 支持三种部署形态：
+
+```bash
+# 单节点，默认
+REDIS_MODE=single
+REDIS_URL=redis://redis-master:6379/0
+
+# Sentinel
+REDIS_MODE=sentinel
+REDIS_SENTINEL_URLS=redis://redis-sentinel-0:26379/0,redis://redis-sentinel-1:26379/0
+REDIS_SENTINEL_MASTER_NAME=mymaster
+
+# Cluster
+REDIS_MODE=cluster
+REDIS_CLUSTER_URLS=redis://redis-cluster-0:6379/0,redis://redis-cluster-1:6379/0
+```
+
+`REDIS_MODE=sentinel` 时必须提供 `REDIS_SENTINEL_URLS` 和 master name；`REDIS_MODE=cluster` 时必须提供 `REDIS_CLUSTER_URLS`。Helm 可通过 `config.redisMode`、`config.redisSentinelUrls`、`config.redisSentinelMasterName`、`config.redisClusterUrls` 和 `config.redisSocketTimeoutSeconds` 注入这些配置。
+
 Helm chart 支持可选 HPA，但默认关闭。启用前必须显式切换到 Redis-backed connection token store，避免多副本下签发与消费落到不同 Pod：
 
 ```bash
@@ -121,6 +141,9 @@ helm upgrade --install janusgate deploy/helm/janusgate \
   --set autoscaling.minReplicas=2 \
   --set autoscaling.maxReplicas=5 \
   --set config.sessionConnectionTokenStore=redis \
+  --set config.redisMode=sentinel \
+  --set config.redisSentinelUrls='redis://redis-sentinel-0:26379/0,redis://redis-sentinel-1:26379/0' \
+  --set config.redisSentinelMasterName=mymaster \
   --set config.redisUrl='redis://redis-master:6379/0'
 ```
 
