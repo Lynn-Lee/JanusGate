@@ -90,3 +90,16 @@ class AuditReportSummary(BaseModel):
     by_severity: dict[str, int]
     by_category: dict[str, int]
     by_siem_delivery_status: dict[str, int]
+
+
+class AuditComplianceReport(BaseModel):
+    tenant_id: str
+    template: str
+    total: int
+    event_ids: list[str]
+    hash_chain_start: str | None = None
+    hash_chain_end: str | None = None
+    period_start: datetime | None = None
+    period_end: datetime | None = None
+    generated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    report_signature: str

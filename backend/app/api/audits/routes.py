@@ -4,6 +4,7 @@ from typing import Annotated, Any
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 
 from app.api.audits.schemas import (
+    AuditComplianceReport,
     AuditEvent,
     AuditEventCreate,
     AuditEventList,
@@ -55,3 +56,12 @@ def get_audit_report_summary(
 ) -> AuditReportSummary:
     require_audit_permission("audit:read", user)
     return audit_service.report_summary(tenant_id=str(user["tenant_id"]))
+
+
+@router.get("/reports/compliance", response_model=AuditComplianceReport)
+def get_audit_compliance_report(
+    user: Annotated[dict[str, Any], Depends(current_user)],
+    template: Annotated[str, Query(min_length=3, max_length=80)] = "soc2-access",
+) -> AuditComplianceReport:
+    require_audit_permission("audit:read", user)
+    return audit_service.compliance_report(tenant_id=str(user["tenant_id"]), template=template)

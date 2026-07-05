@@ -1,17 +1,20 @@
 """审计事件存储与 SIEM 投递服务首版。"""
 import hashlib
+import hmac
 import json
 from collections import Counter
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from app.api.audits.schemas import (
+    AuditComplianceReport,
     AuditEvent,
     AuditEventCreate,
     AuditReportSummary,
     AuditSeverity,
     SiemDeliveryStatus,
 )
+from app.core.config import settings
 
 SENSITIVE_KEYS = {
     "password",
@@ -85,6 +88,22 @@ class AuditEventRepository:
             by_category=dict(category_counts),
             by_siem_delivery_status=dict(siem_counts),
         )
+
+    def compliance_report(self, *, tenant_id: str, template: str) -> AuditComplianceReport:
+        matches = [event for event in self._events if event.tenant_id == tenant_id]
+        report = AuditComplianceReport(
+            tenant_id=tenant_id,
+            template=template,
+            total=len(matches),
+            event_ids=[event.id for event in matches],
+            hash_chain_start=matches[0].event_hash if matches else None,
+            hash_chain_end=matches[-1].event_hash if matches else None,
+            period_start=matches[0].created_at if matches else None,
+            period_end=matches[-1].created_at if matches else None,
+            report_signature="",
+        )
+        report.report_signature = sign_compliance_report(report)
+        return report
 
     def clear(self) -> None:
         self._events.clear()
@@ -162,11 +181,29 @@ class AuditService:
     def report_summary(self, *, tenant_id: str) -> AuditReportSummary:
         return self._repository.summary(tenant_id=tenant_id)
 
+    def compliance_report(self, *, tenant_id: str, template: str) -> AuditComplianceReport:
+        return self._repository.compliance_report(tenant_id=tenant_id, template=template)
+
 
 def calculate_event_hash(event: AuditEvent) -> str:
-    canonical = event.model_dump(mode="json", exclude={"event_hash", "siem_delivery_status", "siem_delivery_error", "siem_delivery_attempts", "siem_next_retry_at"})
+    canonical = event.model_dump(
+        mode="json",
+        exclude={
+            "event_hash",
+            "siem_delivery_status",
+            "siem_delivery_error",
+            "siem_delivery_attempts",
+            "siem_next_retry_at",
+        },
+    )
     encoded = json.dumps(canonical, sort_keys=True, separators=(",", ":")).encode("utf-8")
     return hashlib.sha256(encoded).hexdigest()
+
+
+def sign_compliance_report(report: AuditComplianceReport) -> str:
+    canonical = report.model_dump(mode="json", exclude={"report_signature"})
+    encoded = json.dumps(canonical, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    return hmac.new(settings.SECRET_KEY.encode("utf-8"), encoded, hashlib.sha256).hexdigest()
 
 
 def redact_metadata(value: Any) -> Any:

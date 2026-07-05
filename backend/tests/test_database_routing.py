@@ -52,6 +52,7 @@ DB_BACKED_GET_ROUTE_ROUTING_INVENTORY = {
 
 DB_FREE_GET_ROUTE_ROUTING_INVENTORY = {
     ("GET", "/api/v1/audits/events"),
+    ("GET", "/api/v1/audits/reports/compliance"),
     ("GET", "/api/v1/audits/reports/summary"),
 }
 

@@ -270,3 +270,73 @@ def test_audit_report_summary_counts_current_tenant_without_metadata_leak():
     }
     assert "raw-session-token" not in str(body)
     assert "raw-password" not in str(body)
+
+
+def test_compliance_report_export_returns_signed_tenant_scoped_event_hashes_without_details():
+    app.dependency_overrides[current_user] = _audit_user
+    client = TestClient(app)
+
+    first = client.post(
+        "/api/v1/audits/events",
+        json={
+            "event_type": "session.started",
+            "category": "session",
+            "action": "start_session",
+            "resource_type": "asset",
+            "resource_id": "asset-1",
+            "severity": "high",
+            "message": "operator session started",
+            "metadata": {"token": "raw-session-token"},
+        },
+    ).json()
+    second = client.post(
+        "/api/v1/audits/events",
+        json={
+            "event_type": "workflow.approved",
+            "category": "workflow",
+            "action": "approve_jit",
+            "resource_type": "workflow_request",
+            "resource_id": "wf-1",
+            "severity": "medium",
+            "metadata": {"password": "raw-password"},
+        },
+    ).json()
+
+    app.dependency_overrides[current_user] = lambda: {
+        **_audit_user(),
+        "tenant_id": "tenant-b",
+    }
+    client.post(
+        "/api/v1/audits/events",
+        json={
+            "event_type": "session.started",
+            "category": "session",
+            "action": "start_session",
+            "resource_type": "asset",
+            "resource_id": "asset-2",
+        },
+    )
+
+    app.dependency_overrides[current_user] = _audit_user
+    response = client.get("/api/v1/audits/reports/compliance?template=soc2-access")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["tenant_id"] == "tenant-a"
+    assert body["template"] == "soc2-access"
+    assert body["total"] == 2
+    assert body["event_ids"] == [first["id"], second["id"]]
+    assert body["hash_chain_start"] == first["event_hash"]
+    assert body["hash_chain_end"] == second["event_hash"]
+    assert body["report_signature"]
+    assert body["generated_at"]
+    assert body["period_start"] == first["created_at"]
+    assert body["period_end"] == second["created_at"]
+    assert "metadata" not in body
+    assert "message" not in body
+    assert "resource_id" not in body
+    assert "session_id" not in body
+
+    serialized = str(body)
+    assert "raw-session-token" not in serialized
+    assert "raw-password" not in serialized
