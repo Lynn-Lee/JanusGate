@@ -10,7 +10,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from app.api.sessions.routes import get_session_gateway_service
-from app.api.workflows.routes import get_workflow_service
+from app.api.workflows.routes import get_read_workflow_service, get_workflow_service
 from app.api.workflows.service import (
     InMemoryWorkflowStore,
     JitGrantStatus,
@@ -80,6 +80,11 @@ def build_sequenced_workflow_service() -> tuple[WorkflowService, FakeAuditSink, 
         grant_id_factory=lambda: next(grant_seq),
     )
     return service, audit, revoker
+
+
+def override_workflow_services(service: WorkflowService) -> None:
+    app.dependency_overrides[get_workflow_service] = lambda: service
+    app.dependency_overrides[get_read_workflow_service] = lambda: service
 
 
 @pytest.mark.asyncio
@@ -597,7 +602,7 @@ async def test_workflow_single_use_grant_cannot_be_reused_for_sessions() -> None
 
 def test_workflow_api_create_submit_approve_and_list_active_grants() -> None:
     service, _audit, _revoker = build_workflow_service()
-    app.dependency_overrides[get_workflow_service] = lambda: service
+    override_workflow_services(service)
     app.dependency_overrides[current_user] = lambda: {
         "id": "user-1",
         "username": "alice",
@@ -650,7 +655,7 @@ def test_workflow_api_create_submit_approve_and_list_active_grants() -> None:
 
 def test_workflow_api_detail_list_reject_and_revoke_paths() -> None:
     service, _audit, _revoker = build_workflow_service()
-    app.dependency_overrides[get_workflow_service] = lambda: service
+    override_workflow_services(service)
     app.dependency_overrides[current_user] = lambda: {
         "id": "user-1",
         "username": "alice",
@@ -693,7 +698,7 @@ def test_workflow_api_detail_list_reject_and_revoke_paths() -> None:
             assert reject_response.json()["status"] == "rejected"
 
         service, _audit, _revoker = build_workflow_service()
-        app.dependency_overrides[get_workflow_service] = lambda: service
+        override_workflow_services(service)
         app.dependency_overrides[current_user] = lambda: {
             "id": "user-1",
             "username": "alice",
@@ -726,7 +731,7 @@ def test_workflow_api_detail_list_reject_and_revoke_paths() -> None:
 
 def test_workflow_api_detail_is_actor_scoped_for_requesters() -> None:
     service, _audit, _revoker = build_workflow_service()
-    app.dependency_overrides[get_workflow_service] = lambda: service
+    override_workflow_services(service)
     app.dependency_overrides[current_user] = lambda: {
         "id": "user-1",
         "username": "alice",
@@ -885,7 +890,7 @@ async def test_expired_or_mismatched_grant_is_fail_closed_for_session_validation
 
 def test_workflow_api_blocks_self_approval_with_stable_error_contract() -> None:
     service, _audit, _revoker = build_workflow_service()
-    app.dependency_overrides[get_workflow_service] = lambda: service
+    override_workflow_services(service)
     app.dependency_overrides[current_user] = lambda: {
         "id": "user-1",
         "username": "alice",
@@ -919,7 +924,7 @@ def test_workflow_api_blocks_self_approval_with_stable_error_contract() -> None:
 
 def test_workflow_api_scopes_active_grants_to_requester_unless_privileged() -> None:
     service, _audit, _revoker = build_sequenced_workflow_service()
-    app.dependency_overrides[get_workflow_service] = lambda: service
+    override_workflow_services(service)
     try:
         with TestClient(app) as client:
             for user_id, asset_id in [("user-1", "asset-1"), ("user-2", "asset-2")]:

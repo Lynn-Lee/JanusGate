@@ -71,6 +71,10 @@
 
 当前切片定义后端 worker 队列写入、单轮消费循环、最小调度 API、`asset.scan` worker handler、`credential.rotate` worker handler 与 `ansible.playbook` worker handler 契约。`AutomationJobQueue` 使用 Redis Streams 风格 `xadd` 写入 `janusgate:automation:jobs`，字段均为字符串，payload 以 `payload_json` 保存，并显式标记 `payload_format=json`。`AutomationWorker` 通过 Redis Streams consumer group 读取消息，按 `job_type` 分发到显式注册的 handler，并仅在 handler 成功后 ack。`AssetScanWorkerHandler` 消费 `asset.scan` 消息时会按当前租户和 active 状态确认资产存在，并只把资产 ID、租户、名称、地址、端口和平台 ID 传给扫描执行器，不传递 legacy credential 字段。`CredentialRotateWorkerHandler` 消费 `credential.rotate` 消息时会按当前租户和 active account 边界确认账号存在，创建 `CredentialRotation` 记录并调用显式改密执行器；队列 payload 只携带 account id 与可选 reason，不携带 secret 引用之外的凭据材料。`AnsiblePlaybookWorkerHandler` 消费 `ansible.playbook` 消息时会按当前租户和 active asset 边界确认全部目标资产存在，并只把 playbook 名称、check mode、请求人和不含 legacy credential 的目标摘要传给显式 runner 契约。`LocalAnsiblePlaybookRunner` 会把 playbook 名称收敛到配置的 playbook root 内相对 `.yml/.yaml` 文件，渲染不含凭据的临时 JSON inventory，在临时 runtime 目录执行 `ansible-playbook`，仅传递去敏后的基础环境变量，并通过 `ANSIBLE_PLAYBOOK_TIMEOUT_SECONDS` 限制执行时间；超时时会返回 `ANSIBLE_PLAYBOOK_TIMED_OUT` 并回收本地子进程。后端可通过 `ANSIBLE_PLAYBOOK_ROOT`、`ANSIBLE_RUNTIME_ROOT`、`ANSIBLE_PLAYBOOK_EXECUTABLE`、`ANSIBLE_PLAYBOOK_TIMEOUT_SECONDS`、`ANSIBLE_PLAYBOOK_MEMORY_LIMIT_MB` 和 `ANSIBLE_PLAYBOOK_CPU_LIMIT_SECONDS` 装配该 runner；CPU/内存限制在支持 POSIX `setrlimit` 的本地执行环境中应用于子进程。`AutomationJobRun` 会持久化 `ansible.playbook` 的 running/completed/failed 状态、Redis message id、请求人、playbook 名称、check mode、目标数量和脱敏错误码，不保存 inventory、stdout、stderr 或 secret payload；`GET /api/v1/automation/jobs/runs` 可按当前租户只读查询这些执行状态元数据。
 
+## Phase 5 Database Read Routing（#t53）
+
+可配置只读副本通过 `DATABASE_READ_REPLICA_URL` 装配；未配置时 read session factory 复用 writer engine，不改变本地开发和单副本部署行为。`GET /api/v1/workflows/requests`、`GET /api/v1/workflows/requests/{request_id}` 与 `GET /api/v1/workflows/grants/active` 现在通过 read session service factory 读取当前用户可见的 Workflow/JIT 记录。Workflow request 创建、提交、审批、拒绝、撤销继续使用 writer session，以保证状态机变更、grant 生成、审计和 session revoke 相关路径强一致。
+
 支持的 `job_type` 白名单：
 
 - `asset.scan`
