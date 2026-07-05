@@ -14,7 +14,7 @@ from app.api.webhook_schemas import (
     WebhookEndpointResponse,
     WebhookEndpointStatus,
 )
-from app.core.database import get_db
+from app.core.database import get_db, get_read_db
 from app.core.deps import current_user
 from app.models.webhook import WebhookEndpoint
 
@@ -23,7 +23,7 @@ router = APIRouter(prefix="/webhook-endpoints", tags=["Webhook"])
 
 @router.get("/", response_model=WebhookEndpointListResponse)
 async def list_webhook_endpoints(
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_read_db),
     user: dict[str, Any] = Depends(current_user),
 ) -> WebhookEndpointListResponse:
     _require_webhook_permission(user, "webhooks:read")
