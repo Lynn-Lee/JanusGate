@@ -17,7 +17,7 @@ from app.api.session_recording_schemas import (
     SessionRecordingCreate,
     SessionRecordingResponse,
 )
-from app.core.database import get_db
+from app.core.database import get_db, get_read_db
 from app.core.deps import current_user
 from app.models.connector import Connector
 from app.models.session_recording import SessionCommandEvent, SessionRecording
@@ -123,7 +123,7 @@ async def ingest_connector_session_command_event(
 )
 async def list_session_recording_commands(
     recording_id: int,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_read_db),
     user: dict[str, Any] = Depends(current_user),
 ) -> SessionCommandEventListResponse:
     _require_recording_permission(user, "session-recordings:read")
@@ -163,7 +163,7 @@ async def close_session_recording(
 @router.get("/session-recordings/commands", response_model=SessionCommandEventListResponse)
 async def search_session_commands(
     query: str = Query(min_length=1, max_length=120),
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_read_db),
     user: dict[str, Any] = Depends(current_user),
 ) -> SessionCommandEventListResponse:
     _require_recording_permission(user, "session-recordings:read")
