@@ -3,11 +3,13 @@ from typing import Annotated, Any, cast
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, ConfigDict, Field
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.core.deps import current_user, get_redis
 from app.models.account import Account
+from app.models.automation import AutomationJobRun
 from app.services.automation_worker import AutomationJobQueue, JsonValue, RedisStreamClient
 from app.tenancy.scope import actor_scope_from_user, scoped_select
 
@@ -38,10 +40,63 @@ class AutomationJobResponse(BaseModel):
     status: str
 
 
+class AutomationJobRunResponse(BaseModel):
+    message_id: str
+    job_type: str
+    status: str
+    requested_by: str
+    playbook_name: str | None
+    check_mode: bool | None
+    target_count: int | None
+    error_code: str | None
+
+
+class AutomationJobRunListResponse(BaseModel):
+    items: list[AutomationJobRunResponse]
+    total: int
+
+
 def get_automation_job_queue(
     redis: RedisStreamClient = Depends(get_redis),
 ) -> AutomationJobQueue:
     return AutomationJobQueue(redis=redis)
+
+
+@router.get("/runs", response_model=AutomationJobRunListResponse)
+async def list_automation_job_runs(
+    db: AsyncSession = Depends(get_db),
+    user: dict[str, Any] = Depends(current_user),
+) -> AutomationJobRunListResponse:
+    _require_automation_permission(user, "automation:read")
+    tenant_id = str(user.get("tenant_id") or "default")
+    total_result = await db.execute(
+        select(func.count()).select_from(AutomationJobRun).where(
+            AutomationJobRun.tenant_id == tenant_id
+        )
+    )
+    result = await db.execute(
+        select(AutomationJobRun)
+        .where(AutomationJobRun.tenant_id == tenant_id)
+        .order_by(AutomationJobRun.created_at.desc(), AutomationJobRun.message_id.desc())
+        .limit(100)
+    )
+    runs = result.scalars().all()
+    return AutomationJobRunListResponse(
+        items=[
+            AutomationJobRunResponse(
+                message_id=run.message_id,
+                job_type=run.job_type,
+                status=run.status,
+                requested_by=run.requested_by,
+                playbook_name=run.playbook_name,
+                check_mode=run.check_mode,
+                target_count=run.target_count,
+                error_code=run.error_code,
+            )
+            for run in runs
+        ],
+        total=total_result.scalar_one(),
+    )
 
 
 @router.post(

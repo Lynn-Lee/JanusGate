@@ -69,7 +69,7 @@
 
 ## Phase 4 Automation Worker Queue（#t52）
 
-当前切片定义后端 worker 队列写入、单轮消费循环、最小调度 API、`asset.scan` worker handler、`credential.rotate` worker handler 与 `ansible.playbook` worker handler 契约。`AutomationJobQueue` 使用 Redis Streams 风格 `xadd` 写入 `janusgate:automation:jobs`，字段均为字符串，payload 以 `payload_json` 保存，并显式标记 `payload_format=json`。`AutomationWorker` 通过 Redis Streams consumer group 读取消息，按 `job_type` 分发到显式注册的 handler，并仅在 handler 成功后 ack。`AssetScanWorkerHandler` 消费 `asset.scan` 消息时会按当前租户和 active 状态确认资产存在，并只把资产 ID、租户、名称、地址、端口和平台 ID 传给扫描执行器，不传递 legacy credential 字段。`CredentialRotateWorkerHandler` 消费 `credential.rotate` 消息时会按当前租户和 active account 边界确认账号存在，创建 `CredentialRotation` 记录并调用显式改密执行器；队列 payload 只携带 account id 与可选 reason，不携带 secret 引用之外的凭据材料。`AnsiblePlaybookWorkerHandler` 消费 `ansible.playbook` 消息时会按当前租户和 active asset 边界确认全部目标资产存在，并只把 playbook 名称、check mode、请求人和不含 legacy credential 的目标摘要传给显式 runner 契约。`LocalAnsiblePlaybookRunner` 会把 playbook 名称收敛到配置的 playbook root 内相对 `.yml/.yaml` 文件，渲染不含凭据的临时 JSON inventory，在临时 runtime 目录执行 `ansible-playbook`，仅传递去敏后的基础环境变量，并通过 `ANSIBLE_PLAYBOOK_TIMEOUT_SECONDS` 限制执行时间；超时时会返回 `ANSIBLE_PLAYBOOK_TIMED_OUT` 并回收本地子进程。后端可通过 `ANSIBLE_PLAYBOOK_ROOT`、`ANSIBLE_RUNTIME_ROOT`、`ANSIBLE_PLAYBOOK_EXECUTABLE`、`ANSIBLE_PLAYBOOK_TIMEOUT_SECONDS`、`ANSIBLE_PLAYBOOK_MEMORY_LIMIT_MB` 和 `ANSIBLE_PLAYBOOK_CPU_LIMIT_SECONDS` 装配该 runner；CPU/内存限制在支持 POSIX `setrlimit` 的本地执行环境中应用于子进程。`AutomationJobRun` 会持久化 `ansible.playbook` 的 running/completed/failed 状态、Redis message id、请求人、playbook 名称、check mode、目标数量和脱敏错误码，不保存 inventory、stdout、stderr 或 secret payload。
+当前切片定义后端 worker 队列写入、单轮消费循环、最小调度 API、`asset.scan` worker handler、`credential.rotate` worker handler 与 `ansible.playbook` worker handler 契约。`AutomationJobQueue` 使用 Redis Streams 风格 `xadd` 写入 `janusgate:automation:jobs`，字段均为字符串，payload 以 `payload_json` 保存，并显式标记 `payload_format=json`。`AutomationWorker` 通过 Redis Streams consumer group 读取消息，按 `job_type` 分发到显式注册的 handler，并仅在 handler 成功后 ack。`AssetScanWorkerHandler` 消费 `asset.scan` 消息时会按当前租户和 active 状态确认资产存在，并只把资产 ID、租户、名称、地址、端口和平台 ID 传给扫描执行器，不传递 legacy credential 字段。`CredentialRotateWorkerHandler` 消费 `credential.rotate` 消息时会按当前租户和 active account 边界确认账号存在，创建 `CredentialRotation` 记录并调用显式改密执行器；队列 payload 只携带 account id 与可选 reason，不携带 secret 引用之外的凭据材料。`AnsiblePlaybookWorkerHandler` 消费 `ansible.playbook` 消息时会按当前租户和 active asset 边界确认全部目标资产存在，并只把 playbook 名称、check mode、请求人和不含 legacy credential 的目标摘要传给显式 runner 契约。`LocalAnsiblePlaybookRunner` 会把 playbook 名称收敛到配置的 playbook root 内相对 `.yml/.yaml` 文件，渲染不含凭据的临时 JSON inventory，在临时 runtime 目录执行 `ansible-playbook`，仅传递去敏后的基础环境变量，并通过 `ANSIBLE_PLAYBOOK_TIMEOUT_SECONDS` 限制执行时间；超时时会返回 `ANSIBLE_PLAYBOOK_TIMED_OUT` 并回收本地子进程。后端可通过 `ANSIBLE_PLAYBOOK_ROOT`、`ANSIBLE_RUNTIME_ROOT`、`ANSIBLE_PLAYBOOK_EXECUTABLE`、`ANSIBLE_PLAYBOOK_TIMEOUT_SECONDS`、`ANSIBLE_PLAYBOOK_MEMORY_LIMIT_MB` 和 `ANSIBLE_PLAYBOOK_CPU_LIMIT_SECONDS` 装配该 runner；CPU/内存限制在支持 POSIX `setrlimit` 的本地执行环境中应用于子进程。`AutomationJobRun` 会持久化 `ansible.playbook` 的 running/completed/failed 状态、Redis message id、请求人、playbook 名称、check mode、目标数量和脱敏错误码，不保存 inventory、stdout、stderr 或 secret payload；`GET /api/v1/automation/jobs/runs` 可按当前租户只读查询这些执行状态元数据。
 
 支持的 `job_type` 白名单：
 
@@ -170,6 +170,37 @@
 - API payload 只包含 playbook 名称、目标资产 ID 列表和 check mode；额外字段 fail-closed 为请求校验错误。
 - 队列 payload 不携带 extra vars、password、token、secret、私钥或连接串。
 - `ansible.playbook` worker handler 已按租户确认 active 目标资产，并只向显式 runner 契约传递无凭据目标摘要；本地 `ansible-playbook` adapter 已覆盖 playbook root 路径收敛、临时 inventory 渲染、check mode 传递、不继承 secret/token 环境变量的 runtime 目录基础沙箱，以及执行超时和超时子进程回收。
+
+### GET `/api/v1/automation/jobs/runs`
+
+用途：按当前认证用户租户查询后台执行状态元数据，供控制台或运维侧查看 `ansible.playbook` job run 的 running/completed/failed 状态。
+
+鉴权：需要登录态；`automation:read` 或 `admin` 权限可访问。后端只读取当前用户 `tenant_id` 下的 run，不接受前端传入 tenant。
+
+响应 `200`：
+
+```json
+{
+  "items": [
+    {
+      "message_id": "1700000000000-0",
+      "job_type": "ansible.playbook",
+      "status": "completed",
+      "requested_by": "user-1",
+      "playbook_name": "linux-baseline.yml",
+      "check_mode": true,
+      "target_count": 2,
+      "error_code": null
+    }
+  ],
+  "total": 1
+}
+```
+
+安全语义：
+
+- 响应只返回 job run 状态元数据，不返回 queue payload、inventory、stdout、stderr、secret 引用、凭据明文或下游执行输出。
+- 租户隔离以当前认证用户为准，跨租户 run 不参与列表或 total。
 
 安全语义：
 

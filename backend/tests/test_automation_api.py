@@ -13,6 +13,7 @@ from app.core.deps import current_user, get_redis
 from app.main import app
 from app.models.account import Account
 from app.models.asset import Asset, Platform
+from app.models.automation import AutomationJobRun
 
 
 class RecordingRedisStream:
@@ -80,6 +81,36 @@ async def seed_account(session_factory: async_sessionmaker[AsyncSession]) -> Non
                 protocol="ssh",
                 secret_id="sec_tenant_a_deploy",
             )
+        )
+        await session.commit()
+
+
+async def seed_job_runs(session_factory: async_sessionmaker[AsyncSession]) -> None:
+    async with session_factory() as session:
+        session.add_all(
+            [
+                AutomationJobRun(
+                    message_id="1700000000000-0",
+                    tenant_id="tenant-a",
+                    job_type="ansible.playbook",
+                    status="completed",
+                    requested_by="user-1",
+                    playbook_name="linux-baseline.yml",
+                    check_mode=True,
+                    target_count=2,
+                ),
+                AutomationJobRun(
+                    message_id="1700000000001-0",
+                    tenant_id="tenant-b",
+                    job_type="ansible.playbook",
+                    status="failed",
+                    requested_by="user-2",
+                    playbook_name="other-tenant.yml",
+                    check_mode=False,
+                    target_count=1,
+                    error_code="ANSIBLE_PLAYBOOK_FAILED",
+                ),
+            ]
         )
         await session.commit()
 
@@ -246,3 +277,53 @@ async def test_credential_rotation_job_api_rejects_cross_tenant_account(
     assert response.status_code == 404
     assert response.json()["code"] == "ACCOUNT_NOT_FOUND"
     assert stream.calls == []
+
+
+@pytest.mark.asyncio
+async def test_job_runs_api_lists_only_current_tenant_runs_without_payload(
+    session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    install_db(session_factory)
+    await seed_job_runs(session_factory)
+
+    with TestClient(app) as client:
+        install_user(tenant_id="tenant-a", permissions=["automation:read"])
+        response = client.get("/api/v1/automation/jobs/runs")
+
+    app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "items": [
+            {
+                "message_id": "1700000000000-0",
+                "job_type": "ansible.playbook",
+                "status": "completed",
+                "requested_by": "user-1",
+                "playbook_name": "linux-baseline.yml",
+                "check_mode": True,
+                "target_count": 2,
+                "error_code": None,
+            }
+        ],
+        "total": 1,
+    }
+    assert "payload" not in json.dumps(response.json()).lower()
+    assert "stdout" not in json.dumps(response.json()).lower()
+    assert "stderr" not in json.dumps(response.json()).lower()
+
+
+@pytest.mark.asyncio
+async def test_job_runs_api_requires_automation_read_permission(
+    session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    install_db(session_factory)
+    await seed_job_runs(session_factory)
+
+    with TestClient(app) as client:
+        install_user(tenant_id="tenant-a", permissions=["automation:write"])
+        response = client.get("/api/v1/automation/jobs/runs")
+
+    app.dependency_overrides.clear()
+
+    assert response.status_code == 403
