@@ -292,6 +292,38 @@ def test_workflow_approval_policy_write_routes_keep_writer_database_dependency()
         assert get_read_db not in dependencies
 
 
+def test_workflow_request_read_routes_use_read_service_dependency() -> None:
+    read_routes = [
+        ("GET", "/workflows/requests"),
+        ("GET", "/workflows/requests/{request_id}"),
+        ("GET", "/workflows/grants/active"),
+    ]
+
+    for method, path in read_routes:
+        dependency_names = _route_dependency_names(
+            router=workflows_router, method=method, path=path
+        )
+        assert "get_read_workflow_service" in dependency_names
+        assert "get_workflow_service" not in dependency_names
+
+
+def test_workflow_request_write_routes_keep_writer_service_dependency() -> None:
+    write_routes = [
+        ("POST", "/workflows/requests"),
+        ("POST", "/workflows/requests/{request_id}/submit"),
+        ("POST", "/workflows/requests/{request_id}/approve"),
+        ("POST", "/workflows/requests/{request_id}/reject"),
+        ("POST", "/workflows/requests/{request_id}/revoke"),
+    ]
+
+    for method, path in write_routes:
+        dependency_names = _route_dependency_names(
+            router=workflows_router, method=method, path=path
+        )
+        assert "get_workflow_service" in dependency_names
+        assert "get_read_workflow_service" not in dependency_names
+
+
 def _route_dependency_calls(*, router: Any = assets_router, method: str, path: str) -> set[Any]:
     for route in router.routes:
         if not isinstance(route, APIRoute):
@@ -299,3 +331,10 @@ def _route_dependency_calls(*, router: Any = assets_router, method: str, path: s
         if route.path == path and method in route.methods:
             return {dependency.call for dependency in route.dependant.dependencies}
     raise AssertionError(f"Route not found: {method} {path}")
+
+
+def _route_dependency_names(*, router: Any, method: str, path: str) -> set[str]:
+    return {
+        getattr(call, "__name__", repr(call))
+        for call in _route_dependency_calls(router=router, method=method, path=path)
+    }

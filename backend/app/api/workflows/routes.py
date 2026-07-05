@@ -42,6 +42,14 @@ def get_workflow_service(db: AsyncSession = Depends(get_db)) -> WorkflowService:
     )
 
 
+def get_read_workflow_service(db: AsyncSession = Depends(get_read_db)) -> WorkflowService:
+    return WorkflowService(
+        store=SQLAlchemyWorkflowStore(db),
+        audit_sink=_workflow_audit_sink,
+        session_revoker=get_session_revoker(),
+    )
+
+
 @router.get("/approval-policies", response_model=ApprovalPolicyListResponse)
 async def list_approval_policies(
     db: AsyncSession = Depends(get_read_db),
@@ -189,7 +197,7 @@ async def create_workflow_request(
 @router.get("/requests", response_model=WorkflowRequestListResponse)
 async def list_workflow_requests(
     user: dict[str, Any] = Depends(current_user),
-    service: WorkflowService = Depends(get_workflow_service),
+    service: WorkflowService = Depends(get_read_workflow_service),
 ) -> WorkflowRequestListResponse:
     records = await service.list_requests(actor=user)
     items = [WorkflowRequestResponse.from_record(record) for record in records]
@@ -200,7 +208,7 @@ async def list_workflow_requests(
 async def get_workflow_request(
     request_id: str,
     user: dict[str, Any] = Depends(current_user),
-    service: WorkflowService = Depends(get_workflow_service),
+    service: WorkflowService = Depends(get_read_workflow_service),
 ) -> WorkflowRequestResponse:
     record = await service.get_request_for_actor(
         request_id,
@@ -291,7 +299,7 @@ async def revoke_workflow_request(
 @router.get("/grants/active", response_model=JitGrantListResponse)
 async def list_active_jit_grants(
     user: dict[str, Any] = Depends(current_user),
-    service: WorkflowService = Depends(get_workflow_service),
+    service: WorkflowService = Depends(get_read_workflow_service),
 ) -> JitGrantListResponse:
     records = await service.list_active_grants(actor=user)
     items = [JitGrantResponse.from_record(record) for record in records]
