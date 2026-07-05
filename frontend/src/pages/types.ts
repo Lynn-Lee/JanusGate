@@ -133,6 +133,8 @@ export type AuditComplianceReport = {
   period_end: string | null;
   generated_at: string;
   report_signature: string;
+  report_signature_algorithm: string;
+  report_signature_key_id: string;
   worm_storage_status: string;
   worm_record_id: string;
   worm_sequence_number: number;

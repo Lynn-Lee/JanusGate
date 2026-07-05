@@ -1,7 +1,7 @@
 from fastapi.testclient import TestClient
 
 from app.api.audits.schemas import AuditEvent
-from app.api.audits.service import audit_service
+from app.api.audits.service import AuditEventRepository, audit_service
 from app.core.deps import current_user
 from app.main import app
 
@@ -22,6 +22,16 @@ def _read_only_user() -> dict:
         "tenant_id": "tenant-a",
         "permissions": ["audit:read"],
     }
+
+
+class RecordingComplianceReportSigner:
+    algorithm = "external-test-signature"
+    key_id = "test-kms-key-1"
+
+    def sign(self, report) -> str:
+        assert report.tenant_id == "tenant-a"
+        assert report.template == "soc2-access"
+        return "external-signed-report"
 
 
 def test_create_audit_event_persists_and_masks_sensitive_fields():
@@ -405,3 +415,30 @@ def test_compliance_report_export_includes_formal_file_metadata():
     assert body["download_filename"].endswith(".json")
     assert "/" not in body["download_filename"]
     assert "raw-session-token" not in str(body)
+
+
+def test_compliance_report_export_uses_injected_signer_metadata_for_external_signing_boundary():
+    repository = AuditEventRepository(compliance_report_signer=RecordingComplianceReportSigner())
+    event = AuditEvent(
+        tenant_id="tenant-a",
+        actor_id="user-1",
+        actor_username="alice",
+        event_type="session.started",
+        category="session",
+        action="start_session",
+        resource_type="asset",
+        resource_id="asset-1",
+        severity="high",
+        metadata={"token": "***REDACTED***"},
+        sequence_number=1,
+        event_hash="event-hash-1",
+    )
+    repository.append(event)
+
+    report = repository.compliance_report(tenant_id="tenant-a", template="soc2-access")
+
+    assert report.report_signature == "external-signed-report"
+    assert report.report_signature_algorithm == "external-test-signature"
+    assert report.report_signature_key_id == "test-kms-key-1"
+    assert report.worm_storage_status == "recorded"
+    assert report.worm_content_hash

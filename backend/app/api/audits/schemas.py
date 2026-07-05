@@ -107,6 +107,8 @@ class AuditComplianceReport(BaseModel):
     period_end: datetime | None = None
     generated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     report_signature: str
+    report_signature_algorithm: str
+    report_signature_key_id: str
     worm_storage_status: str
     worm_record_id: str
     worm_sequence_number: int
