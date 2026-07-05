@@ -73,7 +73,7 @@
 
 ## Phase 5 Database Read Routing（#t53）
 
-可配置只读副本通过 `DATABASE_READ_REPLICA_URL` 装配；未配置时 read session factory 复用 writer engine，不改变本地开发和单副本部署行为。`GET /api/v1/auth/me`、`GET /api/v1/sessions/`、`GET /api/v1/workflows/requests`、`GET /api/v1/workflows/requests/{request_id}` 与 `GET /api/v1/workflows/grants/active` 现在通过 read session service factory 读取当前用户可见的认证态用户详情、Session / Workflow / JIT 记录。登录、2FA、refresh token、MFA/密码/API key 变更、Session connection token 签发、Session 创建和关闭，以及 Workflow request 创建、提交、审批、拒绝、撤销继续使用 writer session，以保证 token 消费、状态机变更、grant 生成、审计和 session revoke 相关路径强一致。
+可配置只读副本通过 `DATABASE_READ_REPLICA_URL` 装配；未配置时 read session factory 复用 writer engine，不改变本地开发和单副本部署行为。资产列表、资产详情、平台列表、账号列表、账号轮换列表、会话列表、会话录制命令时间线、命令检索、Tenancy Organization/Team/Project 列表、WebHook endpoint 列表、通知规则列表、通知投递列表、Connector 列表、SSH CA 列表、SSH CA trust bundle、SSH certificate 列表、Automation job run 列表、approval policy 列表、认证态用户详情 `/api/v1/auth/me`、Workflow request 列表/详情以及 active JIT grant 列表 GET 路由已通过 read database dependency 或 read session service factory 读取。当前 `GET /api/v1/audits/events` 与 `GET /api/v1/audits/reports/summary` 仍读取进程内 audit service，不接入 SQLAlchemy session；`tests/test_database_routing.py` 已把这两个 audit GET 路由登记为显式 DB-free 例外，并覆盖所有 GET 路由必须被归类。登录、2FA、refresh token、MFA/密码/API key 变更、Session connection token 签发、Session 创建和关闭，以及 Workflow request 创建、提交、审批、拒绝、撤销继续使用 writer session，以保证 token 消费、状态机变更、grant 生成、审计和 session revoke 相关路径强一致。
 
 支持的 `job_type` 白名单：
 

@@ -7,6 +7,7 @@ from fastapi.routing import APIRoute
 
 from app.api.accounts import router as accounts_router
 from app.api.assets import router as assets_router
+from app.api.audits.routes import router as audits_router
 from app.api.auth import router as auth_router
 from app.api.automation import router as automation_router
 from app.api.connectors import router as connectors_router
@@ -16,10 +17,76 @@ from app.api.session_recordings import router as session_recordings_router
 from app.api.sessions.routes import router as sessions_router
 from app.api.ssh_certificate_authorities import router as ssh_ca_router
 from app.api.ssh_certificates import router as ssh_certificates_router
+from app.api.tenancy.routes import router as tenancy_router
 from app.api.webhook_endpoints import router as webhook_endpoints_router
 from app.api.workflows.routes import router as workflows_router
 from app.core.config import Settings
 from app.core.database import create_database_engines, get_db, get_read_db
+
+DB_BACKED_GET_ROUTE_ROUTING_INVENTORY = {
+    ("GET", "/accounts/"),
+    ("GET", "/accounts/{account_id}/rotations"),
+    ("GET", "/assets/"),
+    ("GET", "/assets/platforms"),
+    ("GET", "/assets/{asset_id}"),
+    ("GET", "/auth/me"),
+    ("GET", "/automation/jobs/runs"),
+    ("GET", "/connectors/"),
+    ("GET", "/notification-deliveries/"),
+    ("GET", "/notification-rules/"),
+    ("GET", "/session-recordings/{recording_id}/commands"),
+    ("GET", "/session-recordings/commands"),
+    ("GET", "/sessions/"),
+    ("GET", "/ssh-certificate-authorities/"),
+    ("GET", "/ssh-certificate-authorities/trust-bundle"),
+    ("GET", "/ssh-certificates/"),
+    ("GET", "/tenancy/organizations"),
+    ("GET", "/tenancy/projects"),
+    ("GET", "/tenancy/teams"),
+    ("GET", "/webhook-endpoints/"),
+    ("GET", "/workflows/approval-policies"),
+    ("GET", "/workflows/grants/active"),
+    ("GET", "/workflows/requests"),
+    ("GET", "/workflows/requests/{request_id}"),
+}
+
+DB_FREE_GET_ROUTE_ROUTING_INVENTORY = {
+    ("GET", "/api/v1/audits/events"),
+    ("GET", "/api/v1/audits/reports/summary"),
+}
+
+GET_ROUTE_ROUTING_INVENTORY = (
+    DB_BACKED_GET_ROUTE_ROUTING_INVENTORY | DB_FREE_GET_ROUTE_ROUTING_INVENTORY
+)
+
+ROUTERS_WITH_GET_ROUTES = [
+    accounts_router,
+    assets_router,
+    audits_router,
+    auth_router,
+    automation_router,
+    connectors_router,
+    notification_deliveries_router,
+    notification_rules_router,
+    session_recordings_router,
+    sessions_router,
+    ssh_ca_router,
+    ssh_certificates_router,
+    tenancy_router,
+    webhook_endpoints_router,
+    workflows_router,
+]
+
+
+def test_all_get_routes_are_classified_in_database_routing_inventory() -> None:
+    assert _all_get_route_keys() == GET_ROUTE_ROUTING_INVENTORY
+
+
+def test_audit_read_routes_are_explicitly_db_free_until_audit_store_is_persisted() -> None:
+    for method, path in DB_FREE_GET_ROUTE_ROUTING_INVENTORY:
+        dependencies = _route_dependency_calls(router=audits_router, method=method, path=path)
+        assert get_db not in dependencies
+        assert get_read_db not in dependencies
 
 
 def test_create_database_engines_defaults_read_engine_to_writer() -> None:
@@ -406,3 +473,14 @@ def _dependency_calls_recursive(dependencies: Any) -> set[Any]:
         calls.add(dependency.call)
         stack.extend(dependency.dependencies)
     return calls
+
+
+def _all_get_route_keys() -> set[tuple[str, str]]:
+    routes: set[tuple[str, str]] = set()
+    for router in ROUTERS_WITH_GET_ROUTES:
+        for route in router.routes:
+            if not isinstance(route, APIRoute):
+                continue
+            if "GET" in route.methods:
+                routes.add(("GET", route.path))
+    return routes
