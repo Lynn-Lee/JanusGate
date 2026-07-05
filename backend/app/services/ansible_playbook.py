@@ -60,11 +60,13 @@ class LocalAnsiblePlaybookRunner:
         runtime_root: Path,
         command_runner: AnsibleCommandRunner | None = None,
         executable: str = "ansible-playbook",
+        timeout_seconds: float = 300.0,
     ) -> None:
         self._playbook_root = playbook_root.resolve()
         self._runtime_root = runtime_root.resolve()
         self._command_runner = command_runner or _run_ansible_command
         self._executable = executable
+        self._timeout_seconds = timeout_seconds
 
     async def run(self, playbook: AnsiblePlaybookRun) -> None:
         playbook_path = self._resolve_playbook(playbook.playbook_name)
@@ -82,7 +84,13 @@ class LocalAnsiblePlaybookRunner:
             args = [self._executable, str(playbook_path), "-i", str(inventory_path)]
             if playbook.check_mode:
                 args.append("--check")
-            result = await self._command_runner(args, cwd=work_dir, env=_safe_ansible_env())
+            try:
+                result = await asyncio.wait_for(
+                    self._command_runner(args, cwd=work_dir, env=_safe_ansible_env()),
+                    timeout=self._timeout_seconds,
+                )
+            except TimeoutError as exc:
+                raise ValueError("ANSIBLE_PLAYBOOK_TIMED_OUT") from exc
             if result != 0:
                 raise ValueError("ANSIBLE_PLAYBOOK_FAILED")
 
@@ -106,6 +114,7 @@ def build_local_ansible_playbook_runner(
         runtime_root=Path(settings.ANSIBLE_RUNTIME_ROOT),
         command_runner=command_runner,
         executable=settings.ANSIBLE_PLAYBOOK_EXECUTABLE,
+        timeout_seconds=settings.ANSIBLE_PLAYBOOK_TIMEOUT_SECONDS,
     )
 
 
@@ -309,4 +318,9 @@ async def _run_ansible_command(args: list[str], *, cwd: Path, env: dict[str, str
         stdout=asyncio.subprocess.DEVNULL,
         stderr=asyncio.subprocess.DEVNULL,
     )
-    return await process.wait()
+    try:
+        return await process.wait()
+    except asyncio.CancelledError:
+        process.kill()
+        await process.wait()
+        raise

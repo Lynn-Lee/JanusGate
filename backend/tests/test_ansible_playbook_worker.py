@@ -1,7 +1,9 @@
 """Phase 4 Ansible playbook worker handler tests."""
 from __future__ import annotations
 
+import asyncio
 import json
+import time
 from collections.abc import AsyncGenerator
 from pathlib import Path
 
@@ -319,6 +321,46 @@ async def test_local_ansible_runner_rejects_playbook_path_traversal(tmp_path: Pa
                 targets=[],
             )
         )
+
+
+@pytest.mark.asyncio
+async def test_local_ansible_runner_times_out_long_running_playbook(tmp_path: Path) -> None:
+    playbook_root = tmp_path / "playbooks"
+    runtime_root = tmp_path / "runtime"
+    playbook_root.mkdir()
+    runtime_root.mkdir()
+    (playbook_root / "linux-baseline.yml").write_text("---\n- hosts: all\n", encoding="utf-8")
+
+    async def command_runner(
+        args: list[str],
+        *,
+        cwd: Path,
+        env: dict[str, str],
+    ) -> int:
+        del args, cwd, env
+        await asyncio.sleep(1)
+        return 0
+
+    runner = LocalAnsiblePlaybookRunner(
+        playbook_root=playbook_root,
+        runtime_root=runtime_root,
+        command_runner=command_runner,
+        timeout_seconds=0.01,
+    )
+
+    started_at = time.monotonic()
+    with pytest.raises(ValueError, match="ANSIBLE_PLAYBOOK_TIMED_OUT"):
+        await runner.run(
+            AnsiblePlaybookRun(
+                tenant_id="tenant-a",
+                requested_by="user-1",
+                playbook_name="linux-baseline.yml",
+                check_mode=False,
+                targets=[],
+            )
+        )
+
+    assert time.monotonic() - started_at < 0.5
 
 
 @pytest.mark.asyncio
