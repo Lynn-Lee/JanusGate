@@ -184,3 +184,13 @@ jobs:
 
       - name: Phase 5 HA config smoke
         run: scripts/phase5-ha-config-smoke.sh
+
+      - name: Phase 5 Kubernetes multi-replica smoke
+        if: vars.JANUSGATE_RUN_K8S_SMOKE == '1'
+        env:
+          SECRET_KEY: ${{ secrets.JANUSGATE_SMOKE_SECRET_KEY }}
+          DATABASE_URL: ${{ secrets.JANUSGATE_SMOKE_DATABASE_URL }}
+          DATABASE_READ_REPLICA_URL: ${{ secrets.JANUSGATE_SMOKE_DATABASE_READ_REPLICA_URL }}
+          REDIS_URL: ${{ secrets.JANUSGATE_SMOKE_REDIS_URL }}
+          JANUSGATE_IMAGE_TAG: ${{ github.sha }}
+        run: scripts/phase5-k8s-multi-replica-smoke.sh
