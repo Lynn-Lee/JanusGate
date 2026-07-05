@@ -32,6 +32,8 @@ const auditComplianceReport = {
   period_end: '2026-07-05T15:35:00Z',
   generated_at: '2026-07-05T15:40:00Z',
   report_signature: 'hmac-sha256-signed',
+  report_signature_algorithm: 'hmac-sha256',
+  report_signature_key_id: 'local-secret-key',
   worm_storage_status: 'recorded',
   worm_record_id: 'worm-report-1',
   worm_sequence_number: 1,

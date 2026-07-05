@@ -6,7 +6,7 @@ import re
 from collections import Counter
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
-from typing import Any
+from typing import Any, Protocol
 from uuid import uuid4
 
 from app.api.audits.schemas import (
@@ -47,15 +47,31 @@ class ComplianceReportArchiveRecord:
     created_at: datetime
 
 
+class ComplianceReportSigner(Protocol):
+    algorithm: str
+    key_id: str
+
+    def sign(self, report: AuditComplianceReport) -> str: ...
+
+
+class HmacComplianceReportSigner:
+    algorithm = "hmac-sha256"
+    key_id = "local-secret-key"
+
+    def sign(self, report: AuditComplianceReport) -> str:
+        return sign_compliance_report(report)
+
+
 class AuditEventRepository:
     """进程内 append-only 审计事件仓库。
 
     当前仓库用于第一版 API 和测试闭环；后续可替换为 SQLAlchemy/WORM 实现，路由层不变。
     """
 
-    def __init__(self) -> None:
+    def __init__(self, compliance_report_signer: ComplianceReportSigner | None = None) -> None:
         self._events: list[AuditEvent] = []
         self._compliance_report_archive: list[ComplianceReportArchiveRecord] = []
+        self._compliance_report_signer = compliance_report_signer or HmacComplianceReportSigner()
 
     def append(self, event: AuditEvent) -> AuditEvent:
         self._events.append(event)
@@ -123,12 +139,14 @@ class AuditEventRepository:
             period_end=matches[-1].created_at if matches else None,
             generated_at=generated_at,
             report_signature="",
+            report_signature_algorithm=self._compliance_report_signer.algorithm,
+            report_signature_key_id=self._compliance_report_signer.key_id,
             worm_storage_status="pending",
             worm_record_id="",
             worm_sequence_number=0,
             worm_content_hash="",
         )
-        report.report_signature = sign_compliance_report(report)
+        report.report_signature = self._compliance_report_signer.sign(report)
         archive_record = self._append_compliance_report_archive(report)
         report.worm_storage_status = "recorded"
         report.worm_record_id = archive_record.id
@@ -252,6 +270,8 @@ def sign_compliance_report(report: AuditComplianceReport) -> str:
         mode="json",
         exclude={
             "report_signature",
+            "report_signature_algorithm",
+            "report_signature_key_id",
             "worm_storage_status",
             "worm_record_id",
             "worm_sequence_number",
@@ -268,6 +288,8 @@ def calculate_compliance_report_content_hash(report: AuditComplianceReport) -> s
         exclude={
             "generated_at",
             "report_signature",
+            "report_signature_algorithm",
+            "report_signature_key_id",
             "worm_storage_status",
             "worm_record_id",
             "worm_sequence_number",

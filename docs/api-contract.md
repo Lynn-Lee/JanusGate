@@ -284,13 +284,15 @@ template=soc2-access
   "period_start": "2026-07-05T15:30:00Z",
   "period_end": "2026-07-05T15:35:00Z",
   "generated_at": "2026-07-05T15:40:00Z",
-  "report_signature": "hmac-sha256..."
+  "report_signature": "hmac-sha256...",
+  "report_signature_algorithm": "hmac-sha256",
+  "report_signature_key_id": "local-secret-key"
 }
 ```
 
 安全语义：
 
-- 响应只返回事件 ID、hash chain 起止、报告期间、模板、正式 JSON 导出格式元数据和 HMAC-SHA256 报表签名。
+- 响应只返回事件 ID、hash chain 起止、报告期间、模板、正式 JSON 导出格式元数据、报表签名、签名算法和签名 key id。
 - 响应不返回 audit metadata、message、resource_id、session_id、SIEM 下游错误或任何可能含 token/secret/password 的明细字段。
 - 租户隔离以当前认证用户为准，跨租户事件不会进入 `event_ids`、hash chain 起止或 total。
 - 前端 `/audits` 使用该接口生成 SOC2 合规报表 JSON 下载文件，并使用 `download_filename` 与 `content_type` 作为下载文件名和 Blob media type；页面只展示事件数量与报表签名摘要，不展示原始审计明细。
@@ -1514,13 +1516,14 @@ janusgate_http_request_duration_seconds_bucket{method="GET",path="/health",statu
 
 用途：按当前登录用户租户导出指定模板的合规报表摘要，供控制台下载和审计留存。
 
-响应包含当前租户事件 ID 列表、hash chain 起止、报告期间、HMAC-SHA256 `report_signature`、正式 JSON 导出格式元数据，以及本轮 append-only WORM 归档元数据：
+响应包含当前租户事件 ID 列表、hash chain 起止、报告期间、`report_signature`、签名算法/key id、正式 JSON 导出格式元数据，以及本轮 append-only WORM 归档元数据：
 
 - `schema_version`：当前为 `janusgate.audit-compliance.v1`，用于审计留存和后续兼容解析。
 - `export_format`：当前为 `json`。
 - `content_type`：当前为 `application/vnd.janusgate.audit-compliance+json;version=1`。
 - `download_filename`：后端生成的安全文件名，格式为 `janusgate-<template>-<tenant>-<utc>.json`，只包含文件名安全字符。
-
+- `report_signature_algorithm`：当前默认本地实现为 `hmac-sha256`；服务层已保留可替换 signer 边界，后续外部 KMS/签章适配器复用该字段标识算法。
+- `report_signature_key_id`：当前默认本地实现为 `local-secret-key`，不回显真实密钥；后续外部签章可填入外部 key id 或证书标识。
 - `worm_storage_status`：当前为 `recorded`，表示本次导出已写入归档记录。
 - `worm_record_id`：本次归档记录 ID。
 - `worm_sequence_number`：进程内归档序号，单调递增。
