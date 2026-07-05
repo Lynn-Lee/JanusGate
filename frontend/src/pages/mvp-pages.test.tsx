@@ -18,6 +18,10 @@ const auditReportSummary = {
   by_siem_delivery_status: { delivered: 9, failed: 3 }
 };
 const auditComplianceReport = {
+  schema_version: 'janusgate.audit-compliance.v1',
+  export_format: 'json',
+  content_type: 'application/vnd.janusgate.audit-compliance+json;version=1',
+  download_filename: 'janusgate-soc2-access-tenant-a-20260705T154000Z.json',
   tenant_id: 'tenant-a',
   template: 'soc2-access',
   total: 2,
@@ -261,6 +265,11 @@ describe('MVP pages', () => {
     );
     expect(await screen.findByText('hmac-sha256-signed')).toBeInTheDocument();
     expect(clickMock).toHaveBeenCalled();
+    const clickedAnchor = clickMock.mock.contexts[0] as HTMLAnchorElement;
+    expect(clickedAnchor.download).toBe(auditComplianceReport.download_filename);
+    expect((URL.createObjectURL as unknown as ReturnType<typeof vi.fn>).mock.calls[0]?.[0].type).toBe(
+      auditComplianceReport.content_type
+    );
     expect(screen.queryByText('secret-token')).not.toBeInTheDocument();
   });
 

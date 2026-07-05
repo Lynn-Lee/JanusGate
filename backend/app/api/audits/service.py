@@ -2,6 +2,7 @@
 import hashlib
 import hmac
 import json
+import re
 from collections import Counter
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
@@ -105,7 +106,13 @@ class AuditEventRepository:
 
     def compliance_report(self, *, tenant_id: str, template: str) -> AuditComplianceReport:
         matches = [event for event in self._events if event.tenant_id == tenant_id]
+        generated_at = datetime.now(UTC)
         report = AuditComplianceReport(
+            download_filename=build_compliance_report_filename(
+                tenant_id=tenant_id,
+                template=template,
+                generated_at=generated_at,
+            ),
             tenant_id=tenant_id,
             template=template,
             total=len(matches),
@@ -114,6 +121,7 @@ class AuditEventRepository:
             hash_chain_end=matches[-1].event_hash if matches else None,
             period_start=matches[0].created_at if matches else None,
             period_end=matches[-1].created_at if matches else None,
+            generated_at=generated_at,
             report_signature="",
             worm_storage_status="pending",
             worm_record_id="",
@@ -268,6 +276,22 @@ def calculate_compliance_report_content_hash(report: AuditComplianceReport) -> s
     )
     encoded = json.dumps(canonical, sort_keys=True, separators=(",", ":")).encode("utf-8")
     return hashlib.sha256(encoded).hexdigest()
+
+
+def build_compliance_report_filename(
+    *, tenant_id: str, template: str, generated_at: datetime
+) -> str:
+    date_part = generated_at.strftime("%Y%m%dT%H%M%SZ")
+    return (
+        f"janusgate-{_safe_filename_token(template)}-"
+        f"{_safe_filename_token(tenant_id)}-{date_part}.json"
+    )
+
+
+def _safe_filename_token(value: str) -> str:
+    token = re.sub(r"[^A-Za-z0-9._-]+", "-", value.strip().lower())
+    token = token.strip(".-_")
+    return token or "unknown"
 
 
 def redact_metadata(value: Any) -> Any:

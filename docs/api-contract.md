@@ -271,6 +271,10 @@ template=soc2-access
 
 ```json
 {
+  "schema_version": "janusgate.audit-compliance.v1",
+  "export_format": "json",
+  "content_type": "application/vnd.janusgate.audit-compliance+json;version=1",
+  "download_filename": "janusgate-soc2-access-tenant-a-20260705T154000Z.json",
   "tenant_id": "tenant-a",
   "template": "soc2-access",
   "total": 2,
@@ -286,10 +290,10 @@ template=soc2-access
 
 安全语义：
 
-- 响应只返回事件 ID、hash chain 起止、报告期间、模板和 HMAC-SHA256 报表签名。
+- 响应只返回事件 ID、hash chain 起止、报告期间、模板、正式 JSON 导出格式元数据和 HMAC-SHA256 报表签名。
 - 响应不返回 audit metadata、message、resource_id、session_id、SIEM 下游错误或任何可能含 token/secret/password 的明细字段。
 - 租户隔离以当前认证用户为准，跨租户事件不会进入 `event_ids`、hash chain 起止或 total。
-- 前端 `/audits` 使用该接口生成 SOC2 合规报表 JSON 下载文件，并只展示事件数量与报表签名摘要，不展示原始审计明细。
+- 前端 `/audits` 使用该接口生成 SOC2 合规报表 JSON 下载文件，并使用 `download_filename` 与 `content_type` 作为下载文件名和 Blob media type；页面只展示事件数量与报表签名摘要，不展示原始审计明细。
 
 ## Phase 4 Approval Policy API（#t48）
 
@@ -1510,7 +1514,12 @@ janusgate_http_request_duration_seconds_bucket{method="GET",path="/health",statu
 
 用途：按当前登录用户租户导出指定模板的合规报表摘要，供控制台下载和审计留存。
 
-响应包含当前租户事件 ID 列表、hash chain 起止、报告期间、HMAC-SHA256 `report_signature`，以及本轮 append-only WORM 归档元数据：
+响应包含当前租户事件 ID 列表、hash chain 起止、报告期间、HMAC-SHA256 `report_signature`、正式 JSON 导出格式元数据，以及本轮 append-only WORM 归档元数据：
+
+- `schema_version`：当前为 `janusgate.audit-compliance.v1`，用于审计留存和后续兼容解析。
+- `export_format`：当前为 `json`。
+- `content_type`：当前为 `application/vnd.janusgate.audit-compliance+json;version=1`。
+- `download_filename`：后端生成的安全文件名，格式为 `janusgate-<template>-<tenant>-<utc>.json`，只包含文件名安全字符。
 
 - `worm_storage_status`：当前为 `recorded`，表示本次导出已写入归档记录。
 - `worm_record_id`：本次归档记录 ID。
@@ -1521,7 +1530,7 @@ janusgate_http_request_duration_seconds_bucket{method="GET",path="/health",statu
 
 - 接口复用 `audit:read` 权限，并只读取当前用户 `tenant_id` 下的事件。
 - 响应不返回原始 `metadata`、`message`、`resource_id`、`session_id`、凭据明文、token 或连接串。
-- 当前 WORM 归档为后端 repository 内 append-only 基础；真实外部 WORM 存储、外部签章和正式文件格式仍是后续 Phase 5 切片。
+- 当前 WORM 归档为后端 repository 内 append-only 基础；真实外部 WORM 存储和外部签章仍是后续 Phase 5 切片。
 
 ## 前端解析建议
 

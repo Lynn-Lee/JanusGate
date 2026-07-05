@@ -93,6 +93,10 @@ class AuditReportSummary(BaseModel):
 
 
 class AuditComplianceReport(BaseModel):
+    schema_version: str = "janusgate.audit-compliance.v1"
+    export_format: str = "json"
+    content_type: str = "application/vnd.janusgate.audit-compliance+json;version=1"
+    download_filename: str
     tenant_id: str
     template: str
     total: int
