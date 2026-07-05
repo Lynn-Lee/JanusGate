@@ -67,3 +67,11 @@ def test_helm_chart_exposes_redis_ha_configuration() -> None:
     assert "REDIS_SENTINEL_MASTER_NAME:" in configmap_template
     assert "REDIS_CLUSTER_URLS:" in configmap_template
     assert "REDIS_SOCKET_TIMEOUT_SECONDS:" in configmap_template
+
+
+def test_helm_chart_exposes_database_read_replica_secret() -> None:
+    values = yaml.safe_load((REPO_ROOT / "deploy/helm/janusgate/values.yaml").read_text())
+    secret_template = (REPO_ROOT / "deploy/helm/janusgate/templates/secret.yaml").read_text()
+
+    assert values["secret"]["databaseReadReplicaUrl"] == ""
+    assert "DATABASE_READ_REPLICA_URL:" in secret_template
