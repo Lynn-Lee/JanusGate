@@ -5,7 +5,6 @@ from collections.abc import Callable
 from typing import Any, cast
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
-from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.audits.service import audit_service
@@ -28,6 +27,7 @@ from app.api.sessions.service import (
 from app.core.config import settings
 from app.core.database import get_db
 from app.core.deps import current_user
+from app.core.redis import create_redis_client
 from app.policy.decision import PolicyDecisionService
 from app.policy.schemas import PolicyRule
 from app.workflows.audit import WorkflowAuditSink
@@ -45,8 +45,9 @@ def build_connection_token_store(
     if store == "memory":
         return InMemoryConnectionTokenStore()
     if store == "redis":
+        redis_settings = settings.model_copy(update={"REDIS_URL": redis_url})
         factory = redis_factory or (
-            lambda url: cast(RedisConnectionTokenClient, Redis.from_url(url, decode_responses=True))
+            lambda _url: cast(RedisConnectionTokenClient, create_redis_client(settings=redis_settings))
         )
         return RedisConnectionTokenStore(factory(redis_url), key_prefix=redis_key_prefix)
     raise ValueError("UNSUPPORTED_SESSION_CONNECTION_TOKEN_STORE")

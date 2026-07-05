@@ -26,6 +26,11 @@ class Settings(BaseSettings):
 
     # ── Redis ──
     REDIS_URL: str = "redis://localhost:6379/0"
+    REDIS_MODE: Literal["single", "sentinel", "cluster"] = "single"
+    REDIS_SENTINEL_URLS: str = ""
+    REDIS_SENTINEL_MASTER_NAME: str = "mymaster"
+    REDIS_CLUSTER_URLS: str = ""
+    REDIS_SOCKET_TIMEOUT_SECONDS: float = 5.0
     SESSION_CONNECTION_TOKEN_STORE: Literal["memory", "redis"] = "memory"
     SESSION_CONNECTION_TOKEN_REDIS_KEY_PREFIX: str = "janusgate:session:connection-token:"
 
@@ -63,6 +68,12 @@ class Settings(BaseSettings):
                 "SECRET_KEY 必须设置且长度不少于 32 字符。"
                 "生成命令: python -c 'import secrets; print(secrets.token_hex(32))'"
             )
+        if self.REDIS_MODE == "sentinel" and not self.REDIS_SENTINEL_URLS.strip():
+            raise ValueError("REDIS_SENTINEL_URLS must be set when REDIS_MODE=sentinel")
+        if self.REDIS_MODE == "sentinel" and not self.REDIS_SENTINEL_MASTER_NAME.strip():
+            raise ValueError("REDIS_SENTINEL_MASTER_NAME must be set when REDIS_MODE=sentinel")
+        if self.REDIS_MODE == "cluster" and not self.REDIS_CLUSTER_URLS.strip():
+            raise ValueError("REDIS_CLUSTER_URLS must be set when REDIS_MODE=cluster")
         return self
 
     @property
