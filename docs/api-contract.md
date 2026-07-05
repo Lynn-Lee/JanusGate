@@ -1522,8 +1522,8 @@ janusgate_http_request_duration_seconds_bucket{method="GET",path="/health",statu
 - `export_format`：当前为 `json`。
 - `content_type`：当前为 `application/vnd.janusgate.audit-compliance+json;version=1`。
 - `download_filename`：后端生成的安全文件名，格式为 `janusgate-<template>-<tenant>-<utc>.json`，只包含文件名安全字符。
-- `report_signature_algorithm`：当前默认本地实现为 `hmac-sha256`；服务层已保留可替换 signer 边界，后续外部 KMS/签章适配器复用该字段标识算法。
-- `report_signature_key_id`：当前默认本地实现为 `local-secret-key`，不回显真实密钥；后续外部签章可填入外部 key id 或证书标识。
+- `report_signature_algorithm`：默认本地实现为 `hmac-sha256`；配置 `COMPLIANCE_REPORT_SIGNER_PROVIDER=external-hmac` 后使用 `external-hmac-sha256`，后续真实 KMS/签章服务仍复用该字段标识算法。
+- `report_signature_key_id`：默认本地实现为 `local-secret-key`；外部 HMAC adapter 使用 `COMPLIANCE_REPORT_EXTERNAL_SIGNING_KEY_ID` 作为响应 key id，不回显真实 signing secret。
 - `worm_storage_status`：当前为 `recorded`，表示本次导出已写入归档记录。
 - `worm_record_id`：本次归档记录 ID。
 - `worm_sequence_number`：进程内归档序号，单调递增。
@@ -1533,7 +1533,7 @@ janusgate_http_request_duration_seconds_bucket{method="GET",path="/health",statu
 
 - 接口复用 `audit:read` 权限，并只读取当前用户 `tenant_id` 下的事件。
 - 响应不返回原始 `metadata`、`message`、`resource_id`、`session_id`、凭据明文、token 或连接串。
-- 当前 WORM 归档为后端 repository 内 append-only 基础；真实外部 WORM 存储和外部签章仍是后续 Phase 5 切片。
+- 当前 WORM 归档为后端 repository 内 append-only 基础；签章支持本地 HMAC 与配置驱动 external HMAC adapter，后者缺少外部 key id 或 signing secret 时 fail-closed；真实外部 WORM 存储和云 KMS/证书签章服务仍是后续 Phase 5 切片。
 
 ## 前端解析建议
 

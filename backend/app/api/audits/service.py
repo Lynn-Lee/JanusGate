@@ -17,7 +17,7 @@ from app.api.audits.schemas import (
     AuditSeverity,
     SiemDeliveryStatus,
 )
-from app.core.config import settings
+from app.core.config import Settings, settings
 
 SENSITIVE_KEYS = {
     "password",
@@ -62,6 +62,36 @@ class HmacComplianceReportSigner:
         return sign_compliance_report(report)
 
 
+class ExternalHmacComplianceReportSigner:
+    algorithm = "external-hmac-sha256"
+
+    def __init__(self, *, key_id: str, secret: str) -> None:
+        self.key_id = key_id
+        self._secret = secret
+
+    def sign(self, report: AuditComplianceReport) -> str:
+        return _sign_compliance_report_with_secret(report=report, secret=self._secret)
+
+
+def build_compliance_report_signer(config: Settings = settings) -> ComplianceReportSigner:
+    if config.COMPLIANCE_REPORT_SIGNER_PROVIDER == "local-hmac":
+        return HmacComplianceReportSigner()
+    if not config.COMPLIANCE_REPORT_EXTERNAL_SIGNING_KEY_ID.strip():
+        raise ValueError(
+            "COMPLIANCE_REPORT_EXTERNAL_SIGNING_KEY_ID must be set "
+            "when COMPLIANCE_REPORT_SIGNER_PROVIDER=external-hmac"
+        )
+    if not config.COMPLIANCE_REPORT_EXTERNAL_HMAC_SECRET.strip():
+        raise ValueError(
+            "COMPLIANCE_REPORT_EXTERNAL_HMAC_SECRET must be set "
+            "when COMPLIANCE_REPORT_SIGNER_PROVIDER=external-hmac"
+        )
+    return ExternalHmacComplianceReportSigner(
+        key_id=config.COMPLIANCE_REPORT_EXTERNAL_SIGNING_KEY_ID,
+        secret=config.COMPLIANCE_REPORT_EXTERNAL_HMAC_SECRET,
+    )
+
+
 class AuditEventRepository:
     """进程内 append-only 审计事件仓库。
 
@@ -71,7 +101,7 @@ class AuditEventRepository:
     def __init__(self, compliance_report_signer: ComplianceReportSigner | None = None) -> None:
         self._events: list[AuditEvent] = []
         self._compliance_report_archive: list[ComplianceReportArchiveRecord] = []
-        self._compliance_report_signer = compliance_report_signer or HmacComplianceReportSigner()
+        self._compliance_report_signer = compliance_report_signer or build_compliance_report_signer()
 
     def append(self, event: AuditEvent) -> AuditEvent:
         self._events.append(event)
@@ -266,6 +296,10 @@ def calculate_event_hash(event: AuditEvent) -> str:
 
 
 def sign_compliance_report(report: AuditComplianceReport) -> str:
+    return _sign_compliance_report_with_secret(report=report, secret=settings.SECRET_KEY)
+
+
+def _sign_compliance_report_with_secret(*, report: AuditComplianceReport, secret: str) -> str:
     canonical = report.model_dump(
         mode="json",
         exclude={
@@ -279,7 +313,7 @@ def sign_compliance_report(report: AuditComplianceReport) -> str:
         },
     )
     encoded = json.dumps(canonical, sort_keys=True, separators=(",", ":")).encode("utf-8")
-    return hmac.new(settings.SECRET_KEY.encode("utf-8"), encoded, hashlib.sha256).hexdigest()
+    return hmac.new(secret.encode("utf-8"), encoded, hashlib.sha256).hexdigest()
 
 
 def calculate_compliance_report_content_hash(report: AuditComplianceReport) -> str:
