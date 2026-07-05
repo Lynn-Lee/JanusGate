@@ -27,7 +27,11 @@ const auditComplianceReport = {
   period_start: '2026-07-05T15:30:00Z',
   period_end: '2026-07-05T15:35:00Z',
   generated_at: '2026-07-05T15:40:00Z',
-  report_signature: 'hmac-sha256-signed'
+  report_signature: 'hmac-sha256-signed',
+  worm_storage_status: 'recorded',
+  worm_record_id: 'worm-report-1',
+  worm_sequence_number: 1,
+  worm_content_hash: 'sha256-report-payload'
 };
 const session = { id: 'session-1', asset_id: '1', account_id: 'root', connector_id: 'connector-1', protocol: 'ssh', status: 'active', connection_url: 'ssh://10.0.0.10', workflow_request_id: 'req-1', jit_grant_id: 'grant-1', created_at: '2026-07-01T00:03:00Z', updated_at: '2026-07-01T00:03:00Z', closed_at: null, audit_event_ids: [] };
 const sessionCommand = {

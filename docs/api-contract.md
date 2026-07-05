@@ -60,7 +60,7 @@
 - Sessions：`/api/v1/sessions/*`，会话创建/关闭，JIT grant 绑定。
 - Workflow/JIT：`/api/v1/workflows/*`，申请、提交、审批、拒绝、撤销、active grant。
 - Approval Policies：`/api/v1/workflows/approval-policies`，Phase 4 JIT 策略模板 / 审批策略基础管理与当前租户策略模拟。
-- Audit/SIEM：`/api/v1/audits/events`、`/api/v1/audits/reports/summary` 与 `/api/v1/audits/reports/compliance`，审计事件创建、检索、当前租户报表汇总和合规报表导出基础。
+- Audit/SIEM：`/api/v1/audits/events`、`/api/v1/audits/reports/summary` 与 `/api/v1/audits/reports/compliance`，审计事件创建、检索、当前租户报表汇总和合规报表导出基础；合规报表响应包含 append-only WORM 归档元数据，不包含原始审计 metadata/message/resource/session 明细。
 - Tenancy：`/api/v1/tenancy/*`，Phase 4 组织/团队/项目管理与租户隔离 API。
 - Session Recordings：`/api/v1/sessions/{session_id}/recordings` 与 `/api/v1/session-recordings/*`，Phase 4 会话录制元数据、命令事件上报与命令检索。
 - Webhook Endpoints：`/api/v1/webhook-endpoints/*`，Phase 4 WebHook / 通知中心 endpoint 管理基础。
@@ -1503,6 +1503,25 @@ janusgate_http_request_duration_seconds_bucket{method="GET",path="/health",statu
 - wrapped DEK 使用带版本前缀的 AES-GCM 格式保存，不等于 DEK 明文或 hex 表示。
 - 错误 master key、损坏 wrapped key 或不支持格式均 fail-closed 为 `KMS_UNWRAP_DENIED`。
 - 真实云 KMS/HSM/Vault adapter、审批后 unwrap 与 break-glass 流程仍是后续切片；新增 API 不得返回 wrapped DEK、plaintext DEK 或凭据明文。
+
+## Phase 5 Audit Compliance Report（#t54）
+
+### GET `/api/v1/audits/reports/compliance`
+
+用途：按当前登录用户租户导出指定模板的合规报表摘要，供控制台下载和审计留存。
+
+响应包含当前租户事件 ID 列表、hash chain 起止、报告期间、HMAC-SHA256 `report_signature`，以及本轮 append-only WORM 归档元数据：
+
+- `worm_storage_status`：当前为 `recorded`，表示本次导出已写入归档记录。
+- `worm_record_id`：本次归档记录 ID。
+- `worm_sequence_number`：进程内归档序号，单调递增。
+- `worm_content_hash`：基于租户、模板、事件 ID 和 hash chain 等无敏感报表摘要计算的稳定 SHA-256。
+
+安全语义：
+
+- 接口复用 `audit:read` 权限，并只读取当前用户 `tenant_id` 下的事件。
+- 响应不返回原始 `metadata`、`message`、`resource_id`、`session_id`、凭据明文、token 或连接串。
+- 当前 WORM 归档为后端 repository 内 append-only 基础；真实外部 WORM 存储、外部签章和正式文件格式仍是后续 Phase 5 切片。
 
 ## 前端解析建议
 

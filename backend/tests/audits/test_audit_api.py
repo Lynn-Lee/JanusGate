@@ -340,3 +340,40 @@ def test_compliance_report_export_returns_signed_tenant_scoped_event_hashes_with
     serialized = str(body)
     assert "raw-session-token" not in serialized
     assert "raw-password" not in serialized
+
+
+def test_compliance_report_export_records_append_only_worm_archive_metadata():
+    app.dependency_overrides[current_user] = _audit_user
+    client = TestClient(app)
+
+    client.post(
+        "/api/v1/audits/events",
+        json={
+            "event_type": "session.started",
+            "category": "session",
+            "action": "start_session",
+            "resource_type": "asset",
+            "resource_id": "asset-1",
+            "severity": "high",
+            "metadata": {"token": "raw-session-token"},
+        },
+    )
+
+    first = client.get("/api/v1/audits/reports/compliance?template=soc2-access").json()
+    second = client.get("/api/v1/audits/reports/compliance?template=soc2-access").json()
+
+    assert first["worm_storage_status"] == "recorded"
+    assert second["worm_storage_status"] == "recorded"
+    assert first["worm_record_id"]
+    assert second["worm_record_id"]
+    assert first["worm_record_id"] != second["worm_record_id"]
+    assert first["worm_sequence_number"] == 1
+    assert second["worm_sequence_number"] == 2
+    assert first["worm_content_hash"]
+    assert second["worm_content_hash"]
+    assert first["worm_content_hash"] == second["worm_content_hash"]
+
+    serialized = str(first) + str(second)
+    assert "raw-session-token" not in serialized
+    assert "metadata" not in first
+    assert "resource_id" not in first

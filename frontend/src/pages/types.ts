@@ -129,6 +129,10 @@ export type AuditComplianceReport = {
   period_end: string | null;
   generated_at: string;
   report_signature: string;
+  worm_storage_status: string;
+  worm_record_id: string;
+  worm_sequence_number: number;
+  worm_content_hash: string;
 };
 
 export type Organization = {
