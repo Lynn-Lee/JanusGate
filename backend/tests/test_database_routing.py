@@ -5,6 +5,7 @@ from typing import Any
 
 from fastapi.routing import APIRoute
 
+from app.api.accounts import router as accounts_router
 from app.api.assets import router as assets_router
 from app.core.config import Settings
 from app.core.database import create_database_engines, get_db, get_read_db
@@ -81,8 +82,32 @@ def test_asset_write_routes_keep_writer_database_dependency() -> None:
         assert get_read_db not in dependencies
 
 
-def _route_dependency_calls(*, method: str, path: str) -> set[Any]:
-    for route in assets_router.routes:
+def test_account_read_routes_use_read_database_dependency() -> None:
+    read_routes = [
+        ("GET", "/accounts/"),
+        ("GET", "/accounts/{account_id}/rotations"),
+    ]
+
+    for method, path in read_routes:
+        dependencies = _route_dependency_calls(router=accounts_router, method=method, path=path)
+        assert get_read_db in dependencies
+        assert get_db not in dependencies
+
+
+def test_account_write_routes_keep_writer_database_dependency() -> None:
+    write_routes = [
+        ("POST", "/accounts/"),
+        ("POST", "/accounts/{account_id}/rotations"),
+    ]
+
+    for method, path in write_routes:
+        dependencies = _route_dependency_calls(router=accounts_router, method=method, path=path)
+        assert get_db in dependencies
+        assert get_read_db not in dependencies
+
+
+def _route_dependency_calls(*, router: Any = assets_router, method: str, path: str) -> set[Any]:
+    for route in router.routes:
         if not isinstance(route, APIRoute):
             continue
         if route.path == path and method in route.methods:

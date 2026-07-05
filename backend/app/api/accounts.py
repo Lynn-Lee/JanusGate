@@ -13,7 +13,7 @@ from app.api.account_schemas import (
     CredentialRotationListResponse,
     CredentialRotationResponse,
 )
-from app.core.database import get_db
+from app.core.database import get_db, get_read_db
 from app.core.deps import current_user
 from app.models.account import Account, CredentialRotation
 from app.models.asset import Asset
@@ -25,7 +25,7 @@ router = APIRouter(prefix="/accounts", tags=["账号托管"])
 
 @router.get("/", response_model=AccountListResponse)
 async def list_accounts(
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_read_db),
     user: dict[str, Any] = Depends(current_user),
 ) -> AccountListResponse:
     _require_account_permission(user, "accounts:read")
@@ -77,7 +77,7 @@ async def create_account(
 @router.get("/{account_id}/rotations", response_model=CredentialRotationListResponse)
 async def list_credential_rotations(
     account_id: int,
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_read_db),
     user: dict[str, Any] = Depends(current_user),
 ) -> CredentialRotationListResponse:
     _require_account_permission(user, "accounts:read")
