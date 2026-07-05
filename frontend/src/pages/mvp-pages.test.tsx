@@ -17,6 +17,18 @@ const auditReportSummary = {
   by_category: { workflow: 5, session: 4, connector: 3 },
   by_siem_delivery_status: { delivered: 9, failed: 3 }
 };
+const auditComplianceReport = {
+  tenant_id: 'tenant-a',
+  template: 'soc2-access',
+  total: 2,
+  event_ids: ['audit-1', 'audit-2'],
+  hash_chain_start: 'sha256-start',
+  hash_chain_end: 'sha256-end',
+  period_start: '2026-07-05T15:30:00Z',
+  period_end: '2026-07-05T15:35:00Z',
+  generated_at: '2026-07-05T15:40:00Z',
+  report_signature: 'hmac-sha256-signed'
+};
 const session = { id: 'session-1', asset_id: '1', account_id: 'root', connector_id: 'connector-1', protocol: 'ssh', status: 'active', connection_url: 'ssh://10.0.0.10', workflow_request_id: 'req-1', jit_grant_id: 'grant-1', created_at: '2026-07-01T00:03:00Z', updated_at: '2026-07-01T00:03:00Z', closed_at: null, audit_event_ids: [] };
 const sessionCommand = {
   id: 11,
@@ -104,6 +116,7 @@ function installFetch() {
     if (url.endsWith('/api/v1/session-recordings/1/commands') && method === 'GET') return Response.json({ items: [sessionCommand], total: 1 });
     if (url.endsWith('/api/v1/audits/events')) return Response.json({ items: [audit], total: 1, limit: 50, offset: 0 });
     if (url.endsWith('/api/v1/audits/reports/summary')) return Response.json(auditReportSummary);
+    if (url.endsWith('/api/v1/audits/reports/compliance?template=soc2-access')) return Response.json(auditComplianceReport);
     if (url.endsWith('/api/v1/tenancy/organizations')) return Response.json({ items: [organization], total: 1 });
     if (url.endsWith('/api/v1/tenancy/teams')) return Response.json({ items: [team], total: 1 });
     if (url.endsWith('/api/v1/tenancy/projects')) return Response.json({ items: [project], total: 1 });
@@ -222,6 +235,29 @@ describe('MVP pages', () => {
         expect.any(Object)
       )
     );
+  });
+
+  it('downloads a signed compliance report without exposing raw audit details', async () => {
+    const fetchMock = installFetch();
+    vi.stubGlobal('fetch', fetchMock);
+    Object.defineProperty(URL, 'createObjectURL', { configurable: true, value: vi.fn(() => 'blob:compliance-report') });
+    Object.defineProperty(URL, 'revokeObjectURL', { configurable: true, value: vi.fn() });
+    const clickMock = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
+    history.pushState(null, '', '/audits');
+    render(<App />);
+
+    expect(await screen.findByRole('heading', { name: '审计日志' })).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: '下载 SOC2 报表' }));
+
+    await waitFor(() =>
+      expect(fetchMock).toHaveBeenCalledWith(
+        '/api/v1/audits/reports/compliance?template=soc2-access',
+        expect.any(Object)
+      )
+    );
+    expect(await screen.findByText('hmac-sha256-signed')).toBeInTheDocument();
+    expect(clickMock).toHaveBeenCalled();
+    expect(screen.queryByText('secret-token')).not.toBeInTheDocument();
   });
 
   it('shows Settings runtime and security summaries', async () => {
