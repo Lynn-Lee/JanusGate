@@ -85,7 +85,7 @@ Phase 4 #t48 已启动 JIT 策略模板 / 审批策略 DSL 后端基础：现有
 
 Phase 4 #t49 已启动 SIEM / 告警 / 报表中心基础：`GET /api/v1/audits/reports/summary` 返回当前租户审计事件 total、severity、category、SIEM delivery 状态和高危计数聚合。接口复用 `audit:read` 权限，按当前用户 `tenant_id` 收敛，不返回 metadata、message、resource_id、session_id 或任何凭据相关明细字段。前端 `/audits` 审计页已展示报表总事件、高危事件和 SIEM failed 聚合卡片，不展示原始审计 metadata。
 
-Phase 4 #t50 已启动 Vault 生产级后端基础：`app.vault.provider` 现在提供 `KmsKeyProvider` 协议与 `EnvelopeEncryptedSecretProvider`，每条 secret 使用随机 32 字节 data key 加密，再通过 KMS provider 包装 data key 保存；解密时必须成功 unwrap data key，KMS 拒绝时 fail-closed。Envelope provider 已支持可替换 `SecretRecordStore`，为后续 DB/KMS/Vault adapter 持久化 record 打基础；当前仍不包含真实云 KMS/HSM/Vault adapter、审批后 unwrap 或 break-glass 流程。
+Phase 4 #t50 已启动 Vault 生产级后端基础：`app.vault.provider` 现在提供 `KmsKeyProvider` 协议与 `EnvelopeEncryptedSecretProvider`，每条 secret 使用随机 32 字节 data key 加密，再通过 KMS provider 包装 data key 保存；解密时必须成功 unwrap data key，KMS 拒绝时 fail-closed。Envelope provider 已支持可替换 `SecretRecordStore`，并新增 `SecretRecordModel` 与 `SqlAlchemySecretRecordStore`，可在数据库中持久化 envelope record，同时不保存凭据明文；当前仍不包含真实云 KMS/HSM/Vault adapter、审批后 unwrap 或 break-glass 流程。
 
 Phase 4 #t51 已启动可观测性基础：后端提供 Prometheus 文本格式 `GET /metrics`，并通过 HTTP middleware 记录请求总数与延迟 histogram，指标标签仅包含 method、路由模板 path 和 status_code，不写入 token、secret、连接串或请求/响应正文。OpenTelemetry 分布式追踪、Loki 日志管道和更完整的部署暴露策略仍是后续切片。
 
