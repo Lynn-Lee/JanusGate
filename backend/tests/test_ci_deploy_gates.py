@@ -23,6 +23,22 @@ def test_phase3_compose_health_smoke_script_runs_backend_healthcheck() -> None:
     assert "down -v --remove-orphans" in script
 
 
+def test_ci_runs_phase5_ha_config_smoke_gate() -> None:
+    workflow = (REPO_ROOT / ".github/workflows/ci.yml").read_text()
+
+    assert "scripts/phase5-ha-config-smoke.sh" in workflow
+
+
+def test_phase5_ha_config_smoke_covers_redis_hpa_and_read_replica() -> None:
+    script = (REPO_ROOT / "scripts/phase5-ha-config-smoke.sh").read_text()
+
+    assert "autoscaling.enabled=true" in script
+    assert "config.sessionConnectionTokenStore=redis" in script
+    assert "DATABASE_READ_REPLICA_URL" in script
+    assert "autoscaling requires config.sessionConnectionTokenStore=redis" in script
+    assert "docker compose config" in script
+
+
 def test_compose_internal_dependencies_do_not_bind_fixed_host_ports() -> None:
     compose = yaml.safe_load((REPO_ROOT / "docker-compose.yml").read_text())
 

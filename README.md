@@ -67,6 +67,8 @@ Phase 3 QA Go/No-Go 证据包位于 `docs/qa/phase3-go-no-go.md`，覆盖 6 页�
 
 CI 已包含 Phase 3 部署 smoke 门禁：后端 `pytest --cov=app --cov-report=term-missing --cov-fail-under=80` 执行覆盖率门禁，`docker compose config` 校验 Compose 配置可渲染，`scripts/phase3-compose-health-smoke.sh` 启动 backend 及其依赖并请求 `http://localhost:8000/health`，`helm lint` 与 `helm template` 校验 Helm chart 可 lint/render。Compose health smoke 脚本退出时会清理本轮容器和卷。
 
+Phase 5 高可用配置 smoke 可运行 `scripts/phase5-ha-config-smoke.sh`，覆盖 Docker Compose read-replica 环境渲染、Helm HPA 在 memory token store 下 fail-closed，以及 Redis-backed connection token store + read-replica Secret 的多副本渲染路径；该脚本已接入 CI 的 Helm 门禁。
+
 ## Phase 4 多租户基座
 
 Phase 4 #t42 已启动后端 tenancy 基座：`User` 持久化 `tenant_id` 以及可选 `organization_id`、`team_id`、`project_id`，并新增 `Organization`、`Team`、`Project` 模型。后端查询可通过 `app.tenancy.scope.scoped_select()` 默认注入 `tenant_id` 过滤，避免 Phase 4 后续权限与 UI 接入时绕过租户隔离。当前已提供租户隔离的 Organization 管理 API：`GET /api/v1/tenancy/organizations` 与 `POST /api/v1/tenancy/organizations`；Team 管理 API：`GET /api/v1/tenancy/teams` 与 `POST /api/v1/tenancy/teams`；以及 Project 管理 API：`GET /api/v1/tenancy/projects` 与 `POST /api/v1/tenancy/projects`。前端控制台已新增 `/tenancy` 只读组织结构页，展示当前用户可见的 Organization、Team、Project。PolicyRule 现在可按 `organization_ids`、`team_ids`、`project_ids` 绑定资源维度，资源缺失或不匹配绑定维度时 fail-closed 为无匹配策略。

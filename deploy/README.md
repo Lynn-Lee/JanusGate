@@ -151,6 +151,14 @@ helm upgrade --install janusgate deploy/helm/janusgate \
 
 如果 `autoscaling.enabled=true` 但 `config.sessionConnectionTokenStore` 仍为 `memory`，Helm 模板会拒绝渲染。
 
+Phase 5 高可用配置 smoke 可在本地或 CI 运行：
+
+```bash
+scripts/phase5-ha-config-smoke.sh
+```
+
+该脚本执行 `docker compose config`，确认 Compose read-replica 环境变量可渲染；随后验证 Helm 在 `autoscaling.enabled=true` 且 `config.sessionConnectionTokenStore=memory` 时 fail-closed；最后渲染 Redis-backed connection token store、Sentinel Redis 配置、HPA 和 `DATABASE_READ_REPLICA_URL` Secret 注入的多副本配置。它是配置级 smoke，不会启动真实多副本集群；发布前仍需在目标 Kubernetes 环境执行 connection token 主链路和读副本延迟验收。
+
 ## 5. 发布与回滚
 
 发布最小步骤：
