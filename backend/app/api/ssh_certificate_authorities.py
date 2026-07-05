@@ -12,7 +12,7 @@ from app.api.ssh_certificate_schemas import (
     SshCertificateAuthorityTrustBundleItem,
     SshCertificateAuthorityTrustBundleResponse,
 )
-from app.core.database import get_db
+from app.core.database import get_db, get_read_db
 from app.core.deps import current_user
 from app.models.asset import Asset
 from app.models.ssh_ca import SshCertificateAuthority
@@ -22,7 +22,7 @@ router = APIRouter(prefix="/ssh-certificate-authorities", tags=["SSH CA"])
 
 @router.get("/", response_model=SshCertificateAuthorityListResponse)
 async def list_ssh_certificate_authorities(
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_read_db),
     user: dict[str, Any] = Depends(current_user),
 ) -> SshCertificateAuthorityListResponse:
     _require_ssh_ca_permission(user, "ssh-certificate-authorities:read")
@@ -39,7 +39,7 @@ async def list_ssh_certificate_authorities(
 
 @router.get("/trust-bundle", response_model=SshCertificateAuthorityTrustBundleResponse)
 async def get_ssh_ca_trust_bundle(
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_read_db),
     user: dict[str, Any] = Depends(current_user),
 ) -> SshCertificateAuthorityTrustBundleResponse:
     _require_ssh_ca_permission(user, "ssh-certificate-authorities:read")

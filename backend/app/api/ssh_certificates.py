@@ -15,7 +15,7 @@ from app.api.ssh_certificate_schemas import (
     SshCertificateRevokeRequest,
 )
 from app.core.config import settings
-from app.core.database import get_db
+from app.core.database import get_db, get_read_db
 from app.core.deps import current_user
 from app.models.account import Account
 from app.models.ssh_ca import SshCertificate
@@ -49,7 +49,7 @@ def get_ssh_certificate_signer(
 
 @router.get("/", response_model=SshCertificateListResponse)
 async def list_ssh_certificates(
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_read_db),
     user: dict[str, Any] = Depends(current_user),
 ) -> SshCertificateListResponse:
     _require_ssh_certificate_permission(user, "ssh-certificates:read")
