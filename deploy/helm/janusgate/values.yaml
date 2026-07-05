@@ -38,6 +38,8 @@ config:
   appEnv: production
   logLevel: INFO
   redisUrl: redis://redis-master:6379/0
+  sessionConnectionTokenStore: memory
+  sessionConnectionTokenRedisKeyPrefix: "janusgate:session:connection-token:"
   corsOrigins: '["https://janusgate.example.com"]'
   rateLimitLoginPerMinute: "5"
   rateLimitGlobalPerMinute: "120"
@@ -74,6 +76,13 @@ resources:
   limits:
     cpu: 500m
     memory: 512Mi
+
+autoscaling:
+  enabled: false
+  minReplicas: 2
+  maxReplicas: 5
+  targetCPUUtilizationPercentage: 70
+  targetMemoryUtilizationPercentage: 80
 
 livenessProbe:
   httpGet:

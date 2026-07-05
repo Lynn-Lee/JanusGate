@@ -112,6 +112,20 @@ Redis 模式只保存 token digest key 和 JSON 元数据，签发时使用 TTL�
 
 生产推荐方案是启用 Redis-backed shared token store，要求 token 短 TTL、一次性消费、撤销状态和审计事件在副本间一致；完成 Redis 模式主链路验证前，不把无粘性多副本视为可放行生产形态。
 
+Helm chart 支持可选 HPA，但默认关闭。启用前必须显式切换到 Redis-backed connection token store，避免多副本下签发与消费落到不同 Pod：
+
+```bash
+helm upgrade --install janusgate deploy/helm/janusgate \
+  -n janusgate \
+  --set autoscaling.enabled=true \
+  --set autoscaling.minReplicas=2 \
+  --set autoscaling.maxReplicas=5 \
+  --set config.sessionConnectionTokenStore=redis \
+  --set config.redisUrl='redis://redis-master:6379/0'
+```
+
+如果 `autoscaling.enabled=true` 但 `config.sessionConnectionTokenStore` 仍为 `memory`，Helm 模板会拒绝渲染。
+
 ## 5. 发布与回滚
 
 发布最小步骤：
