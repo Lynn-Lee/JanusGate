@@ -38,6 +38,11 @@ class Settings(BaseSettings):
     # ── Vault / KMS ──
     VAULT_LOCAL_KMS_MASTER_KEY: str = ""
 
+    # ── Audit compliance report signing ──
+    COMPLIANCE_REPORT_SIGNER_PROVIDER: Literal["local-hmac", "external-hmac"] = "local-hmac"
+    COMPLIANCE_REPORT_EXTERNAL_SIGNING_KEY_ID: str = ""
+    COMPLIANCE_REPORT_EXTERNAL_HMAC_SECRET: str = ""
+
     # ── Security ──
     SECRET_KEY: str = ""
     JWT_ALGORITHM: str = "HS256"

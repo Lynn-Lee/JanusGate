@@ -115,6 +115,16 @@ Redis 模式只保存 token digest key 和 JSON 元数据，签发时使用 TTL�
 
 数据库默认仍使用 `DATABASE_URL` 单写库连接。Phase 5 #t53 起可通过 `DATABASE_READ_REPLICA_URL` 配置可选只读副本；未设置时只读 session factory 复用写库 engine，保持本地开发、Compose 和单副本部署行为不变。资产列表、资产详情、平台列表、账号列表、账号轮换列表、会话列表、会话录制命令时间线、命令检索、Tenancy Organization/Team/Project 列表、WebHook endpoint 列表、通知规则列表、通知投递列表、Connector 列表、SSH CA 列表、SSH CA trust bundle、SSH certificate 列表、Automation job run 列表、approval policy 列表、认证态用户详情 `/api/v1/auth/me`、Workflow request 列表/详情以及 active JIT grant 列表 GET 路由已接入 read session dependency；audit events/summary GET 当前仍读取进程内 audit service，不使用 SQLAlchemy session，数据库路由回归测试已将其登记为显式 DB-free 例外。写入、删除、连接测试、登录、2FA、refresh token、MFA/密码/API key 变更、connection token 签发、会话创建/关闭、轮换调度、命令事件上报、录制关闭、WebHook endpoint 创建、通知规则创建、通知投递入队、Connector 创建/心跳/key rotation、SSH CA 创建/禁用、SSH certificate 签发/撤销、Automation job 调度、approval policy 创建/版本/回滚/模拟以及 Workflow request 创建/提交/审批/拒绝/撤销等可能改变状态或要求强一致的路径仍走 writer session。该值属于数据库连接串，Helm 中通过 Secret 注入，不写入 ConfigMap 或普通 values 明文；启用前应确认 PostgreSQL 主从复制延迟不会影响需要强一致的写后读路径。
 
+合规报表默认使用本地 HMAC signer，签名 secret 复用 `SECRET_KEY`。Phase 5 #t54 起可通过配置驱动 external HMAC signer adapter foundation：
+
+```bash
+COMPLIANCE_REPORT_SIGNER_PROVIDER=external-hmac
+COMPLIANCE_REPORT_EXTERNAL_SIGNING_KEY_ID=kms-key-prod-1
+COMPLIANCE_REPORT_EXTERNAL_HMAC_SECRET=<external-signing-secret>
+```
+
+`COMPLIANCE_REPORT_EXTERNAL_HMAC_SECRET` 属于 signing secret，必须通过 Secret 注入，不写入 ConfigMap、values 明文或日志。启用 external HMAC provider 时缺少 key id 或 signing secret 会 fail-closed；真实云 KMS/证书签章服务接入仍需后续 adapter。
+
 后端 Redis client 支持三种部署形态：
 
 ```bash

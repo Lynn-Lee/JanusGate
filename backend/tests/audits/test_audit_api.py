@@ -1,7 +1,12 @@
 from fastapi.testclient import TestClient
 
 from app.api.audits.schemas import AuditEvent
-from app.api.audits.service import AuditEventRepository, audit_service
+from app.api.audits.service import (
+    AuditEventRepository,
+    audit_service,
+    build_compliance_report_signer,
+)
+from app.core.config import Settings
 from app.core.deps import current_user
 from app.main import app
 
@@ -442,3 +447,52 @@ def test_compliance_report_export_uses_injected_signer_metadata_for_external_sig
     assert report.report_signature_key_id == "test-kms-key-1"
     assert report.worm_storage_status == "recorded"
     assert report.worm_content_hash
+
+
+def test_compliance_report_signer_can_use_configured_external_hmac_adapter():
+    signer = build_compliance_report_signer(
+        Settings(
+            SECRET_KEY="local-signing-secret-with-enough-length",
+            COMPLIANCE_REPORT_SIGNER_PROVIDER="external-hmac",
+            COMPLIANCE_REPORT_EXTERNAL_SIGNING_KEY_ID="kms-key-prod-1",
+            COMPLIANCE_REPORT_EXTERNAL_HMAC_SECRET="external-signing-secret-with-enough-length",
+        )
+    )
+    repository = AuditEventRepository(compliance_report_signer=signer)
+    event = AuditEvent(
+        tenant_id="tenant-a",
+        actor_id="user-1",
+        actor_username="alice",
+        event_type="session.started",
+        category="session",
+        action="start_session",
+        resource_type="asset",
+        resource_id="asset-1",
+        severity="high",
+        metadata={"token": "***REDACTED***"},
+        sequence_number=1,
+        event_hash="event-hash-1",
+    )
+    repository.append(event)
+
+    report = repository.compliance_report(tenant_id="tenant-a", template="soc2-access")
+
+    assert report.report_signature
+    assert report.report_signature_algorithm == "external-hmac-sha256"
+    assert report.report_signature_key_id == "kms-key-prod-1"
+    assert "external-signing-secret" not in report.model_dump_json()
+
+
+def test_compliance_report_external_hmac_signer_fails_closed_without_secret():
+    settings = Settings(
+        SECRET_KEY="local-signing-secret-with-enough-length",
+        COMPLIANCE_REPORT_SIGNER_PROVIDER="external-hmac",
+        COMPLIANCE_REPORT_EXTERNAL_SIGNING_KEY_ID="kms-key-prod-1",
+    )
+
+    try:
+        build_compliance_report_signer(settings)
+    except ValueError as exc:
+        assert "COMPLIANCE_REPORT_EXTERNAL_HMAC_SECRET" in str(exc)
+    else:
+        raise AssertionError("external signer without secret must fail closed")
