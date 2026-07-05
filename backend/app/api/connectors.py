@@ -15,7 +15,7 @@ from app.api.connector_schemas import (
     ConnectorResponse,
     ConnectorStatus,
 )
-from app.core.database import get_db
+from app.core.database import get_db, get_read_db
 from app.core.deps import current_user
 from app.models.connector import Connector
 
@@ -24,7 +24,7 @@ router = APIRouter(prefix="/connectors", tags=["连接器"])
 
 @router.get("/", response_model=ConnectorListResponse)
 async def list_connectors(
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_read_db),
     user: dict[str, Any] = Depends(current_user),
 ) -> ConnectorListResponse:
     _require_connector_permission(user, "connectors:read")

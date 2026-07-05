@@ -7,6 +7,7 @@ from fastapi.routing import APIRoute
 
 from app.api.accounts import router as accounts_router
 from app.api.assets import router as assets_router
+from app.api.connectors import router as connectors_router
 from app.api.notification_deliveries import router as notification_deliveries_router
 from app.api.notification_rules import router as notification_rules_router
 from app.api.session_recordings import router as session_recordings_router
@@ -186,6 +187,30 @@ def test_webhook_endpoint_write_routes_keep_writer_database_dependency() -> None
         dependencies = _route_dependency_calls(
             router=webhook_endpoints_router, method=method, path=path
         )
+        assert get_db in dependencies
+        assert get_read_db not in dependencies
+
+
+def test_connector_read_routes_use_read_database_dependency() -> None:
+    read_routes = [
+        ("GET", "/connectors/"),
+    ]
+
+    for method, path in read_routes:
+        dependencies = _route_dependency_calls(router=connectors_router, method=method, path=path)
+        assert get_read_db in dependencies
+        assert get_db not in dependencies
+
+
+def test_connector_write_routes_keep_writer_database_dependency() -> None:
+    write_routes = [
+        ("POST", "/connectors/"),
+        ("POST", "/connectors/{connector_id}/heartbeat"),
+        ("POST", "/connectors/{connector_id}/rotate-key"),
+    ]
+
+    for method, path in write_routes:
+        dependencies = _route_dependency_calls(router=connectors_router, method=method, path=path)
         assert get_db in dependencies
         assert get_read_db not in dependencies
 
