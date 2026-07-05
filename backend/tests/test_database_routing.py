@@ -7,6 +7,7 @@ from fastapi.routing import APIRoute
 
 from app.api.accounts import router as accounts_router
 from app.api.assets import router as assets_router
+from app.api.automation import router as automation_router
 from app.api.connectors import router as connectors_router
 from app.api.notification_deliveries import router as notification_deliveries_router
 from app.api.notification_rules import router as notification_rules_router
@@ -240,6 +241,28 @@ def test_ssh_ca_write_routes_keep_writer_database_dependency() -> None:
 
     for router, method, path in write_routes:
         dependencies = _route_dependency_calls(router=router, method=method, path=path)
+        assert get_db in dependencies
+        assert get_read_db not in dependencies
+
+
+def test_automation_job_run_read_routes_use_read_database_dependency() -> None:
+    read_routes = [
+        ("GET", "/automation/jobs/runs"),
+    ]
+
+    for method, path in read_routes:
+        dependencies = _route_dependency_calls(router=automation_router, method=method, path=path)
+        assert get_read_db in dependencies
+        assert get_db not in dependencies
+
+
+def test_automation_job_write_routes_keep_writer_database_dependency() -> None:
+    write_routes = [
+        ("POST", "/automation/jobs/credential-rotations"),
+    ]
+
+    for method, path in write_routes:
+        dependencies = _route_dependency_calls(router=automation_router, method=method, path=path)
         assert get_db in dependencies
         assert get_read_db not in dependencies
 

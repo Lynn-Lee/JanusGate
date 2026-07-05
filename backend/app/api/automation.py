@@ -6,7 +6,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.database import get_db
+from app.core.database import get_db, get_read_db
 from app.core.deps import current_user, get_redis
 from app.models.account import Account
 from app.models.automation import AutomationJobRun
@@ -64,7 +64,7 @@ def get_automation_job_queue(
 
 @router.get("/runs", response_model=AutomationJobRunListResponse)
 async def list_automation_job_runs(
-    db: AsyncSession = Depends(get_db),
+    db: AsyncSession = Depends(get_read_db),
     user: dict[str, Any] = Depends(current_user),
 ) -> AutomationJobRunListResponse:
     _require_automation_permission(user, "automation:read")

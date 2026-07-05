@@ -8,7 +8,7 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
-from app.core.database import Base, get_db
+from app.core.database import Base, get_db, get_read_db
 from app.core.deps import current_user, get_redis
 from app.main import app
 from app.models.account import Account
@@ -67,6 +67,7 @@ def install_db(session_factory: async_sessionmaker[AsyncSession]) -> None:
                 await session.close()
 
     app.dependency_overrides[get_db] = override_db
+    app.dependency_overrides[get_read_db] = override_db
 
 
 async def seed_account(session_factory: async_sessionmaker[AsyncSession]) -> None:
