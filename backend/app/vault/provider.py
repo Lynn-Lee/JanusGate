@@ -14,6 +14,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.vault import SecretRecordModel
+from app.policy.schemas import ApprovalState
 
 
 class SecretStatus(StrEnum):
@@ -153,6 +154,24 @@ class SqlAlchemySecretRecordStore:
         )
 
 
+def _validate_secret_unwrap_approval(secret_id: str, approval: ApprovalState | None) -> None:
+    if approval is None or not approval.is_approved_now():
+        raise ValueError("SECRET_UNWRAP_APPROVAL_REQUIRED")
+    if not approval.grant_id or not approval.workflow_request_id:
+        raise ValueError("SECRET_UNWRAP_APPROVAL_IDENTITY_REQUIRED")
+    if not _approval_scope_includes_secret(secret_id, approval):
+        raise ValueError("SECRET_UNWRAP_APPROVAL_SCOPE_MISMATCH")
+
+
+def _approval_scope_includes_secret(secret_id: str, approval: ApprovalState) -> bool:
+    constraints = approval.constraints
+    if constraints.get("vault_secret_id") == secret_id:
+        return True
+
+    vault_secret_ids = constraints.get("vault_secret_ids")
+    return isinstance(vault_secret_ids, list) and secret_id in vault_secret_ids
+
+
 class LocalEncryptedSecretProvider:
     """Development SecretProvider backed by in-memory AES-GCM records.
 
@@ -183,6 +202,10 @@ class LocalEncryptedSecretProvider:
         if record.status == SecretStatus.REVOKED:
             raise ValueError("SECRET_REVOKED")
         return self._decrypt_record(record)
+
+    def unwrap_after_approval(self, secret_id: str, approval: ApprovalState | None) -> str:
+        _validate_secret_unwrap_approval(secret_id, approval)
+        return self.unwrap(secret_id)
 
     def rotate(self, secret_id: str, new_plaintext: str) -> SecretRecord:
         current = self.get_record(secret_id)
@@ -249,6 +272,10 @@ class EnvelopeEncryptedSecretProvider:
         if record.status == SecretStatus.REVOKED:
             raise ValueError("SECRET_REVOKED")
         return self._decrypt_record(record)
+
+    def unwrap_after_approval(self, secret_id: str, approval: ApprovalState | None) -> str:
+        _validate_secret_unwrap_approval(secret_id, approval)
+        return self.unwrap(secret_id)
 
     def rotate(self, secret_id: str, new_plaintext: str) -> SecretRecord:
         current = self.get_record(secret_id)
@@ -323,6 +350,14 @@ class AsyncEnvelopeEncryptedSecretProvider:
         if record.status == SecretStatus.REVOKED:
             raise ValueError("SECRET_REVOKED")
         return self._decrypt_record(record)
+
+    async def unwrap_after_approval(
+        self,
+        secret_id: str,
+        approval: ApprovalState | None,
+    ) -> str:
+        _validate_secret_unwrap_approval(secret_id, approval)
+        return await self.unwrap(secret_id)
 
     async def rotate(self, secret_id: str, new_plaintext: str) -> SecretRecord:
         current = await self.get_record(secret_id)

@@ -2,7 +2,9 @@ import base64
 
 import pytest
 
+from app.policy.schemas import ApprovalState
 from app.vault.provider import (
+    AsyncEnvelopeEncryptedSecretProvider,
     EnvelopeEncryptedSecretProvider,
     InMemorySecretRecordStore,
     LocalEncryptedSecretProvider,
@@ -70,6 +72,17 @@ class RecordingKmsProvider:
         return key
 
 
+class AsyncInMemorySecretRecordStore:
+    def __init__(self) -> None:
+        self._store = InMemorySecretRecordStore()
+
+    async def put(self, record):
+        self._store.put(record)
+
+    async def get(self, secret_id: str):
+        return self._store.get(secret_id)
+
+
 def test_envelope_provider_wraps_per_secret_data_key():
     kms = RecordingKmsProvider()
     provider = EnvelopeEncryptedSecretProvider(kms_provider=kms)
@@ -106,6 +119,84 @@ def test_envelope_provider_can_reload_records_from_persistent_store():
 
     reloaded_provider = EnvelopeEncryptedSecretProvider(kms_provider=kms, record_store=store)
     assert reloaded_provider.unwrap(secret.id) == "S3cret!"
+
+
+def test_envelope_provider_requires_approved_grant_for_approval_unwrap():
+    kms = RecordingKmsProvider()
+    provider = EnvelopeEncryptedSecretProvider(kms_provider=kms)
+    secret = provider.create_secret(name="root-password", plaintext="S3cret!")
+
+    with pytest.raises(ValueError, match="SECRET_UNWRAP_APPROVAL_REQUIRED"):
+        provider.unwrap_after_approval(secret.id, approval=None)
+
+    with pytest.raises(ValueError, match="SECRET_UNWRAP_APPROVAL_REQUIRED"):
+        provider.unwrap_after_approval(
+            secret.id,
+            ApprovalState(status="pending", grant_id="grant-1", workflow_request_id="wf-1"),
+        )
+
+
+def test_envelope_provider_rejects_approval_without_grant_identity():
+    kms = RecordingKmsProvider()
+    provider = EnvelopeEncryptedSecretProvider(kms_provider=kms)
+    secret = provider.create_secret(name="root-password", plaintext="S3cret!")
+
+    with pytest.raises(ValueError, match="SECRET_UNWRAP_APPROVAL_IDENTITY_REQUIRED"):
+        provider.unwrap_after_approval(secret.id, ApprovalState(status="approved"))
+
+
+def test_envelope_provider_rejects_approval_for_different_secret():
+    kms = RecordingKmsProvider()
+    provider = EnvelopeEncryptedSecretProvider(kms_provider=kms)
+    secret = provider.create_secret(name="root-password", plaintext="S3cret!")
+
+    with pytest.raises(ValueError, match="SECRET_UNWRAP_APPROVAL_SCOPE_MISMATCH"):
+        provider.unwrap_after_approval(
+            secret.id,
+            ApprovalState(
+                status="approved",
+                grant_id="grant-1",
+                workflow_request_id="wf-1",
+                constraints={"vault_secret_id": "sec_other"},
+            ),
+        )
+
+
+def test_envelope_provider_unwraps_with_matching_approved_grant():
+    kms = RecordingKmsProvider()
+    provider = EnvelopeEncryptedSecretProvider(kms_provider=kms)
+    secret = provider.create_secret(name="root-password", plaintext="S3cret!")
+
+    plaintext = provider.unwrap_after_approval(
+        secret.id,
+        ApprovalState(
+            status="approved",
+            grant_id="grant-1",
+            workflow_request_id="wf-1",
+            constraints={"vault_secret_ids": [secret.id]},
+        ),
+    )
+
+    assert plaintext == "S3cret!"
+
+
+async def test_async_envelope_provider_unwraps_with_matching_approved_grant():
+    kms = RecordingKmsProvider()
+    store = AsyncInMemorySecretRecordStore()
+    provider = AsyncEnvelopeEncryptedSecretProvider(kms_provider=kms, record_store=store)
+    secret = await provider.create_secret(name="root-password", plaintext="S3cret!")
+
+    plaintext = await provider.unwrap_after_approval(
+        secret.id,
+        ApprovalState(
+            status="approved",
+            grant_id="grant-1",
+            workflow_request_id="wf-1",
+            constraints={"vault_secret_id": secret.id},
+        ),
+    )
+
+    assert plaintext == "S3cret!"
 
 
 def test_local_kms_provider_encrypts_wrapped_data_keys():
