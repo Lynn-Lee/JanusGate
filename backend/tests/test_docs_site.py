@@ -11,6 +11,7 @@ def test_phase5_docs_site_foundation_is_wired_for_operator_handoff() -> None:
     api_docs = (REPO_ROOT / "docs/site/api.md").read_text()
     api_contract = (REPO_ROOT / "docs/api-contract.md").read_text()
     export_script = (REPO_ROOT / "scripts/export-openapi-json.sh").read_text()
+    build_script_path = REPO_ROOT / "scripts/build-docs-site.sh"
     workflow = (REPO_ROOT / ".github/workflows/ci.yml").read_text()
     roadmap = (REPO_ROOT / "docs/architecture/10-master-evaluation-and-roadmap.md").read_text()
 
@@ -30,7 +31,14 @@ def test_phase5_docs_site_foundation_is_wired_for_operator_handoff() -> None:
     assert "scripts/export-openapi-json.sh" in api_docs
     assert "app.main import app" in export_script
     assert "openapi.json" in export_script
+    assert build_script_path.exists()
+    build_script = build_script_path.read_text()
+    assert "docs-site" in build_script
+    assert "openapi.json" in build_script
+    assert "index.md" in build_script
     assert "scripts/export-openapi-json.sh" in workflow
+    assert "scripts/build-docs-site.sh" in workflow
     assert "API 前缀" in api_contract
     assert "#t59" in roadmap
     assert "OpenAPI 自动生成 foundation" in roadmap
+    assert "静态站点发布 smoke" in roadmap

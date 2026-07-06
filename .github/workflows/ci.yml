@@ -48,6 +48,9 @@ jobs:
       - name: Validate docs OpenAPI export
         run: cd .. && scripts/export-openapi-json.sh docs/site/openapi.json
 
+      - name: Validate docs site static package
+        run: cd .. && scripts/build-docs-site.sh dist/docs-site
+
       - name: Ruff lint
         run: ruff check .
 

@@ -5,6 +5,7 @@ API 文档由稳定契约和自动导出的 OpenAPI 共同组成：
 - 稳定契约：`docs/api-contract.md`
 - OpenAPI 生成：`scripts/export-openapi-json.sh`
 - 默认输出：`docs/site/openapi.json`
+- 静态发布包：`scripts/build-docs-site.sh dist/docs-site`
 
 ## 生成 OpenAPI
 
@@ -13,6 +14,14 @@ scripts/export-openapi-json.sh docs/site/openapi.json
 ```
 
 脚本会从 FastAPI `app.main` 导出 schema，并设置一次性测试 `SECRET_KEY`，避免开发机必须预先写入真实密钥。
+
+## 生成静态发布包
+
+```bash
+scripts/build-docs-site.sh dist/docs-site
+```
+
+该 smoke 会重新导出 OpenAPI，把 `docs/site/*.md` 复制到发布目录，并写入 `manifest.json`，供后续静态站点生成器或 artifact 发布流程消费。
 
 ## 主要 API 分组
 
