@@ -51,6 +51,9 @@ jobs:
       - name: Validate docs site static package
         run: cd .. && scripts/build-docs-site.sh dist/docs-site
 
+      - name: Validate docs browser screenshot evidence
+        run: cd .. && scripts/phase5-docs-browser-screenshots-smoke.sh
+
       - name: Ruff lint
         run: ruff check .
 

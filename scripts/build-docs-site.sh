@@ -33,6 +33,11 @@ cat > "$output_abs/manifest.json" <<'JSON'
     "assets/screenshots/admin-audits-soc2-export.svg",
     "assets/screenshots/admin-sessions-recording-timeline.svg"
   ],
+  "screenshotCapture": {
+    "smoke": "scripts/phase5-docs-browser-screenshots-smoke.sh",
+    "captureEnv": "JANUSGATE_CAPTURE_DOC_SCREENSHOTS=1",
+    "frontendBaseUrlEnv": "JANUSGATE_FRONTEND_BASE_URL"
+  },
   "pages": [
     "index.md",
     "install.md",

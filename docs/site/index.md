@@ -16,3 +16,4 @@ Phase 5 #t59 文档站 foundation 面向安装、运维和 API 集成读者，�
 - API 契约仍以 `docs/api-contract.md` 为稳定契约来源。
 - OpenAPI JSON 由 `scripts/export-openapi-json.sh` 从 FastAPI 应用导出，避免手写 schema 漂移。
 - 静态站点发布包由 `scripts/build-docs-site.sh dist/docs-site` 生成，包含本目录 Markdown、管理员截图资产、`openapi.json` 和 `manifest.json`。
+- 管理员截图证据由 `scripts/phase5-docs-browser-screenshots-smoke.sh` 做 CI wiring smoke；显式设置 `JANUSGATE_CAPTURE_DOC_SCREENSHOTS=1` 后可在具备 Playwright 的前端环境捕获真实浏览器截图。

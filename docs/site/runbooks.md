@@ -12,12 +12,35 @@
    git diff --check
    scripts/phase5-release-readiness-smoke.sh
    scripts/build-docs-site.sh dist/docs-site
+   scripts/phase5-docs-browser-screenshots-smoke.sh
    ```
 
 4. 如包含数据库迁移，先备份 PostgreSQL，并记录备份对象、时间点、目标版本和操作者。
 5. 打 `v*` tag 触发 release pipeline，等待 GHCR image、SBOM 和 Cosign signing 结果。
 6. 使用 release image tag 执行 Helm upgrade，并记录 Helm revision。
 7. 执行 `/health`、登录、JIT grant、connection token、会话创建和审计写入 smoke。
+
+## Docs screenshot checklist
+
+管理员文档截图更新必须保留固定 evidence id 和脱敏边界。
+
+1. 先确认前端回归测试仍覆盖 Settings License / Edition、Audits SOC2 export 和 Sessions recording timeline。
+2. 默认 CI 只执行截图证据 wiring smoke：
+
+   ```bash
+   scripts/phase5-docs-browser-screenshots-smoke.sh
+   ```
+
+3. 需要重新捕获真实浏览器截图时，在可访问测试控制台和 Playwright 环境中执行：
+
+   ```bash
+   JANUSGATE_CAPTURE_DOC_SCREENSHOTS=1 \
+   JANUSGATE_FRONTEND_BASE_URL=http://127.0.0.1:5173 \
+   scripts/phase5-docs-browser-screenshots-smoke.sh
+   ```
+
+4. 捕获后复核 `docs/site/assets/screenshots/`，不得包含 bearer token、license key、signing secret、连接串、私钥或真实客户数据。
+5. 重新运行 `scripts/build-docs-site.sh dist/docs-site`，确认 manifest 仍包含截图资产和 `screenshotCapture`。
 
 ## Multi-replica smoke checklist
 
