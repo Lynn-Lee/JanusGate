@@ -1,0 +1,53 @@
+{
+  "schema_version": "janusgate.docs.admin-screenshot-archive.v1",
+  "purpose": "Archive contract for Phase 5 #t59 live browser screenshot evidence.",
+  "capture_mode": "live_browser_capture",
+  "source_url_env": "JANUSGATE_FRONTEND_BASE_URL",
+  "capture_command": "JANUSGATE_CAPTURE_DOC_SCREENSHOTS=1 JANUSGATE_FRONTEND_BASE_URL=http://127.0.0.1:5173 scripts/phase5-docs-browser-screenshots-smoke.sh",
+  "fixture": "docs/site/fixtures/admin-screenshot-data.json",
+  "output_directory": "docs/site/assets/screenshots",
+  "required_checks": [
+    "must_show",
+    "must_not_show",
+    "redacted_fixture_api_responses",
+    "no_token_or_secret_text"
+  ],
+  "evidence": [
+    {
+      "id": "admin-settings-license-summary",
+      "route": "/settings",
+      "artifact": "assets/screenshots/admin-settings-license-summary.svg",
+      "regression_source": "frontend/src/pages/mvp-pages.test.tsx"
+    },
+    {
+      "id": "admin-audits-soc2-export",
+      "route": "/audits",
+      "artifact": "assets/screenshots/admin-audits-soc2-export.svg",
+      "regression_source": "frontend/src/pages/mvp-pages.test.tsx"
+    },
+    {
+      "id": "admin-sessions-recording-timeline",
+      "route": "/sessions",
+      "artifact": "assets/screenshots/admin-sessions-recording-timeline.svg",
+      "regression_source": "frontend/src/pages/mvp-pages.test.tsx"
+    },
+    {
+      "id": "admin-tenancy-organization-inventory",
+      "route": "/tenancy",
+      "artifact": "assets/screenshots/admin-tenancy-organization-inventory.svg",
+      "regression_source": "frontend/src/pages/mvp-pages.test.tsx"
+    },
+    {
+      "id": "admin-accounts-credential-rotation",
+      "route": "/accounts",
+      "artifact": "assets/screenshots/admin-accounts-credential-rotation.svg",
+      "regression_source": "frontend/src/pages/mvp-pages.test.tsx"
+    },
+    {
+      "id": "admin-ssh-ca-trust-bundle",
+      "route": "/ssh-ca",
+      "artifact": "assets/screenshots/admin-ssh-ca-trust-bundle.svg",
+      "regression_source": "frontend/src/pages/mvp-pages.test.tsx"
+    }
+  ]
+}

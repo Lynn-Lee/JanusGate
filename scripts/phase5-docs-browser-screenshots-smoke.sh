@@ -4,6 +4,7 @@ set -euo pipefail
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 screenshot_dir="$repo_root/docs/site/assets/screenshots"
 fixture_file="$repo_root/docs/site/fixtures/admin-screenshot-data.json"
+archive_file="$repo_root/docs/site/fixtures/admin-screenshot-archive.json"
 docs_package_dir="${JANUSGATE_DOCS_SITE_DIR:-$repo_root/dist/docs-site}"
 
 required_screenshots=(
@@ -30,9 +31,11 @@ done
 
 require_file "$repo_root/docs/site/admin-screenshots.md"
 require_file "$fixture_file"
+require_file "$archive_file"
 grep -q 'JANUSGATE_CAPTURE_DOC_SCREENSHOTS=1' "$repo_root/docs/site/admin-screenshots.md"
 grep -q 'scripts/phase5-docs-browser-screenshots-smoke.sh' "$repo_root/docs/site/admin-screenshots.md"
 grep -q 'docs/site/fixtures/admin-screenshot-data.json' "$repo_root/docs/site/admin-screenshots.md"
+grep -q 'docs/site/fixtures/admin-screenshot-archive.json' "$repo_root/docs/site/admin-screenshots.md"
 grep -q 'admin-settings-license-summary' "$fixture_file"
 grep -q 'admin-audits-soc2-export' "$fixture_file"
 grep -q 'admin-sessions-recording-timeline' "$fixture_file"
@@ -40,10 +43,17 @@ grep -q 'admin-tenancy-organization-inventory' "$fixture_file"
 grep -q 'admin-accounts-credential-rotation' "$fixture_file"
 grep -q 'admin-ssh-ca-trust-bundle' "$fixture_file"
 grep -q 'password=\[REDACTED\]' "$fixture_file"
+grep -q 'janusgate.docs.admin-screenshot-archive.v1' "$archive_file"
+grep -q 'live_browser_capture' "$archive_file"
+grep -q 'JANUSGATE_FRONTEND_BASE_URL' "$archive_file"
+for screenshot in "${required_screenshots[@]}"; do
+  grep -q "assets/screenshots/$screenshot" "$archive_file"
+done
 
 if [[ -f "$docs_package_dir/manifest.json" ]]; then
   grep -q '"screenshotCapture"' "$docs_package_dir/manifest.json"
   grep -q 'fixtures/admin-screenshot-data.json' "$docs_package_dir/manifest.json"
+  grep -q 'fixtures/admin-screenshot-archive.json' "$docs_package_dir/manifest.json"
   for screenshot in "${required_screenshots[@]}"; do
     grep -q "assets/screenshots/$screenshot" "$docs_package_dir/manifest.json"
   done

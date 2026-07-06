@@ -23,6 +23,7 @@ mkdir -p "$output_abs/assets"
 cp -R "$repo_root/docs/site/assets/screenshots" "$output_abs/assets/screenshots"
 mkdir -p "$output_abs/fixtures"
 cp "$repo_root/docs/site/fixtures/admin-screenshot-data.json" "$output_abs/fixtures/admin-screenshot-data.json"
+cp "$repo_root/docs/site/fixtures/admin-screenshot-archive.json" "$output_abs/fixtures/admin-screenshot-archive.json"
 
 cat > "$output_abs/manifest.json" <<'JSON'
 {
@@ -39,11 +40,13 @@ cat > "$output_abs/manifest.json" <<'JSON'
     "assets/screenshots/admin-ssh-ca-trust-bundle.svg"
   ],
   "fixtures": [
-    "fixtures/admin-screenshot-data.json"
+    "fixtures/admin-screenshot-data.json",
+    "fixtures/admin-screenshot-archive.json"
   ],
   "screenshotCapture": {
     "smoke": "scripts/phase5-docs-browser-screenshots-smoke.sh",
     "fixture": "docs/site/fixtures/admin-screenshot-data.json",
+    "archive": "docs/site/fixtures/admin-screenshot-archive.json",
     "captureEnv": "JANUSGATE_CAPTURE_DOC_SCREENSHOTS=1",
     "frontendBaseUrlEnv": "JANUSGATE_FRONTEND_BASE_URL"
   },
