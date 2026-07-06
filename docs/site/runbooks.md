@@ -2,6 +2,10 @@
 
 本页把安装手册与部署基线中的操作步骤整理为可交接的运行清单。真实生产发布前仍以 `deploy/README.md` 的部署与回滚基线为准。
 
+## Operation evidence manifest
+
+可交接的操作证据字段固定在 `docs/site/fixtures/operation-runbook-evidence.json`。该 manifest 把 release、多副本 smoke、rollback 和 secret handling 清单映射到必须记录的命令、结果和密钥边界，随 `scripts/build-docs-site.sh dist/docs-site` 发布到 `fixtures/operation-runbook-evidence.json`，便于审计或外部交付复核。
+
 ## Release checklist
 
 1. 确认 `dev` 已合并目标变更，且 CI 通过。

@@ -1,0 +1,77 @@
+{
+  "schema_version": "janusgate.docs.operation-runbook-evidence.v1",
+  "purpose": "Machine-readable operator evidence contract for Phase 5 #t59 runbook handoff.",
+  "source": "docs/site/runbooks.md",
+  "evidence": [
+    {
+      "id": "release_checklist",
+      "runbook_section": "Release checklist",
+      "required_commands": [
+        "git diff --check",
+        "scripts/phase5-release-readiness-smoke.sh",
+        "scripts/build-docs-site.sh dist/docs-site",
+        "scripts/phase5-docs-browser-screenshots-smoke.sh"
+      ],
+      "required_records": [
+        "CI result",
+        "GHCR image tag",
+        "SBOM artifact",
+        "Cosign signing result",
+        "Helm revision"
+      ],
+      "secret_handling": [
+        "Do not print SECRET_KEY, DATABASE_URL, Redis password, license key, or signing secret."
+      ]
+    },
+    {
+      "id": "multi_replica_smoke_checklist",
+      "runbook_section": "Multi-replica smoke checklist",
+      "required_commands": [
+        "scripts/phase5-ha-config-smoke.sh",
+        "scripts/phase5-k8s-multi-replica-smoke.sh"
+      ],
+      "required_records": [
+        "SESSION_CONNECTION_TOKEN_STORE=redis",
+        "DATABASE_READ_REPLICA_URL readiness",
+        "ready Pod count",
+        "Service port-forward /health result",
+        "connection token issue and consume smoke result"
+      ],
+      "secret_handling": [
+        "Provide SECRET_KEY, DATABASE_URL, DATABASE_READ_REPLICA_URL, and REDIS_URL through environment or Kubernetes Secret only."
+      ]
+    },
+    {
+      "id": "rollback_checklist",
+      "runbook_section": "Rollback checklist",
+      "required_commands": [
+        "helm history janusgate -n janusgate",
+        "helm rollback janusgate <REVISION> -n janusgate",
+        "kubectl rollout status deployment/janusgate -n janusgate",
+        "curl -fsS http://localhost:8000/health"
+      ],
+      "required_records": [
+        "rollback Helm revision",
+        "schema compatibility decision",
+        "backup or down migration decision",
+        "post-rollback login and JIT smoke result"
+      ],
+      "secret_handling": [
+        "Do not put emergency database credentials in Helm values or run logs."
+      ]
+    },
+    {
+      "id": "secret_handling_checklist",
+      "runbook_section": "Secret handling",
+      "required_commands": [],
+      "required_records": [
+        "secret.existingSecret name",
+        "temporary values file permissions",
+        "cleanup confirmation"
+      ],
+      "secret_handling": [
+        "Do not print SECRET_KEY, DATABASE_URL, DATABASE_READ_REPLICA_URL, Redis passwords, license keys, signing secrets, bearer tokens, private keys, or customer data."
+      ]
+    }
+  ]
+}

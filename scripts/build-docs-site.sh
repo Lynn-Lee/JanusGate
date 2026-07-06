@@ -24,6 +24,7 @@ cp -R "$repo_root/docs/site/assets/screenshots" "$output_abs/assets/screenshots"
 mkdir -p "$output_abs/fixtures"
 cp "$repo_root/docs/site/fixtures/admin-screenshot-data.json" "$output_abs/fixtures/admin-screenshot-data.json"
 cp "$repo_root/docs/site/fixtures/admin-screenshot-archive.json" "$output_abs/fixtures/admin-screenshot-archive.json"
+cp "$repo_root/docs/site/fixtures/operation-runbook-evidence.json" "$output_abs/fixtures/operation-runbook-evidence.json"
 
 cat > "$output_abs/manifest.json" <<'JSON'
 {
@@ -41,8 +42,15 @@ cat > "$output_abs/manifest.json" <<'JSON'
   ],
   "fixtures": [
     "fixtures/admin-screenshot-data.json",
-    "fixtures/admin-screenshot-archive.json"
+    "fixtures/admin-screenshot-archive.json",
+    "fixtures/operation-runbook-evidence.json"
   ],
+  "operationRunbookEvidence": {
+    "source": "docs/site/runbooks.md",
+    "manifest": "docs/site/fixtures/operation-runbook-evidence.json",
+    "packagePath": "fixtures/operation-runbook-evidence.json",
+    "schemaVersion": "janusgate.docs.operation-runbook-evidence.v1"
+  },
   "screenshotCapture": {
     "smoke": "scripts/phase5-docs-browser-screenshots-smoke.sh",
     "fixture": "docs/site/fixtures/admin-screenshot-data.json",

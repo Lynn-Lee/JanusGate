@@ -11,6 +11,7 @@ def test_phase5_docs_site_foundation_is_wired_for_operator_handoff() -> None:
     screenshot_guide = (REPO_ROOT / "docs/site/admin-screenshots.md").read_text()
     screenshot_fixture_path = REPO_ROOT / "docs/site/fixtures/admin-screenshot-data.json"
     screenshot_archive_path = REPO_ROOT / "docs/site/fixtures/admin-screenshot-archive.json"
+    runbook_evidence_path = REPO_ROOT / "docs/site/fixtures/operation-runbook-evidence.json"
     api_docs = (REPO_ROOT / "docs/site/api.md").read_text()
     runbooks = (REPO_ROOT / "docs/site/runbooks.md").read_text()
     api_contract = (REPO_ROOT / "docs/api-contract.md").read_text()
@@ -27,6 +28,7 @@ def test_phase5_docs_site_foundation_is_wired_for_operator_handoff() -> None:
     assert "api.md" in docs_index
     assert "runbooks.md" in docs_index
     assert "admin-screenshots.md" in docs_index
+    assert "operation-runbook-evidence.json" in docs_index
     assert "SECRET_KEY" in install_guide
     assert "docker compose up --build -d" in install_guide
     assert "helm upgrade --install" in install_guide
@@ -69,6 +71,8 @@ def test_phase5_docs_site_foundation_is_wired_for_operator_handoff() -> None:
     assert "helm rollback" in runbooks
     assert "connection token" in runbooks
     assert "Do not print" in runbooks
+    assert "Operation evidence manifest" in runbooks
+    assert "docs/site/fixtures/operation-runbook-evidence.json" in runbooks
     assert "app.main import app" in export_script
     assert "openapi.json" in export_script
     assert build_script_path.exists()
@@ -81,10 +85,12 @@ def test_phase5_docs_site_foundation_is_wired_for_operator_handoff() -> None:
     assert "assets/screenshots" in build_script
     assert "fixtures/admin-screenshot-data.json" in build_script
     assert "fixtures/admin-screenshot-archive.json" in build_script
+    assert "fixtures/operation-runbook-evidence.json" in build_script
     assert screenshot_script_path.exists()
     screenshot_script = screenshot_script_path.read_text()
     assert screenshot_fixture_path.exists()
     assert screenshot_archive_path.exists()
+    assert runbook_evidence_path.exists()
     screenshot_fixture = screenshot_fixture_path.read_text()
     screenshot_archive = screenshot_archive_path.read_text()
     assert "admin-settings-license-summary" in screenshot_fixture
@@ -121,6 +127,17 @@ def test_phase5_docs_site_foundation_is_wired_for_operator_handoff() -> None:
     assert "live_browser_capture" in screenshot_archive
     assert "admin-settings-license-summary" in screenshot_archive
     assert "admin-ssh-ca-trust-bundle" in screenshot_archive
+    runbook_evidence = runbook_evidence_path.read_text()
+    assert "janusgate.docs.operation-runbook-evidence.v1" in runbook_evidence
+    assert "release_checklist" in runbook_evidence
+    assert "multi_replica_smoke_checklist" in runbook_evidence
+    assert "rollback_checklist" in runbook_evidence
+    assert "secret_handling_checklist" in runbook_evidence
+    assert "scripts/phase5-release-readiness-smoke.sh" in runbook_evidence
+    assert "scripts/phase5-ha-config-smoke.sh" in runbook_evidence
+    assert "scripts/phase5-k8s-multi-replica-smoke.sh" in runbook_evidence
+    assert "helm rollback" in runbook_evidence
+    assert "DATABASE_URL" in runbook_evidence
     assert "scripts/export-openapi-json.sh" in workflow
     assert "scripts/build-docs-site.sh" in workflow
     assert "scripts/phase5-docs-browser-screenshots-smoke.sh" in workflow
@@ -129,3 +146,4 @@ def test_phase5_docs_site_foundation_is_wired_for_operator_handoff() -> None:
     assert "OpenAPI 自动生成 foundation" in roadmap
     assert "静态站点发布 smoke" in roadmap
     assert "真实浏览器截图流水线 foundation" in roadmap
+    assert "操作 runbook evidence manifest" in roadmap
