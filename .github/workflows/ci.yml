@@ -108,6 +108,9 @@ jobs:
       - name: Validate supply-chain security workflow wiring
         run: scripts/phase5-supply-chain-security-smoke.sh
 
+      - name: Validate runtime monitoring and hardening wiring
+        run: scripts/phase5-runtime-monitoring-smoke.sh
+
       - name: Trivy high/critical vulnerability gate
         uses: aquasecurity/trivy-action@0.24.0
         with:

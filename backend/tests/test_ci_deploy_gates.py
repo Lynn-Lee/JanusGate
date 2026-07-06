@@ -83,6 +83,21 @@ def test_phase5_capacity_model_smoke_defines_slo_and_load_inputs() -> None:
     assert "capacity_headroom_percent" in baseline
 
 
+def test_phase5_runtime_monitoring_smoke_covers_runtime_security_and_metrics() -> None:
+    workflow = (REPO_ROOT / ".github/workflows/ci.yml").read_text()
+    script = (REPO_ROOT / "scripts/phase5-runtime-monitoring-smoke.sh").read_text()
+
+    assert "scripts/phase5-runtime-monitoring-smoke.sh" in workflow
+    assert "read_only: true" in script
+    assert "no-new-privileges:true" in script
+    assert "runAsNonRoot: true" in script
+    assert "readOnlyRootFilesystem: true" in script
+    assert "allowPrivilegeEscalation: false" in script
+    assert "drop:\n      - ALL" in script
+    assert "GET /metrics" in script
+    assert "janusgate_http_requests_total" in script
+
+
 def test_compose_internal_dependencies_do_not_bind_fixed_host_ports() -> None:
     compose = yaml.safe_load((REPO_ROOT / "docker-compose.yml").read_text())
 

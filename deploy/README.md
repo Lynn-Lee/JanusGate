@@ -17,6 +17,7 @@ GitHub Actions 工作流位于 `.github/workflows/ci.yml`，当前包含：
 - `npm test -- --run`：前端 Vitest 组件/API smoke 测试
 - `npm run build`：前端生产构建检查
 - `scripts/phase5-supply-chain-security-smoke.sh`：校验 Phase 5 SBOM、镜像签名和漏洞扫描 CI wiring
+- `scripts/phase5-runtime-monitoring-smoke.sh`：校验 Phase 5 运行时加固配置和 `/metrics` 回归契约
 - Trivy high/critical vulnerability gate：对仓库文件系统执行高危/严重漏洞扫描
 - Docker Buildx：构建 backend 镜像；仅 `v*` tag 会推送到 GHCR
 - release tag SBOM：对已推送的 backend 镜像 digest 生成 SPDX JSON SBOM artifact
