@@ -348,6 +348,37 @@ describe('MVP pages', () => {
     expect(screen.queryByText('super-secret-signing-key')).not.toBeInTheDocument();
   });
 
+  it('activates an external license verifier without submitting local signing material', async () => {
+    const fetchMock = installFetch();
+    vi.stubGlobal('fetch', fetchMock);
+    history.pushState(null, '', '/settings');
+    render(<App />);
+
+    expect(await screen.findByRole('heading', { name: '系统设置' })).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: '保存 License 配置' }));
+    await userEvent.click(screen.getByLabelText('License verifier'));
+    await userEvent.click(await screen.findByText('external-http'));
+    await userEvent.type(screen.getByLabelText('License key'), 'opaque-commercial-license');
+    await userEvent.click(screen.getByRole('button', { name: '激活 License' }));
+
+    await waitFor(() =>
+      expect(fetchMock).toHaveBeenCalledWith(
+        '/api/v1/admin/license-config',
+        expect.objectContaining({
+          method: 'POST',
+          body: JSON.stringify({
+            configured_edition: 'enterprise',
+            license_verifier: 'external-http',
+            license_key: 'opaque-commercial-license',
+            license_signing_secret: '',
+            license_public_key: ''
+          })
+        })
+      )
+    );
+    expect(screen.queryByText('opaque-commercial-license')).not.toBeInTheDocument();
+  });
+
   it('shows Phase 4 tenancy organization, team, and project inventory', async () => {
     history.pushState(null, '', '/tenancy');
     render(<App />);

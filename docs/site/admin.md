@@ -21,7 +21,7 @@
 
 `GET /api/v1/admin/license-summary` 只允许 `admin` 读取当前 configured/effective edition、license status、启用能力和禁用能力。若已通过 `POST /api/v1/admin/license-config` 写入持久化配置，摘要优先读取 DB 中的激活配置；否则回退环境变量。
 
-前端 Settings 页已提供最小 License lifecycle 表单，可选择 `community` / `enterprise`、`hmac` / `ed25519` 验签模式，并提交 license key、signing secret 或公钥到 `POST /api/v1/admin/license-config`。后端也支持 `external-http` 外部商业授权服务验证 foundation，该模式从环境读取 HTTPS validation endpoint 和 service token，不通过页面提交 service token。提交后页面只刷新脱敏 `LicenseSummary`，不会展示请求中的 license key、signing secret、公钥或原始 payload。
+前端 Settings 页已提供最小 License lifecycle 表单，可选择 `community` / `enterprise`，以及 `hmac` / `ed25519` / `external-http` verifier，并提交 license key、signing secret 或公钥到 `POST /api/v1/admin/license-config`。`external-http` 模式只通过页面提交 opaque license key；HTTPS validation endpoint 和 service token 仍从环境读取，不通过页面提交或写入 DB。提交后页面只刷新脱敏 `LicenseSummary`，不会展示请求中的 license key、signing secret、公钥或原始 payload。
 
 External license service evidence 固定在 `docs/site/fixtures/license-operations-evidence.json`。该 manifest 只要求记录 external validation endpoint owner、SLA / support window、timeout budget、fail-closed drill、key custody owner、rotation cadence 和 revocation process；不得记录 license key、signing secret、validation token、私钥或原始授权 payload。
 

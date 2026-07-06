@@ -74,7 +74,7 @@
 
 ### GET `/api/v1/admin/license-summary`
 
-用途：返回当前激活配置下的版本、license 状态和启用/禁用 feature 列表。若 DB 中存在 admin 持久化配置则优先使用该配置；否则回退到当前进程环境变量。前端 `/settings` 已提供最小 License lifecycle 表单，可调用 `POST /api/v1/admin/license-config` 激活持久化配置。
+用途：返回当前激活配置下的版本、license 状态和启用/禁用 feature 列表。若 DB 中存在 admin 持久化配置则优先使用该配置；否则回退到当前进程环境变量。前端 `/settings` 已提供最小 License lifecycle 表单，可调用 `POST /api/v1/admin/license-config` 激活持久化配置，并可选择 `hmac`、`ed25519` 或 `external-http` verifier。
 
 鉴权：需要登录态和 `admin` 权限。
 
@@ -96,7 +96,7 @@
 - 响应不返回 `JANUSGATE_LICENSE_KEY`、`JANUSGATE_LICENSE_SIGNING_SECRET`、签名值或原始 license payload。
 - 响应不返回 `JANUSGATE_LICENSE_PUBLIC_KEY`、`JANUSGATE_LICENSE_VALIDATION_TOKEN` 或任何签名私钥材料。
 - `enterprise` 配置没有有效 license 时不能启用 enterprise feature。
-- `POST /api/v1/admin/license-config` 可由 `admin` 持久化当前激活 license 配置，请求字段为 `configured_edition`、`license_verifier`、`license_key`、`license_signing_secret` 与 `license_public_key`；响应复用 `LicenseSummary`，不回显 license key、signing secret、公钥、validation token 或原始 payload。成功写入会追加 `admin.license_config.updated` 审计事件，metadata 只包含 configured/effective edition、license status、verifier、license key / signing material / public key 是否已配置和 enabled feature 摘要；external-http 的 service token 仅从环境读取，不写入 license 配置表。
+- `POST /api/v1/admin/license-config` 可由 `admin` 持久化当前激活 license 配置，请求字段为 `configured_edition`、`license_verifier`、`license_key`、`license_signing_secret` 与 `license_public_key`；`license_verifier` 支持 `hmac`、`ed25519` 和 `external-http`。响应复用 `LicenseSummary`，不回显 license key、signing secret、公钥、validation token 或原始 payload。成功写入会追加 `admin.license_config.updated` 审计事件，metadata 只包含 configured/effective edition、license status、verifier、license key / signing material / public key 是否已配置和 enabled feature 摘要；external-http 的 validation endpoint 和 service token 仅从环境读取，不写入 license 配置表。
 
 ## Phase 4 Automation Worker Queue（#t52）
 

@@ -15,7 +15,7 @@ type LicenseSummary = {
 };
 type LicenseConfigForm = {
   configured_edition: 'community' | 'enterprise';
-  license_verifier: 'hmac' | 'ed25519';
+  license_verifier: 'hmac' | 'ed25519' | 'external-http';
   license_key: string;
   license_signing_secret?: string;
   license_public_key?: string;
@@ -147,7 +147,8 @@ export function SettingsPage() {
                     <Select
                       options={[
                         { value: 'hmac', label: 'hmac' },
-                        { value: 'ed25519', label: 'ed25519' }
+                        { value: 'ed25519', label: 'ed25519' },
+                        { value: 'external-http', label: 'external-http' }
                       ]}
                     />
                   </Form.Item>
