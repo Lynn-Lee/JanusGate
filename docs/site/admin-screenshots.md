@@ -13,6 +13,7 @@
 ## Capture Contract
 
 - 截图资产使用当前前端回归测试固定的脱敏 UI 状态归档；接入真实浏览器截图流水线后，必须保持相同 evidence id 和文件路径。
+- 截图测试数据固定在 `docs/site/fixtures/admin-screenshot-data.json`，记录每个 evidence id 的路由、脱敏 API 响应、必须可见文字和禁止出现的敏感字段；真实截图流水线可复用该夹具构造稳定测试状态。
 - CI 默认运行 `scripts/phase5-docs-browser-screenshots-smoke.sh`，验证截图证据文件、文档清单和发布包 manifest wiring；默认模式不启动浏览器。
 - 需要从真实前端页面重新捕获截图时，先提供可访问且已配置测试数据的控制台地址，再显式运行：
 
@@ -22,7 +23,7 @@
   scripts/phase5-docs-browser-screenshots-smoke.sh
   ```
 
-- capture 模式要求 `frontend/` 环境可解析 Playwright，并会向浏览器 localStorage 注入 `janusgate-access-token` 测试 token；目标后端或前端 mock 必须返回上表要求的脱敏状态。
+- capture 模式要求 `frontend/` 环境可解析 Playwright，并会向浏览器 localStorage 注入 `janusgate-access-token` 测试 token 和 `janusgate-doc-screenshot-fixture` 测试数据；目标后端或前端 mock 必须返回上表要求的脱敏状态。
 - 截图只保留页面状态、列表摘要和安全脱敏结果，不包含 bearer token、license key、signing secret、连接串、私钥或真实客户数据。
 - 每张截图必须能回溯到上表中的 regression source；当 UI 文案或路由变化时，先更新对应测试，再更新本页。
-- 发布包必须包含本页和 `assets/screenshots/`，使管理员手册、截图证据、OpenAPI 和 runbook 可以一起交付。
+- 发布包必须包含本页、`assets/screenshots/` 和 `fixtures/admin-screenshot-data.json`，使管理员手册、截图证据、OpenAPI、runbook 和截图测试数据可以一起交付。
