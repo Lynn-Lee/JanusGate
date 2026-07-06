@@ -1,0 +1,115 @@
+"""Phase 5 #t58 license and edition boundary contract tests."""
+from __future__ import annotations
+
+from datetime import UTC, datetime
+
+from fastapi.testclient import TestClient
+
+from app.core.deps import current_user
+from app.core.license import build_license_key, get_license_summary
+from app.main import app
+
+
+def install_user(*, permissions: list[str]) -> None:
+    app.dependency_overrides[current_user] = lambda: {
+        "id": "user-1",
+        "username": "alice",
+        "tenant_id": "tenant-a",
+        "organization_id": None,
+        "team_id": None,
+        "project_id": None,
+        "permissions": permissions,
+    }
+
+
+def test_license_summary_defaults_to_community_features_without_license() -> None:
+    summary = get_license_summary(
+        configured_edition="community",
+        license_key="",
+        signing_secret="",
+        now=datetime(2026, 7, 6, tzinfo=UTC),
+    )
+
+    assert summary.license_status == "not_configured"
+    assert summary.effective_edition == "community"
+    assert "core_pam" in summary.enabled_features
+    assert "license_management" not in summary.enabled_features
+    assert "license_management" in summary.disabled_features
+
+
+def test_enterprise_edition_fails_closed_without_valid_license() -> None:
+    summary = get_license_summary(
+        configured_edition="enterprise",
+        license_key="invalid-license",
+        signing_secret="test-signing-secret",
+        now=datetime(2026, 7, 6, tzinfo=UTC),
+    )
+
+    assert summary.license_status == "invalid"
+    assert summary.effective_edition == "community"
+    assert "license_management" in summary.disabled_features
+
+
+def test_active_enterprise_license_enables_declared_enterprise_features() -> None:
+    license_key = build_license_key(
+        payload={
+            "edition": "enterprise",
+            "features": ["license_management", "admin_console"],
+            "expires_at": "2026-08-01T00:00:00Z",
+        },
+        signing_secret="test-signing-secret",
+    )
+
+    summary = get_license_summary(
+        configured_edition="enterprise",
+        license_key=license_key,
+        signing_secret="test-signing-secret",
+        now=datetime(2026, 7, 6, tzinfo=UTC),
+    )
+
+    assert summary.license_status == "active"
+    assert summary.effective_edition == "enterprise"
+    assert summary.expires_at == "2026-08-01T00:00:00Z"
+    assert "license_management" in summary.enabled_features
+    assert "admin_console" in summary.enabled_features
+
+
+def test_expired_enterprise_license_fails_closed() -> None:
+    license_key = build_license_key(
+        payload={
+            "edition": "enterprise",
+            "features": ["license_management"],
+            "expires_at": "2026-07-01T00:00:00Z",
+        },
+        signing_secret="test-signing-secret",
+    )
+
+    summary = get_license_summary(
+        configured_edition="enterprise",
+        license_key=license_key,
+        signing_secret="test-signing-secret",
+        now=datetime(2026, 7, 6, tzinfo=UTC),
+    )
+
+    assert summary.license_status == "expired"
+    assert summary.effective_edition == "community"
+    assert "license_management" in summary.disabled_features
+
+
+def test_license_summary_api_requires_admin_and_never_returns_license_key() -> None:
+    app.dependency_overrides.clear()
+
+    with TestClient(app) as client:
+        install_user(permissions=["assets:read"])
+        forbidden = client.get("/api/v1/admin/license-summary")
+
+        install_user(permissions=["admin"])
+        response = client.get("/api/v1/admin/license-summary")
+
+    assert forbidden.status_code == 403
+    assert response.status_code == 200
+    body = response.json()
+    assert body["license_status"] == "not_configured"
+    assert body["effective_edition"] == "community"
+    assert "license_management" not in body["enabled_features"]
+    assert "license_key" not in body

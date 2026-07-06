@@ -6,6 +6,7 @@ from typing import Any
 from fastapi.routing import APIRoute
 
 from app.api.accounts import router as accounts_router
+from app.api.admin import router as admin_router
 from app.api.assets import router as assets_router
 from app.api.audits.routes import router as audits_router
 from app.api.auth import router as auth_router
@@ -50,10 +51,15 @@ DB_BACKED_GET_ROUTE_ROUTING_INVENTORY = {
     ("GET", "/workflows/requests/{request_id}"),
 }
 
-DB_FREE_GET_ROUTE_ROUTING_INVENTORY = {
+AUDIT_DB_FREE_GET_ROUTE_ROUTING_INVENTORY = {
     ("GET", "/api/v1/audits/events"),
     ("GET", "/api/v1/audits/reports/compliance"),
     ("GET", "/api/v1/audits/reports/summary"),
+}
+
+DB_FREE_GET_ROUTE_ROUTING_INVENTORY = {
+    ("GET", "/admin/license-summary"),
+    *AUDIT_DB_FREE_GET_ROUTE_ROUTING_INVENTORY,
 }
 
 GET_ROUTE_ROUTING_INVENTORY = (
@@ -62,6 +68,7 @@ GET_ROUTE_ROUTING_INVENTORY = (
 
 ROUTERS_WITH_GET_ROUTES = [
     accounts_router,
+    admin_router,
     assets_router,
     audits_router,
     auth_router,
@@ -84,7 +91,7 @@ def test_all_get_routes_are_classified_in_database_routing_inventory() -> None:
 
 
 def test_audit_read_routes_are_explicitly_db_free_until_audit_store_is_persisted() -> None:
-    for method, path in DB_FREE_GET_ROUTE_ROUTING_INVENTORY:
+    for method, path in AUDIT_DB_FREE_GET_ROUTE_ROUTING_INVENTORY:
         dependencies = _route_dependency_calls(router=audits_router, method=method, path=path)
         assert get_db not in dependencies
         assert get_read_db not in dependencies

@@ -43,6 +43,11 @@ class Settings(BaseSettings):
     COMPLIANCE_REPORT_EXTERNAL_SIGNING_KEY_ID: str = ""
     COMPLIANCE_REPORT_EXTERNAL_HMAC_SECRET: str = ""
 
+    # ── Edition / License ──
+    JANUSGATE_EDITION: Literal["community", "enterprise"] = "community"
+    JANUSGATE_LICENSE_KEY: str = ""
+    JANUSGATE_LICENSE_SIGNING_SECRET: str = ""
+
     # ── Security ──
     SECRET_KEY: str = ""
     JWT_ALGORITHM: str = "HS256"

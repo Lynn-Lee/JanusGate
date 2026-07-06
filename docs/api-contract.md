@@ -2,8 +2,8 @@
 
 > 面向 #t36 前端控制台、#t38 E2E smoke 和 #t41 QA 门禁。本文件记录当前后端稳定契约，后续新增 API 默认沿用。
 
-更新时间：2026-07-04
-范围：Phase 3 MVP 前端/后端联调契约，以及 Phase 4 多租户增量契约。
+更新时间：2026-07-06
+范围：Phase 3 MVP 前端/后端联调契约，Phase 4 多租户增量契约，以及 Phase 5 生产化增量契约。
 
 ## 基础约定
 
@@ -66,6 +66,36 @@
 - Webhook Endpoints：`/api/v1/webhook-endpoints/*`，Phase 4 WebHook / 通知中心 endpoint 管理基础。
 - Notification Rules：`/api/v1/notification-rules/*`，Phase 4 WebHook / 通知规则管理基础。
 - Notification Deliveries：`/api/v1/notification-rules/{rule_id}/deliveries` 与 `/api/v1/notification-deliveries/*`，Phase 4 WebHook 可靠投递队列基础；`NotificationDeliveryWorker` 负责到期投递、失败重试和 dead-letter 状态推进，`HttpWebhookNotificationSender` 负责向 HTTPS WebHook endpoint 投递已脱敏 payload。
+- Admin：`/api/v1/admin/license-summary`，Phase 5 #t58 Edition / License 边界摘要，只允许 `admin` 读取，不返回 license key、签名 secret 或任何商业密钥材料。
+
+## Phase 5 Edition / License Boundary（#t58）
+
+当前切片提供后端最小 feature flag 与 license 摘要基础。`JANUSGATE_EDITION=community|enterprise` 配置期望版本；默认 `community` 不需要 license，只启用 `core_pam`、`workflow_jit` 和 `audit_reports` 基础能力。`enterprise` 版本只有在 `JANUSGATE_LICENSE_KEY` 通过 `JANUSGATE_LICENSE_SIGNING_SECRET` HMAC-SHA256 签名校验、payload edition 为 `enterprise`、且 `expires_at` 未过期时才生效；缺失、非法、过期或签名不匹配时 fail-closed，`effective_edition` 回退为 `community`，enterprise feature 保持 disabled。
+
+### GET `/api/v1/admin/license-summary`
+
+用途：返回当前进程配置下的版本、license 状态和启用/禁用 feature 列表，供管理后台后续接入。
+
+鉴权：需要登录态和 `admin` 权限。
+
+响应 `200`：
+
+```json
+{
+  "configured_edition": "enterprise",
+  "effective_edition": "community",
+  "license_status": "invalid",
+  "enabled_features": ["audit_reports", "core_pam", "workflow_jit"],
+  "disabled_features": ["admin_console", "edition_feature_flags", "license_management"],
+  "expires_at": null
+}
+```
+
+安全语义：
+
+- 响应不返回 `JANUSGATE_LICENSE_KEY`、`JANUSGATE_LICENSE_SIGNING_SECRET`、签名值或原始 license payload。
+- `enterprise` 配置没有有效 license 时不能启用 enterprise feature。
+- 当前 HMAC license verifier 是后端 foundation；完整 license lifecycle、持久化管理 UI、离线公钥验签或外部商业授权服务仍是后续 #t58 切片。
 
 ## Phase 4 Automation Worker Queue（#t52）
 
