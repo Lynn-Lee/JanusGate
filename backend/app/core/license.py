@@ -8,10 +8,13 @@ import json
 from datetime import UTC, datetime
 from typing import Literal
 
+from cryptography.exceptions import InvalidSignature
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey, Ed25519PublicKey
 from pydantic import BaseModel
 
 Edition = Literal["community", "enterprise"]
 LicenseStatus = Literal["not_configured", "active", "expired", "invalid"]
+LicenseVerifier = Literal["hmac", "ed25519"]
 
 COMMUNITY_FEATURES = frozenset(
     {
@@ -46,13 +49,20 @@ def get_license_summary(
     configured_edition: Edition,
     license_key: str,
     signing_secret: str,
+    public_key: str | bytes = "",
+    license_verifier: LicenseVerifier = "hmac",
     now: datetime | None = None,
 ) -> LicenseSummary:
     checked_at = _coerce_utc(now or datetime.now(UTC))
     if configured_edition == "community":
         return _community_summary(configured_edition=configured_edition, status="not_configured")
 
-    payload = _decode_verified_license(license_key=license_key, signing_secret=signing_secret)
+    payload = _decode_verified_license(
+        license_key=license_key,
+        signing_secret=signing_secret,
+        public_key=public_key,
+        license_verifier=license_verifier,
+    )
     if payload is None:
         status: LicenseStatus = "not_configured" if not license_key.strip() else "invalid"
         return _community_summary(configured_edition=configured_edition, status=status)
@@ -86,9 +96,17 @@ def get_license_summary(
     )
 
 
-def build_license_key(*, payload: dict[str, object], signing_secret: str) -> str:
+def build_license_key(
+    *,
+    payload: dict[str, object],
+    signing_secret: str,
+    private_key: Ed25519PrivateKey | None = None,
+) -> str:
     payload_bytes = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()
-    signature = hmac.new(signing_secret.encode(), payload_bytes, hashlib.sha256).digest()
+    if private_key is not None:
+        signature = private_key.sign(payload_bytes)
+    else:
+        signature = hmac.new(signing_secret.encode(), payload_bytes, hashlib.sha256).digest()
     return f"{_b64encode(payload_bytes)}.{_b64encode(signature)}"
 
 
@@ -109,8 +127,14 @@ def _community_summary(
     )
 
 
-def _decode_verified_license(*, license_key: str, signing_secret: str) -> dict[str, object] | None:
-    if not license_key.strip() or not signing_secret.strip() or "." not in license_key:
+def _decode_verified_license(
+    *,
+    license_key: str,
+    signing_secret: str,
+    public_key: str | bytes,
+    license_verifier: LicenseVerifier,
+) -> dict[str, object] | None:
+    if not license_key.strip() or "." not in license_key:
         return None
     payload_part, signature_part = license_key.split(".", maxsplit=1)
     try:
@@ -118,8 +142,13 @@ def _decode_verified_license(*, license_key: str, signing_secret: str) -> dict[s
         signature = _b64decode(signature_part)
     except ValueError:
         return None
-    expected = hmac.new(signing_secret.encode(), payload_bytes, hashlib.sha256).digest()
-    if not hmac.compare_digest(signature, expected):
+    if not _verify_license_signature(
+        payload_bytes=payload_bytes,
+        signature=signature,
+        signing_secret=signing_secret,
+        public_key=public_key,
+        license_verifier=license_verifier,
+    ):
         return None
     try:
         payload = json.loads(payload_bytes)
@@ -128,6 +157,30 @@ def _decode_verified_license(*, license_key: str, signing_secret: str) -> dict[s
     if not isinstance(payload, dict):
         return None
     return payload
+
+
+def _verify_license_signature(
+    *,
+    payload_bytes: bytes,
+    signature: bytes,
+    signing_secret: str,
+    public_key: str | bytes,
+    license_verifier: LicenseVerifier,
+) -> bool:
+    if license_verifier == "hmac":
+        if not signing_secret.strip():
+            return False
+        expected = hmac.new(signing_secret.encode(), payload_bytes, hashlib.sha256).digest()
+        return hmac.compare_digest(signature, expected)
+    if not public_key:
+        return False
+    try:
+        public_key_bytes = public_key if isinstance(public_key, bytes) else _b64decode(public_key)
+        verifier = Ed25519PublicKey.from_public_bytes(public_key_bytes)
+        verifier.verify(signature, payload_bytes)
+    except (InvalidSignature, TypeError, ValueError):
+        return False
+    return True
 
 
 def _parse_expires_at(value: object) -> datetime | None:

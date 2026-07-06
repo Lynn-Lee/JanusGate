@@ -131,6 +131,24 @@ COMPLIANCE_REPORT_EXTERNAL_HMAC_SECRET=<external-signing-secret>
 
 `COMPLIANCE_REPORT_EXTERNAL_HMAC_SECRET` 属于 signing secret，必须通过 Secret 注入，不写入 ConfigMap、values 明文或日志。启用 external HMAC provider 时缺少 key id 或 signing secret 会 fail-closed；真实云 KMS/证书签章服务接入仍需后续 adapter。
 
+License / Edition 默认使用 community。Phase 5 #t58 起，enterprise license 支持两种验签模式：
+
+```bash
+# HMAC foundation
+JANUSGATE_EDITION=enterprise
+JANUSGATE_LICENSE_VERIFIER=hmac
+JANUSGATE_LICENSE_KEY=<license-key>
+JANUSGATE_LICENSE_SIGNING_SECRET=<license-signing-secret>
+
+# Offline public-key foundation
+JANUSGATE_EDITION=enterprise
+JANUSGATE_LICENSE_VERIFIER=ed25519
+JANUSGATE_LICENSE_KEY=<license-key>
+JANUSGATE_LICENSE_PUBLIC_KEY=<base64-raw-ed25519-public-key>
+```
+
+`JANUSGATE_LICENSE_KEY`、`JANUSGATE_LICENSE_SIGNING_SECRET` 和任何签名私钥都不得写入 Git、ConfigMap、values 明文或日志。Ed25519 模式只需要在部署环境注入公钥；签名私钥必须保留在外部授权系统。
+
 后端 Redis client 支持三种部署形态：
 
 ```bash

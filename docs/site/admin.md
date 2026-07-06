@@ -21,10 +21,16 @@
 
 `GET /api/v1/admin/license-summary` 只允许 `admin` 读取当前 configured/effective edition、license status、启用能力和禁用能力。
 
+版本验签支持两种本地可审计模式：
+
+- `JANUSGATE_LICENSE_VERIFIER=hmac`：使用 `JANUSGATE_LICENSE_SIGNING_SECRET` 校验 HMAC-SHA256 license。
+- `JANUSGATE_LICENSE_VERIFIER=ed25519`：使用 `JANUSGATE_LICENSE_PUBLIC_KEY` 校验离线 Ed25519 license，适合不在部署环境保存签名私钥的交付模式。
+
 安全边界：
 
 - 响应不返回 license key。
 - 响应不返回 signing secret。
+- 响应不返回 license public key。
 - 响应不返回原始 license payload。
 - `JANUSGATE_EDITION=enterprise` 但 license 缺失、过期或签名无效时，effective edition fail-closed 回退到 `community`。
 

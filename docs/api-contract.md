@@ -70,7 +70,7 @@
 
 ## Phase 5 Edition / License Boundary（#t58）
 
-当前切片提供后端最小 feature flag 与 license 摘要基础。`JANUSGATE_EDITION=community|enterprise` 配置期望版本；默认 `community` 不需要 license，只启用 `core_pam`、`workflow_jit` 和 `audit_reports` 基础能力。`enterprise` 版本只有在 `JANUSGATE_LICENSE_KEY` 通过 `JANUSGATE_LICENSE_SIGNING_SECRET` HMAC-SHA256 签名校验、payload edition 为 `enterprise`、且 `expires_at` 未过期时才生效；缺失、非法、过期或签名不匹配时 fail-closed，`effective_edition` 回退为 `community`，enterprise feature 保持 disabled。
+当前切片提供后端最小 feature flag 与 license 摘要基础。`JANUSGATE_EDITION=community|enterprise` 配置期望版本；默认 `community` 不需要 license，只启用 `core_pam`、`workflow_jit` 和 `audit_reports` 基础能力。`enterprise` 版本只有在 `JANUSGATE_LICENSE_KEY` 通过配置的验签器校验、payload edition 为 `enterprise`、且 `expires_at` 未过期时才生效；缺失、非法、过期或签名不匹配时 fail-closed，`effective_edition` 回退为 `community`，enterprise feature 保持 disabled。当前支持 `JANUSGATE_LICENSE_VERIFIER=hmac` + `JANUSGATE_LICENSE_SIGNING_SECRET` 的 HMAC-SHA256 验签，以及 `JANUSGATE_LICENSE_VERIFIER=ed25519` + `JANUSGATE_LICENSE_PUBLIC_KEY` 的离线公钥验签；Ed25519 模式不要求部署环境保存签名私钥。
 
 ### GET `/api/v1/admin/license-summary`
 
@@ -94,8 +94,9 @@
 安全语义：
 
 - 响应不返回 `JANUSGATE_LICENSE_KEY`、`JANUSGATE_LICENSE_SIGNING_SECRET`、签名值或原始 license payload。
+- 响应不返回 `JANUSGATE_LICENSE_PUBLIC_KEY` 或任何签名私钥材料。
 - `enterprise` 配置没有有效 license 时不能启用 enterprise feature。
-- 当前 HMAC license verifier 是后端 foundation；完整 license lifecycle、持久化管理 UI、离线公钥验签或外部商业授权服务仍是后续 #t58 切片。
+- 当前 HMAC 与 Ed25519 license verifier 是后端 foundation；完整 license lifecycle、持久化管理 UI 或外部商业授权服务仍是后续 #t58 切片。
 
 ## Phase 4 Automation Worker Queue（#t52）
 

@@ -45,8 +45,10 @@ class Settings(BaseSettings):
 
     # ── Edition / License ──
     JANUSGATE_EDITION: Literal["community", "enterprise"] = "community"
+    JANUSGATE_LICENSE_VERIFIER: Literal["hmac", "ed25519"] = "hmac"
     JANUSGATE_LICENSE_KEY: str = ""
     JANUSGATE_LICENSE_SIGNING_SECRET: str = ""
+    JANUSGATE_LICENSE_PUBLIC_KEY: str = ""
 
     # ── Security ──
     SECRET_KEY: str = ""

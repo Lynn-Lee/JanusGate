@@ -21,5 +21,7 @@ async def get_admin_license_summary(
         configured_edition=settings.JANUSGATE_EDITION,
         license_key=settings.JANUSGATE_LICENSE_KEY,
         signing_secret=settings.JANUSGATE_LICENSE_SIGNING_SECRET,
+        public_key=settings.JANUSGATE_LICENSE_PUBLIC_KEY,
+        license_verifier=settings.JANUSGATE_LICENSE_VERIFIER,
         now=datetime.now(UTC),
     )
