@@ -98,6 +98,23 @@ def test_phase5_runtime_monitoring_smoke_covers_runtime_security_and_metrics() -
     assert "janusgate_http_requests_total" in script
 
 
+def test_phase5_release_readiness_smoke_covers_versioning_migrations_and_rollback() -> None:
+    workflow = (REPO_ROOT / ".github/workflows/ci.yml").read_text()
+    script = (REPO_ROOT / "scripts/phase5-release-readiness-smoke.sh").read_text()
+    deploy_readme = (REPO_ROOT / "deploy/README.md").read_text()
+
+    assert "scripts/phase5-release-readiness-smoke.sh" in workflow
+    assert "backend/pyproject.toml" in script
+    assert "backend/app/main.py" in script
+    assert "deploy/helm/janusgate/Chart.yaml" in script
+    assert "deploy/helm/janusgate/values.yaml" in script
+    assert "release tag" in script
+    assert "helm rollback" in script
+    assert "alembic" in script
+    assert "版本发布与回滚 runbook" in deploy_readme
+    assert "迁移前备份" in deploy_readme
+
+
 def test_compose_internal_dependencies_do_not_bind_fixed_host_ports() -> None:
     compose = yaml.safe_load((REPO_ROOT / "docker-compose.yml").read_text())
 

@@ -186,7 +186,14 @@ scripts/phase5-k8s-multi-replica-smoke.sh
 
 脚本要求 `helm`、`kubectl` 和 `curl` 可用，当前 Kubernetes 身份可创建 namespace，并且外部 PostgreSQL writer/read replica 与 Redis 已可被集群内 Pod 访问。它会把敏感值写入本地权限为 `0600` 的临时 Helm values 文件，不通过命令行 `--set` 打印 secret；退出时会卸载 smoke release，并在本轮创建 namespace 时删除 namespace。GitHub Actions 中该 smoke 默认不运行；只有显式设置 repository variable `JANUSGATE_RUN_K8S_SMOKE=1` 且提供 `JANUSGATE_SMOKE_SECRET_KEY`、`JANUSGATE_SMOKE_DATABASE_URL`、`JANUSGATE_SMOKE_DATABASE_READ_REPLICA_URL` 和 `JANUSGATE_SMOKE_REDIS_URL` secrets 时才会执行。
 
-## 5. 发布与回滚
+## 5. 版本发布与回滚 runbook
+
+发布前检查：
+
+1. 确认 `backend/pyproject.toml`、`backend/app/main.py`、`deploy/helm/janusgate/Chart.yaml` 和 `deploy/helm/janusgate/values.yaml` 的版本号一致，且使用 `MAJOR.MINOR.PATCH` 语义版本。
+2. 运行 `scripts/phase5-release-readiness-smoke.sh`，确认 release tag、镜像发布、迁移和回滚文档门禁仍可被 CI 检查。
+3. 迁移前备份 PostgreSQL，并记录备份对象、时间点、目标版本和操作者；涉及破坏性 schema 变更时，先在 staging 以生产级数据快照演练恢复。
+4. 数据迁移必须通过 Alembic 路径执行；发布前至少运行 `alembic current` 和待发布迁移的 dry-run/离线 SQL 复核，不允许在事故中手写生产 DDL。
 
 发布最小步骤：
 
@@ -194,6 +201,7 @@ scripts/phase5-k8s-multi-replica-smoke.sh
 2. 打 `v*` tag 触发 GHCR 镜像推送。
 3. 使用该镜像 tag 执行 `helm upgrade --install`。
 4. 执行 `/health` 与核心 API smoke 测试。
+5. 记录发布版本、镜像 digest、Helm revision、迁移版本和 smoke 结果。
 
 回滚：
 
@@ -204,7 +212,11 @@ kubectl rollout status deployment/janusgate -n janusgate
 curl -fsS http://localhost:8000/health
 ```
 
-如回滚仍失败，优先缩容入口流量或恢复上一版镜像 tag；不要在事故中临时把密钥写入 values 或日志。
+数据回滚边界：
+
+- 只要本次发布包含数据库迁移，先评估 schema 是否向后兼容；若新旧应用不能共用 schema，必须按备份恢复或显式 down migration runbook 执行，不把 `helm rollback` 误认为数据回滚。
+- 回滚后重复执行 `/health`、登录、JIT grant、connection token 和审计写入 smoke，确认旧版本应用仍能读写当前 schema。
+- 如回滚仍失败，优先缩容入口流量或恢复上一版镜像 tag；不要在事故中临时把密钥写入 values 或日志。
 
 ## 6. 密钥与环境变量边界
 
