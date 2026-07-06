@@ -21,6 +21,8 @@
 
 `GET /api/v1/admin/license-summary` 只允许 `admin` 读取当前 configured/effective edition、license status、启用能力和禁用能力。若已通过 `POST /api/v1/admin/license-config` 写入持久化配置，摘要优先读取 DB 中的激活配置；否则回退环境变量。
 
+前端 Settings 页已提供最小 License lifecycle 表单，可选择 `community` / `enterprise`、`hmac` / `ed25519` 验签模式，并提交 license key、signing secret 或公钥到 `POST /api/v1/admin/license-config`。提交后页面只刷新脱敏 `LicenseSummary`，不会展示请求中的 license key、signing secret、公钥或原始 payload。
+
 版本验签支持两种本地可审计模式：
 
 - `JANUSGATE_LICENSE_VERIFIER=hmac`：使用 `JANUSGATE_LICENSE_SIGNING_SECRET` 校验 HMAC-SHA256 license。
@@ -50,6 +52,7 @@
 ## 截图证据
 
 - Settings - License / Edition：确认 configured/effective edition、license status 和 feature 列表可见，且不泄露 license key。
+- Settings - License lifecycle：确认保存 License 配置后只展示脱敏摘要，不回显 license key、signing secret 或公钥。
 - Audits - SOC2 report export：确认报表摘要、下载动作和签名摘要可见，且不展示原始审计 metadata。
 - Sessions - recording command timeline：确认录制命令时间线和脱敏输出可见，且不展示原始 secret。
 - Tenancy - organization inventory：确认 Organization、Team、Project 和租户边界可见，且不出现跨租户或真实客户域名。

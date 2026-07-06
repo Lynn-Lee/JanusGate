@@ -136,6 +136,15 @@ function installFetch() {
     if (url.endsWith('/api/v1/audits/reports/summary')) return Response.json(auditReportSummary);
     if (url.endsWith('/api/v1/audits/reports/compliance?template=soc2-access')) return Response.json(auditComplianceReport);
     if (url.endsWith('/api/v1/admin/license-summary')) return Response.json(licenseSummary);
+    if (url.endsWith('/api/v1/admin/license-config') && method === 'POST') {
+      return Response.json({
+        ...licenseSummary,
+        effective_edition: 'enterprise',
+        license_status: 'active',
+        enabled_features: ['admin_console', 'audit_reports', 'core_pam', 'license_management', 'workflow_jit'],
+        disabled_features: []
+      });
+    }
     if (url.endsWith('/api/v1/tenancy/organizations')) return Response.json({ items: [organization], total: 1 });
     if (url.endsWith('/api/v1/tenancy/teams')) return Response.json({ items: [team], total: 1 });
     if (url.endsWith('/api/v1/tenancy/projects')) return Response.json({ items: [project], total: 1 });
@@ -304,6 +313,39 @@ describe('MVP pages', () => {
     await waitFor(() =>
       expect(fetchMock).toHaveBeenCalledWith('/api/v1/admin/license-summary', expect.any(Object))
     );
+  });
+
+  it('activates a persisted license config without echoing secrets', async () => {
+    const fetchMock = installFetch();
+    vi.stubGlobal('fetch', fetchMock);
+    history.pushState(null, '', '/settings');
+    render(<App />);
+
+    expect(await screen.findByRole('heading', { name: '系统设置' })).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: '保存 License 配置' }));
+    await userEvent.type(screen.getByLabelText('License key'), 'signed.enterprise.license');
+    await userEvent.type(screen.getByLabelText('Signing secret'), 'super-secret-signing-key');
+    await userEvent.click(screen.getByRole('button', { name: '激活 License' }));
+
+    await waitFor(() =>
+      expect(fetchMock).toHaveBeenCalledWith(
+        '/api/v1/admin/license-config',
+        expect.objectContaining({
+          method: 'POST',
+          body: JSON.stringify({
+            configured_edition: 'enterprise',
+            license_verifier: 'hmac',
+            license_key: 'signed.enterprise.license',
+            license_signing_secret: 'super-secret-signing-key',
+            license_public_key: ''
+          })
+        })
+      )
+    );
+    expect(await screen.findByText('active')).toBeInTheDocument();
+    expect(screen.getByText('effective: enterprise')).toBeInTheDocument();
+    expect(screen.queryByText('signed.enterprise.license')).not.toBeInTheDocument();
+    expect(screen.queryByText('super-secret-signing-key')).not.toBeInTheDocument();
   });
 
   it('shows Phase 4 tenancy organization, team, and project inventory', async () => {
