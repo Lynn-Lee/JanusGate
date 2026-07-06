@@ -67,7 +67,7 @@ Phase 3 QA Go/No-Go 证据包位于 `docs/qa/phase3-go-no-go.md`，覆盖 6 页�
 
 CI 已包含 Phase 3 部署 smoke 门禁：后端 `pytest --cov=app --cov-report=term-missing --cov-fail-under=80` 执行覆盖率门禁，`docker compose config` 校验 Compose 配置可渲染，`scripts/phase3-compose-health-smoke.sh` 启动 backend 及其依赖并请求 `http://localhost:8000/health`，`helm lint` 与 `helm template` 校验 Helm chart 可 lint/render。Compose health smoke 脚本退出时会清理本轮容器和卷。
 
-Phase 5 高可用配置 smoke 可运行 `scripts/phase5-ha-config-smoke.sh`，覆盖 Docker Compose read-replica 环境渲染、Helm HPA 在 memory token store 下 fail-closed，以及 Redis-backed connection token store + read-replica Secret 的多副本渲染路径；该脚本已接入 CI 的 Helm 门禁。真实 Kubernetes 多副本 smoke 脚本位于 `scripts/phase5-k8s-multi-replica-smoke.sh`，需要当前 kube context 可创建 namespace，并通过环境变量提供真实 PostgreSQL writer、read replica、Redis 和 SECRET_KEY；CI 中仅在显式设置 repository variable `JANUSGATE_RUN_K8S_SMOKE=1` 且配置对应 secrets 时执行。
+Phase 5 高可用配置 smoke 可运行 `scripts/phase5-ha-config-smoke.sh`，覆盖 Docker Compose read-replica 环境渲染、Helm HPA 在 memory token store 下 fail-closed，以及 Redis-backed connection token store + read-replica Secret 的多副本渲染路径；该脚本已接入 CI 的 Helm 门禁。真实 Kubernetes 多副本 smoke 脚本位于 `scripts/phase5-k8s-multi-replica-smoke.sh`，需要当前 kube context 可创建 namespace，并通过环境变量提供真实 PostgreSQL writer、read replica、Redis 和 SECRET_KEY；CI 中仅在显式设置 repository variable `JANUSGATE_RUN_K8S_SMOKE=1` 且配置对应 secrets 时执行。Phase 5 #t55 容量模型 smoke 可运行 `scripts/phase5-capacity-model-smoke.sh`，使用 `JANUSGATE_LOAD_TEST_RPS`、`JANUSGATE_LOAD_TEST_P95_MS`、`JANUSGATE_LOAD_TEST_ERROR_RATE_PERCENT` 和 `JANUSGATE_CAPACITY_MODEL_MAX_CORE_RPS` 校验 p95、错误率和 `capacity_headroom_percent` SLO；基线说明见 `docs/performance/phase5-capacity-model.md`，真实压测工具输出仍需后续切片接入。
 
 ## Phase 4 多租户基座
 
