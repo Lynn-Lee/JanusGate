@@ -7,6 +7,7 @@ This document defines the first reproducible capacity-model checkpoint for Phase
 - Target surface: authenticated JanusGate core API traffic behind one backend deployment.
 - Current smoke script: `scripts/phase5-capacity-model-smoke.sh`.
 - Repeatable load runner: `scripts/phase5-core-api-load-test.sh`.
+- Evidence archive contract: `docs/performance/phase5-load-test-evidence-template.json`, validated by `scripts/phase5-load-test-evidence-smoke.sh`.
 - Current CI purpose: validate that load-test input, SLO thresholds, and capacity headroom math stay explicit and reproducible.
 
 ## SLO
@@ -66,6 +67,19 @@ scripts/phase5-core-api-load-test.sh
 
 The runner does not print the token or request bodies. It only records aggregate request count, RPS, p95 latency, and error-rate values. The target environment, dataset size, pod count, database shape, Redis mode, raw terminal output, and any trace IDs still need to be archived with the release or performance evidence package before using the numbers as production evidence.
 
+## Evidence Archive Contract
+
+`docs/performance/phase5-load-test-evidence-template.json` defines the minimum archive shape for a real run: target environment metadata, run metadata, runner configuration, endpoint mix, aggregate results, capacity-model thresholds/result, artifact manifest, and redaction policy. The template intentionally keeps authentication material and request/response bodies out of the archive.
+
+Validate the template or a real evidence file before attaching it to a release or performance package:
+
+```bash
+scripts/phase5-load-test-evidence-smoke.sh
+JANUSGATE_LOAD_TEST_EVIDENCE_FILE=artifacts/phase5-load-test/evidence.json scripts/phase5-load-test-evidence-smoke.sh
+```
+
+The smoke rejects missing required fields and disallowed sensitive field names such as password, secret, token, private key, or connection string.
+
 ## Next Slice
 
-Run the repeatable endpoint mix against a target environment and archive the raw output with environment metadata. A later slice can replace this standard-library runner with k6 or Locust when the team needs richer scenarios, ramping profiles, or distributed load generation.
+Run the repeatable endpoint mix against a target environment, fill the evidence archive from the real output, and store the validated evidence with the release or performance package. A later slice can replace this standard-library runner with k6 or Locust when the team needs richer scenarios, ramping profiles, or distributed load generation.

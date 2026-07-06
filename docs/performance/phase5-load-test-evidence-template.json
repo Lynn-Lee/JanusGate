@@ -1,0 +1,84 @@
+{
+  "evidence_version": "phase5-t55-load-test-evidence-v1",
+  "target_environment": {
+    "environment_name": "staging",
+    "base_url": "https://janusgate.example.internal",
+    "janusgate_version": "0.1.0",
+    "deployed_at": "2026-07-06T00:00:00Z",
+    "backend_replicas": 2,
+    "database_topology": "postgresql-writer-plus-read-replica",
+    "redis_mode": "single",
+    "dataset_profile": {
+      "users": 50,
+      "assets": 200,
+      "sessions": 500,
+      "automation_runs": 25
+    }
+  },
+  "run_metadata": {
+    "started_at": "2026-07-06T00:10:00Z",
+    "ended_at": "2026-07-06T00:20:00Z",
+    "operator": "release-engineer",
+    "git_sha": "0000000000000000000000000000000000000000",
+    "runner": "scripts/phase5-core-api-load-test.sh"
+  },
+  "runner_configuration": {
+    "duration_seconds": 600,
+    "concurrency": 8,
+    "request_timeout_seconds": 5,
+    "auth_source": "environment",
+    "artifact_stdout": "artifacts/phase5-load-test/stdout.txt"
+  },
+  "endpoint_mix": [
+    {
+      "method": "GET",
+      "path": "/api/v1/auth/me",
+      "weight": 3
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/assets/",
+      "weight": 4
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/sessions/",
+      "weight": 2
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/automation/jobs/runs",
+      "weight": 1
+    }
+  ],
+  "aggregate_results": {
+    "requests": 1200,
+    "rps": 120.0,
+    "p95_ms": 280.0,
+    "error_rate_percent": 0.2
+  },
+  "capacity_model": {
+    "max_core_rps": 200.0,
+    "slo_p95_ms": 500.0,
+    "slo_error_rate_percent": 1.0,
+    "min_capacity_headroom_percent": 30.0,
+    "observed_capacity_headroom_percent": 66.7,
+    "result": "pass"
+  },
+  "artifact_manifest": [
+    {
+      "path": "artifacts/phase5-load-test/stdout.txt",
+      "content": "runner-output"
+    },
+    {
+      "path": "artifacts/phase5-load-test/capacity-smoke.txt",
+      "content": "capacity-model-output"
+    }
+  ],
+  "redaction_policy": {
+    "sensitive_auth_material": "omitted",
+    "request_bodies": "not-recorded",
+    "response_bodies": "not-recorded",
+    "trace_identifiers": "allowlisted-only"
+  }
+}

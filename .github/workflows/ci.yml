@@ -242,6 +242,9 @@ jobs:
       - name: Phase 5 capacity model smoke
         run: scripts/phase5-capacity-model-smoke.sh
 
+      - name: Phase 5 load-test evidence smoke
+        run: scripts/phase5-load-test-evidence-smoke.sh
+
       - name: Phase 5 release readiness smoke
         run: scripts/phase5-release-readiness-smoke.sh
 
