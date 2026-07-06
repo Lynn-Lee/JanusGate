@@ -33,7 +33,18 @@ def test_phase5_docs_site_foundation_is_wired_for_operator_handoff() -> None:
     assert "Settings - License / Edition" in screenshot_guide
     assert "Audits - SOC2 report export" in screenshot_guide
     assert "Sessions - recording command timeline" in screenshot_guide
+    assert "assets/screenshots/admin-settings-license-summary.svg" in screenshot_guide
+    assert "assets/screenshots/admin-audits-soc2-export.svg" in screenshot_guide
+    assert "assets/screenshots/admin-sessions-recording-timeline.svg" in screenshot_guide
     assert "frontend/src/pages/mvp-pages.test.tsx" in screenshot_guide
+    screenshot_assets = [
+        REPO_ROOT / "docs/site/assets/screenshots/admin-settings-license-summary.svg",
+        REPO_ROOT / "docs/site/assets/screenshots/admin-audits-soc2-export.svg",
+        REPO_ROOT / "docs/site/assets/screenshots/admin-sessions-recording-timeline.svg",
+    ]
+    for screenshot_asset in screenshot_assets:
+        assert screenshot_asset.exists()
+        assert "<svg" in screenshot_asset.read_text()
     assert "/api/v1/auth/login" in api_docs
     assert "/api/v1/sessions/" in api_docs
     assert "/api/v1/admin/license-summary" in api_docs
@@ -51,6 +62,7 @@ def test_phase5_docs_site_foundation_is_wired_for_operator_handoff() -> None:
     assert "index.md" in build_script
     assert "runbooks.md" in build_script
     assert "admin-screenshots.md" in build_script
+    assert "assets/screenshots" in build_script
     assert "scripts/export-openapi-json.sh" in workflow
     assert "scripts/build-docs-site.sh" in workflow
     assert "API 前缀" in api_contract

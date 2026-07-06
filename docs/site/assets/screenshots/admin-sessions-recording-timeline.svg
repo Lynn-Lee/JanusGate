@@ -1,0 +1,32 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="720" viewBox="0 0 1280 720" role="img" aria-labelledby="title desc">
+  <title id="title">Sessions recording timeline screenshot evidence</title>
+  <desc id="desc">Redacted JanusGate sessions view showing recording id input, replay timeline, command summary, and password redaction.</desc>
+  <rect width="1280" height="720" fill="#f6f8fb"/>
+  <rect x="0" y="0" width="248" height="720" fill="#152033"/>
+  <text x="32" y="54" fill="#ffffff" font-family="Arial, sans-serif" font-size="28" font-weight="700">JanusGate</text>
+  <text x="32" y="112" fill="#9fb0c8" font-family="Arial, sans-serif" font-size="18">Assets</text>
+  <rect x="20" y="136" width="208" height="44" rx="8" fill="#2b6de8"/>
+  <text x="32" y="164" fill="#ffffff" font-family="Arial, sans-serif" font-size="18">Sessions</text>
+  <text x="32" y="208" fill="#9fb0c8" font-family="Arial, sans-serif" font-size="18">Audits</text>
+  <text x="292" y="72" fill="#172033" font-family="Arial, sans-serif" font-size="32" font-weight="700">Sessions</text>
+  <text x="292" y="110" fill="#5b6575" font-family="Arial, sans-serif" font-size="18">Recording command timeline</text>
+  <rect x="292" y="144" width="844" height="88" rx="10" fill="#ffffff" stroke="#d8dee8"/>
+  <text x="328" y="198" fill="#5b6575" font-family="Arial, sans-serif" font-size="17">Recording ID</text>
+  <rect x="448" y="166" width="332" height="42" rx="6" fill="#fbfcfe" stroke="#cfd7e3"/>
+  <text x="466" y="193" fill="#172033" font-family="Arial, sans-serif" font-size="16">rec_20260706_redacted</text>
+  <rect x="806" y="166" width="126" height="42" rx="6" fill="#2b6de8"/>
+  <text x="838" y="193" fill="#ffffff" font-family="Arial, sans-serif" font-size="16" font-weight="700">Load</text>
+  <rect x="292" y="268" width="844" height="314" rx="10" fill="#ffffff" stroke="#d8dee8"/>
+  <text x="328" y="318" fill="#172033" font-family="Arial, sans-serif" font-size="24" font-weight="700">Replay timeline</text>
+  <line x1="356" y1="360" x2="356" y2="520" stroke="#cfd7e3" stroke-width="3"/>
+  <circle cx="356" cy="386" r="8" fill="#2b6de8"/>
+  <text x="388" y="392" fill="#172033" font-family="Arial, sans-serif" font-size="17">10:14:09 ssh login accepted</text>
+  <circle cx="356" cy="446" r="8" fill="#2b6de8"/>
+  <text x="388" y="452" fill="#172033" font-family="Arial, sans-serif" font-size="17">10:15:21 sudo command summary</text>
+  <circle cx="356" cy="506" r="8" fill="#2b6de8"/>
+  <text x="388" y="512" fill="#172033" font-family="Arial, sans-serif" font-size="17">10:16:02 output password=[REDACTED]</text>
+  <rect x="756" y="376" width="292" height="116" rx="8" fill="#f7fbff" stroke="#c9ddff"/>
+  <text x="780" y="416" fill="#234069" font-family="Arial, sans-serif" font-size="16">Sensitive output redacted</text>
+  <text x="780" y="454" fill="#66758c" font-family="Arial, sans-serif" font-size="15">secret values: not visible</text>
+  <text x="780" y="482" fill="#66758c" font-family="Arial, sans-serif" font-size="15">raw credentials: not stored</text>
+</svg>

@@ -1,0 +1,31 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="720" viewBox="0 0 1280 720" role="img" aria-labelledby="title desc">
+  <title id="title">Settings License Edition screenshot evidence</title>
+  <desc id="desc">Redacted JanusGate settings view showing enterprise configured edition, community effective edition, invalid license status, and feature lists.</desc>
+  <rect width="1280" height="720" fill="#f6f8fb"/>
+  <rect x="0" y="0" width="248" height="720" fill="#152033"/>
+  <text x="32" y="54" fill="#ffffff" font-family="Arial, sans-serif" font-size="28" font-weight="700">JanusGate</text>
+  <text x="32" y="112" fill="#9fb0c8" font-family="Arial, sans-serif" font-size="18">Assets</text>
+  <text x="32" y="156" fill="#9fb0c8" font-family="Arial, sans-serif" font-size="18">Sessions</text>
+  <text x="32" y="200" fill="#9fb0c8" font-family="Arial, sans-serif" font-size="18">Audits</text>
+  <rect x="20" y="232" width="208" height="44" rx="8" fill="#2b6de8"/>
+  <text x="32" y="260" fill="#ffffff" font-family="Arial, sans-serif" font-size="18">Settings</text>
+  <text x="292" y="72" fill="#172033" font-family="Arial, sans-serif" font-size="32" font-weight="700">Settings</text>
+  <text x="292" y="110" fill="#5b6575" font-family="Arial, sans-serif" font-size="18">License / Edition</text>
+  <rect x="292" y="144" width="892" height="438" rx="10" fill="#ffffff" stroke="#d8dee8"/>
+  <text x="328" y="194" fill="#172033" font-family="Arial, sans-serif" font-size="24" font-weight="700">License Summary</text>
+  <text x="328" y="242" fill="#5b6575" font-family="Arial, sans-serif" font-size="18">configured</text>
+  <text x="528" y="242" fill="#172033" font-family="Arial, sans-serif" font-size="18" font-weight="700">enterprise</text>
+  <text x="328" y="290" fill="#5b6575" font-family="Arial, sans-serif" font-size="18">effective</text>
+  <text x="528" y="290" fill="#172033" font-family="Arial, sans-serif" font-size="18" font-weight="700">community</text>
+  <text x="328" y="338" fill="#5b6575" font-family="Arial, sans-serif" font-size="18">status</text>
+  <rect x="528" y="314" width="92" height="34" rx="17" fill="#fff1f0" stroke="#ffccc7"/>
+  <text x="552" y="337" fill="#cf1322" font-family="Arial, sans-serif" font-size="16" font-weight="700">invalid</text>
+  <text x="328" y="405" fill="#172033" font-family="Arial, sans-serif" font-size="18" font-weight="700">Enabled features</text>
+  <text x="328" y="443" fill="#1f7a4d" font-family="Arial, sans-serif" font-size="17">core_pam, workflow_jit, audit_reports</text>
+  <text x="328" y="500" fill="#172033" font-family="Arial, sans-serif" font-size="18" font-weight="700">Disabled features</text>
+  <text x="328" y="538" fill="#8c5a00" font-family="Arial, sans-serif" font-size="17">admin_console, edition_feature_flags, license_management</text>
+  <rect x="812" y="192" width="284" height="128" rx="8" fill="#f7fbff" stroke="#c9ddff"/>
+  <text x="836" y="232" fill="#234069" font-family="Arial, sans-serif" font-size="16">Sensitive fields redacted</text>
+  <text x="836" y="270" fill="#66758c" font-family="Arial, sans-serif" font-size="15">license key: not shown</text>
+  <text x="836" y="298" fill="#66758c" font-family="Arial, sans-serif" font-size="15">signing secret: not shown</text>
+</svg>

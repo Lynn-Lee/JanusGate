@@ -1,0 +1,31 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="720" viewBox="0 0 1280 720" role="img" aria-labelledby="title desc">
+  <title id="title">Audits SOC2 export screenshot evidence</title>
+  <desc id="desc">Redacted JanusGate audits view showing report totals, high severity count, SIEM failed count, SOC2 JSON export, and signature summary.</desc>
+  <rect width="1280" height="720" fill="#f6f8fb"/>
+  <rect x="0" y="0" width="248" height="720" fill="#152033"/>
+  <text x="32" y="54" fill="#ffffff" font-family="Arial, sans-serif" font-size="28" font-weight="700">JanusGate</text>
+  <text x="32" y="112" fill="#9fb0c8" font-family="Arial, sans-serif" font-size="18">Assets</text>
+  <text x="32" y="156" fill="#9fb0c8" font-family="Arial, sans-serif" font-size="18">Sessions</text>
+  <rect x="20" y="180" width="208" height="44" rx="8" fill="#2b6de8"/>
+  <text x="32" y="208" fill="#ffffff" font-family="Arial, sans-serif" font-size="18">Audits</text>
+  <text x="292" y="72" fill="#172033" font-family="Arial, sans-serif" font-size="32" font-weight="700">Audits</text>
+  <text x="292" y="110" fill="#5b6575" font-family="Arial, sans-serif" font-size="18">SOC2 compliance report export</text>
+  <rect x="292" y="144" width="260" height="132" rx="10" fill="#ffffff" stroke="#d8dee8"/>
+  <text x="320" y="190" fill="#5b6575" font-family="Arial, sans-serif" font-size="17">Report events</text>
+  <text x="320" y="238" fill="#172033" font-family="Arial, sans-serif" font-size="38" font-weight="700">128</text>
+  <rect x="584" y="144" width="260" height="132" rx="10" fill="#ffffff" stroke="#d8dee8"/>
+  <text x="612" y="190" fill="#5b6575" font-family="Arial, sans-serif" font-size="17">High severity</text>
+  <text x="612" y="238" fill="#cf1322" font-family="Arial, sans-serif" font-size="38" font-weight="700">4</text>
+  <rect x="876" y="144" width="260" height="132" rx="10" fill="#ffffff" stroke="#d8dee8"/>
+  <text x="904" y="190" fill="#5b6575" font-family="Arial, sans-serif" font-size="17">SIEM failed</text>
+  <text x="904" y="238" fill="#8c5a00" font-family="Arial, sans-serif" font-size="38" font-weight="700">2</text>
+  <rect x="292" y="312" width="844" height="270" rx="10" fill="#ffffff" stroke="#d8dee8"/>
+  <text x="328" y="362" fill="#172033" font-family="Arial, sans-serif" font-size="24" font-weight="700">SOC2 report</text>
+  <rect x="328" y="402" width="184" height="44" rx="6" fill="#2b6de8"/>
+  <text x="356" y="431" fill="#ffffff" font-family="Arial, sans-serif" font-size="17" font-weight="700">Download JSON</text>
+  <text x="328" y="492" fill="#5b6575" font-family="Arial, sans-serif" font-size="17">signature</text>
+  <text x="436" y="492" fill="#172033" font-family="Arial, sans-serif" font-size="17" font-weight="700">hmac-sha256: 6f9a...d21c</text>
+  <text x="328" y="534" fill="#5b6575" font-family="Arial, sans-serif" font-size="17">metadata</text>
+  <text x="436" y="534" fill="#1f7a4d" font-family="Arial, sans-serif" font-size="17">not displayed in console</text>
+  <text x="328" y="628" fill="#66758c" font-family="Arial, sans-serif" font-size="15">No raw audit metadata, token, password, or secret values are visible.</text>
+</svg>
