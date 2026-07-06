@@ -39,6 +39,14 @@ const auditComplianceReport = {
   worm_sequence_number: 1,
   worm_content_hash: 'sha256-report-payload'
 };
+const licenseSummary = {
+  configured_edition: 'enterprise',
+  effective_edition: 'community',
+  license_status: 'invalid',
+  enabled_features: ['audit_reports', 'core_pam', 'workflow_jit'],
+  disabled_features: ['admin_console', 'edition_feature_flags', 'license_management'],
+  expires_at: null
+};
 const session = { id: 'session-1', asset_id: '1', account_id: 'root', connector_id: 'connector-1', protocol: 'ssh', status: 'active', connection_url: 'ssh://10.0.0.10', workflow_request_id: 'req-1', jit_grant_id: 'grant-1', created_at: '2026-07-01T00:03:00Z', updated_at: '2026-07-01T00:03:00Z', closed_at: null, audit_event_ids: [] };
 const sessionCommand = {
   id: 11,
@@ -127,6 +135,7 @@ function installFetch() {
     if (url.endsWith('/api/v1/audits/events')) return Response.json({ items: [audit], total: 1, limit: 50, offset: 0 });
     if (url.endsWith('/api/v1/audits/reports/summary')) return Response.json(auditReportSummary);
     if (url.endsWith('/api/v1/audits/reports/compliance?template=soc2-access')) return Response.json(auditComplianceReport);
+    if (url.endsWith('/api/v1/admin/license-summary')) return Response.json(licenseSummary);
     if (url.endsWith('/api/v1/tenancy/organizations')) return Response.json({ items: [organization], total: 1 });
     if (url.endsWith('/api/v1/tenancy/teams')) return Response.json({ items: [team], total: 1 });
     if (url.endsWith('/api/v1/tenancy/projects')) return Response.json({ items: [project], total: 1 });
@@ -276,6 +285,8 @@ describe('MVP pages', () => {
   });
 
   it('shows Settings runtime and security summaries', async () => {
+    const fetchMock = installFetch();
+    vi.stubGlobal('fetch', fetchMock);
     history.pushState(null, '', '/settings');
     render(<App />);
 
@@ -283,6 +294,16 @@ describe('MVP pages', () => {
     await waitFor(() => expect(screen.getByText('运行时状态')).toBeInTheDocument());
     expect(screen.getByText('JWT Bearer 访问令牌')).toBeInTheDocument();
     expect(screen.getByText('PostgreSQL / SQLAlchemy async')).toBeInTheDocument();
+    expect(await screen.findByText('License / Edition 边界')).toBeInTheDocument();
+    expect(screen.getByText('configured: enterprise')).toBeInTheDocument();
+    expect(screen.getByText('effective: community')).toBeInTheDocument();
+    expect(screen.getByText('invalid')).toBeInTheDocument();
+    expect(screen.getByText('audit_reports')).toBeInTheDocument();
+    expect(screen.getByText('license_management')).toBeInTheDocument();
+    expect(screen.queryByText('JANUSGATE_LICENSE_KEY')).not.toBeInTheDocument();
+    await waitFor(() =>
+      expect(fetchMock).toHaveBeenCalledWith('/api/v1/admin/license-summary', expect.any(Object))
+    );
   });
 
   it('shows Phase 4 tenancy organization, team, and project inventory', async () => {
