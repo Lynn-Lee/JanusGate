@@ -66,7 +66,7 @@
 - Webhook Endpoints：`/api/v1/webhook-endpoints/*`，Phase 4 WebHook / 通知中心 endpoint 管理基础。
 - Notification Rules：`/api/v1/notification-rules/*`，Phase 4 WebHook / 通知规则管理基础。
 - Notification Deliveries：`/api/v1/notification-rules/{rule_id}/deliveries` 与 `/api/v1/notification-deliveries/*`，Phase 4 WebHook 可靠投递队列基础；`NotificationDeliveryWorker` 负责到期投递、失败重试和 dead-letter 状态推进，`HttpWebhookNotificationSender` 负责向 HTTPS WebHook endpoint 投递已脱敏 payload。
-- Admin：`/api/v1/admin/license-summary`，Phase 5 #t58 Edition / License 边界摘要，只允许 `admin` 读取，不返回 license key、签名 secret 或任何商业密钥材料。
+- Admin：`/api/v1/admin/license-summary` 与 `/api/v1/admin/license-config`，Phase 5 #t58 Edition / License 边界摘要和 admin-only 持久化配置 foundation，不返回 license key、签名 secret 或任何商业密钥材料。
 
 ## Phase 5 Edition / License Boundary（#t58）
 
@@ -74,7 +74,7 @@
 
 ### GET `/api/v1/admin/license-summary`
 
-用途：返回当前进程配置下的版本、license 状态和启用/禁用 feature 列表，供管理后台后续接入。
+用途：返回当前激活配置下的版本、license 状态和启用/禁用 feature 列表。若 DB 中存在 admin 持久化配置则优先使用该配置；否则回退到当前进程环境变量，供管理后台后续接入。
 
 鉴权：需要登录态和 `admin` 权限。
 
@@ -96,7 +96,7 @@
 - 响应不返回 `JANUSGATE_LICENSE_KEY`、`JANUSGATE_LICENSE_SIGNING_SECRET`、签名值或原始 license payload。
 - 响应不返回 `JANUSGATE_LICENSE_PUBLIC_KEY` 或任何签名私钥材料。
 - `enterprise` 配置没有有效 license 时不能启用 enterprise feature。
-- 当前 HMAC 与 Ed25519 license verifier 是后端 foundation；完整 license lifecycle、持久化管理 UI 或外部商业授权服务仍是后续 #t58 切片。
+- `POST /api/v1/admin/license-config` 可由 `admin` 持久化当前激活 license 配置，请求字段为 `configured_edition`、`license_verifier`、`license_key`、`license_signing_secret` 与 `license_public_key`；响应复用 `LicenseSummary`，不回显 license key、signing secret、公钥或原始 payload。完整 license lifecycle UI、外部商业授权服务、license 轮换审计和密钥托管仍是后续 #t58 切片。
 
 ## Phase 4 Automation Worker Queue（#t52）
 

@@ -1,4 +1,5 @@
 from app.models.account import Account, CredentialRotation
+from app.models.admin import LicenseConfigurationModel
 from app.models.automation import AutomationJobRun
 from app.models.connector import Connector
 from app.models.session_recording import SessionCommandEvent, SessionRecording
@@ -17,6 +18,7 @@ __all__ = [
     "Connector",
     "CredentialRotation",
     "JitGrantModel",
+    "LicenseConfigurationModel",
     "NotificationRule",
     "NotificationDelivery",
     "Organization",

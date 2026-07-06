@@ -26,6 +26,7 @@ from app.core.database import create_database_engines, get_db, get_read_db
 
 DB_BACKED_GET_ROUTE_ROUTING_INVENTORY = {
     ("GET", "/accounts/"),
+    ("GET", "/admin/license-summary"),
     ("GET", "/accounts/{account_id}/rotations"),
     ("GET", "/assets/"),
     ("GET", "/assets/platforms"),
@@ -57,10 +58,7 @@ AUDIT_DB_FREE_GET_ROUTE_ROUTING_INVENTORY = {
     ("GET", "/api/v1/audits/reports/summary"),
 }
 
-DB_FREE_GET_ROUTE_ROUTING_INVENTORY = {
-    ("GET", "/admin/license-summary"),
-    *AUDIT_DB_FREE_GET_ROUTE_ROUTING_INVENTORY,
-}
+DB_FREE_GET_ROUTE_ROUTING_INVENTORY = {*AUDIT_DB_FREE_GET_ROUTE_ROUTING_INVENTORY}
 
 GET_ROUTE_ROUTING_INVENTORY = (
     DB_BACKED_GET_ROUTE_ROUTING_INVENTORY | DB_FREE_GET_ROUTE_ROUTING_INVENTORY
@@ -190,6 +188,20 @@ def test_account_write_routes_keep_writer_database_dependency() -> None:
         dependencies = _route_dependency_calls(router=accounts_router, method=method, path=path)
         assert get_db in dependencies
         assert get_read_db not in dependencies
+
+
+def test_admin_license_routes_use_expected_database_dependencies() -> None:
+    read_dependencies = _route_dependency_calls(
+        router=admin_router, method="GET", path="/admin/license-summary"
+    )
+    write_dependencies = _route_dependency_calls(
+        router=admin_router, method="POST", path="/admin/license-config"
+    )
+
+    assert get_read_db in read_dependencies
+    assert get_db not in read_dependencies
+    assert get_db in write_dependencies
+    assert get_read_db not in write_dependencies
 
 
 def test_session_recording_read_routes_use_read_database_dependency() -> None:

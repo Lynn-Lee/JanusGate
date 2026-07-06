@@ -19,7 +19,7 @@
 
 ## License / Edition
 
-`GET /api/v1/admin/license-summary` 只允许 `admin` 读取当前 configured/effective edition、license status、启用能力和禁用能力。
+`GET /api/v1/admin/license-summary` 只允许 `admin` 读取当前 configured/effective edition、license status、启用能力和禁用能力。若已通过 `POST /api/v1/admin/license-config` 写入持久化配置，摘要优先读取 DB 中的激活配置；否则回退环境变量。
 
 版本验签支持两种本地可审计模式：
 
@@ -33,6 +33,7 @@
 - 响应不返回 license public key。
 - 响应不返回原始 license payload。
 - `JANUSGATE_EDITION=enterprise` 但 license 缺失、过期或签名无效时，effective edition fail-closed 回退到 `community`。
+- `POST /api/v1/admin/license-config` 只返回脱敏 `LicenseSummary`，不回显请求中的 license key、signing secret、公钥或原始 payload。
 
 ## 审计与报表
 

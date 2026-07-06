@@ -149,6 +149,8 @@ JANUSGATE_LICENSE_PUBLIC_KEY=<base64-raw-ed25519-public-key>
 
 `JANUSGATE_LICENSE_KEY`、`JANUSGATE_LICENSE_SIGNING_SECRET` 和任何签名私钥都不得写入 Git、ConfigMap、values 明文或日志。Ed25519 模式只需要在部署环境注入公钥；签名私钥必须保留在外部授权系统。
 
+管理员也可以通过 `POST /api/v1/admin/license-config` 写入当前激活 license 配置；后续 `GET /api/v1/admin/license-summary` 会优先读取 DB 中的持久化配置，无记录时回退上述环境变量。该接口只返回脱敏摘要，不回显 license key、signing secret、公钥或原始 payload。生产环境仍应把数据库备份、访问控制和审计日志纳入 license 配置保护范围。
+
 后端 Redis client 支持三种部署形态：
 
 ```bash

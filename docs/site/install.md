@@ -13,7 +13,7 @@
 
 2. 将生成值写入 `.env` 的 `SECRET_KEY`，并设置 `POSTGRES_PASSWORD`。
 
-   如需本地验证 enterprise license，可设置 `JANUSGATE_EDITION=enterprise`、`JANUSGATE_LICENSE_VERIFIER=hmac|ed25519`、`JANUSGATE_LICENSE_KEY`，并按验签模式提供 `JANUSGATE_LICENSE_SIGNING_SECRET` 或 `JANUSGATE_LICENSE_PUBLIC_KEY`。不要把 license key、signing secret 或私钥提交到 Git。
+   如需本地验证 enterprise license，可设置 `JANUSGATE_EDITION=enterprise`、`JANUSGATE_LICENSE_VERIFIER=hmac|ed25519`、`JANUSGATE_LICENSE_KEY`，并按验签模式提供 `JANUSGATE_LICENSE_SIGNING_SECRET` 或 `JANUSGATE_LICENSE_PUBLIC_KEY`；也可由管理员调用 `POST /api/v1/admin/license-config` 写入持久化配置。不要把 license key、signing secret 或私钥提交到 Git。
 
 3. 启动：
 

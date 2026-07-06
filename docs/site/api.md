@@ -34,7 +34,7 @@ scripts/build-docs-site.sh dist/docs-site
 - SSH CA：`/api/v1/ssh-certificate-authorities/`、trust bundle 和 `/api/v1/ssh-certificates/`。
 - Audit：`/api/v1/audits/events`、`/api/v1/audits/reports/summary`、`/api/v1/audits/reports/compliance`。
 - Automation：`/api/v1/automation/jobs/asset-scans`、credential rotations、playbooks 和 job runs。
-- Admin：`/api/v1/admin/license-summary`。
+- Admin：`/api/v1/admin/license-summary` 与 admin-only `POST /api/v1/admin/license-config`。
 
 ## 错误响应
 
