@@ -6,6 +6,7 @@ This document defines the first reproducible capacity-model checkpoint for Phase
 
 - Target surface: authenticated JanusGate core API traffic behind one backend deployment.
 - Current smoke script: `scripts/phase5-capacity-model-smoke.sh`.
+- Repeatable load runner: `scripts/phase5-core-api-load-test.sh`.
 - Current CI purpose: validate that load-test input, SLO thresholds, and capacity headroom math stay explicit and reproducible.
 
 ## SLO
@@ -42,6 +43,29 @@ scripts/phase5-capacity-model-smoke.sh
 JANUSGATE_LOAD_TEST_RPS=170 JANUSGATE_LOAD_TEST_P95_MS=420 scripts/phase5-capacity-model-smoke.sh
 ```
 
+## Endpoint Mix
+
+`scripts/phase5-core-api-load-test.sh` runs a small authenticated GET mix against a real dev, staging, or production-like deployment, then passes the observed RPS, p95 latency, and error rate into `scripts/phase5-capacity-model-smoke.sh`.
+
+| Endpoint | Weight | Purpose |
+| --- | ---: | --- |
+| `GET /api/v1/auth/me` | 3 | Authenticated user profile read path |
+| `GET /api/v1/assets/` | 4 | Core inventory list path |
+| `GET /api/v1/sessions/` | 2 | Active/session history list path |
+| `GET /api/v1/automation/jobs/runs` | 1 | Automation run metadata list path |
+
+Authorization token must come from the environment:
+
+```bash
+JANUSGATE_LOAD_TEST_BASE_URL=http://127.0.0.1:8000 \
+JANUSGATE_LOAD_TEST_ACCESS_TOKEN=<bearer-token> \
+JANUSGATE_LOAD_TEST_DURATION_SECONDS=60 \
+JANUSGATE_LOAD_TEST_CONCURRENCY=4 \
+scripts/phase5-core-api-load-test.sh
+```
+
+The runner does not print the token or request bodies. It only records aggregate request count, RPS, p95 latency, and error-rate values. The target environment, dataset size, pod count, database shape, Redis mode, raw terminal output, and any trace IDs still need to be archived with the release or performance evidence package before using the numbers as production evidence.
+
 ## Next Slice
 
-Replace the default inputs with a real repeatable load-test artifact from a target environment. That follow-up should record endpoint mix, dataset size, pod count, database shape, Redis mode, and the raw tool output path before treating the numbers as production evidence.
+Run the repeatable endpoint mix against a target environment and archive the raw output with environment metadata. A later slice can replace this standard-library runner with k6 or Locust when the team needs richer scenarios, ramping profiles, or distributed load generation.
