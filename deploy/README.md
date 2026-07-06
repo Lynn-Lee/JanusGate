@@ -18,6 +18,7 @@ GitHub Actions 工作流位于 `.github/workflows/ci.yml`，当前包含：
 - `npm run build`：前端生产构建检查
 - `scripts/phase5-supply-chain-security-smoke.sh`：校验 Phase 5 SBOM、镜像签名和漏洞扫描 CI wiring
 - `scripts/phase5-runtime-monitoring-smoke.sh`：校验 Phase 5 运行时加固配置和 `/metrics` 回归契约
+- `deploy/monitoring/phase5-runtime-alerts.yaml`：Prometheus 运行时异常告警规则基线，覆盖高 5xx、p95 延迟和 metrics 缺失
 - Trivy high/critical vulnerability gate：对仓库文件系统执行高危/严重漏洞扫描
 - Docker Buildx：构建 backend 镜像；仅 `v*` tag 会推送到 GHCR
 - release tag SBOM：对已推送的 backend 镜像 digest 生成 SPDX JSON SBOM artifact
@@ -225,3 +226,15 @@ curl -fsS http://localhost:8000/health
 - Kubernetes 通过 Secret/ConfigMap 注入；`DATABASE_URL`、`SECRET_KEY`、JWT 配置必须来自 Secret，不能放入 ConfigMap 或普通 values 文件；共享环境优先使用 `secret.existingSecret`。
 - CI 不依赖生产密钥；依赖扫描和镜像构建不得输出 token、数据库密码或 JWT secret。
 - backend 镜像以非 root 用户运行，并启用 no-new-privileges/read-only root filesystem（Compose/Helm 环境）。
+
+## 7. 运行时监控与告警
+
+Phase 5 #t56 提供 Prometheus 告警规则基线：`deploy/monitoring/phase5-runtime-alerts.yaml`。当前规则只依赖 JanusGate 后端 `/metrics` 已暴露的 HTTP request counter 和 latency histogram，避免读取请求体、响应体、token、secret 或连接串。
+
+最小告警覆盖：
+
+1. `JanusGateRuntimeHigh5xxRate`：5 分钟窗口内 5xx 比例高于 2%，持续 10 分钟。
+2. `JanusGateRuntimeHighP95Latency`：5 分钟窗口 p95 延迟高于 1.5 秒，持续 10 分钟。
+3. `JanusGateRuntimeMetricsEndpointMissing`：Prometheus 未收到 JanusGate HTTP 指标，持续 5 分钟。
+
+部署到真实监控平台前，需要把该规则文件接入目标 Prometheus/Alertmanager 管理方式，并在目标环境记录一次 `promtool check rules` 或等价校验结果。仓库内 smoke 只校验规则文件与现有 `/metrics` 合约的 wiring，不假设本地存在 Prometheus。

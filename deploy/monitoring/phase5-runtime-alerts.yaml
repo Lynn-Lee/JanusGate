@@ -1,0 +1,41 @@
+groups:
+  - name: janusgate.phase5.runtime
+    rules:
+      - alert: JanusGateRuntimeHigh5xxRate
+        expr: |
+          sum(rate(janusgate_http_requests_total{status_code=~"5.."}[5m]))
+          /
+          clamp_min(sum(rate(janusgate_http_requests_total[5m])), 1)
+          > 0.02
+        for: 10m
+        labels:
+          severity: warning
+          phase: phase5
+          component: janusgate-backend
+        annotations:
+          summary: JanusGate backend 5xx rate is above 2 percent
+          description: Investigate recent deploys, dependency health, and failing routes before widening traffic.
+      - alert: JanusGateRuntimeHighP95Latency
+        expr: |
+          histogram_quantile(
+            0.95,
+            sum(rate(janusgate_http_request_duration_seconds_bucket[5m])) by (le)
+          ) > 1.5
+        for: 10m
+        labels:
+          severity: warning
+          phase: phase5
+          component: janusgate-backend
+        annotations:
+          summary: JanusGate backend p95 latency is above 1.5 seconds
+          description: Check database latency, Redis latency, and upstream saturation before accepting production traffic.
+      - alert: JanusGateRuntimeMetricsEndpointMissing
+        expr: absent(janusgate_http_requests_total)
+        for: 5m
+        labels:
+          severity: critical
+          phase: phase5
+          component: janusgate-backend
+        annotations:
+          summary: JanusGate runtime metrics are missing
+          description: Prometheus is not receiving JanusGate HTTP metrics; verify scrape config, service discovery, and /metrics reachability.

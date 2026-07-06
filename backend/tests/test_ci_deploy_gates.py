@@ -86,6 +86,9 @@ def test_phase5_capacity_model_smoke_defines_slo_and_load_inputs() -> None:
 def test_phase5_runtime_monitoring_smoke_covers_runtime_security_and_metrics() -> None:
     workflow = (REPO_ROOT / ".github/workflows/ci.yml").read_text()
     script = (REPO_ROOT / "scripts/phase5-runtime-monitoring-smoke.sh").read_text()
+    alert_rules = yaml.safe_load(
+        (REPO_ROOT / "deploy/monitoring/phase5-runtime-alerts.yaml").read_text()
+    )
 
     assert "scripts/phase5-runtime-monitoring-smoke.sh" in workflow
     assert "read_only: true" in script
@@ -96,6 +99,21 @@ def test_phase5_runtime_monitoring_smoke_covers_runtime_security_and_metrics() -
     assert "drop:\n      - ALL" in script
     assert "GET /metrics" in script
     assert "janusgate_http_requests_total" in script
+    assert "phase5-runtime-alerts.yaml" in script
+    assert "JanusGateRuntimeHigh5xxRate" in script
+    assert "JanusGateRuntimeHighP95Latency" in script
+
+    alert_names = {
+        rule["alert"]
+        for group in alert_rules["groups"]
+        for rule in group["rules"]
+        if "alert" in rule
+    }
+    assert {
+        "JanusGateRuntimeHigh5xxRate",
+        "JanusGateRuntimeHighP95Latency",
+        "JanusGateRuntimeMetricsEndpointMissing",
+    } <= alert_names
 
 
 def test_phase5_release_readiness_smoke_covers_versioning_migrations_and_rollback() -> None:
