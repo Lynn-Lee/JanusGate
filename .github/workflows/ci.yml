@@ -11,6 +11,7 @@ on:
 permissions:
   contents: read
   packages: write
+  id-token: write
 
 concurrency:
   group: janusgate-ci-${{ github.ref }}
@@ -96,11 +97,32 @@ jobs:
       - name: Production build
         run: npm run build
 
+  supply-chain-security:
+    name: Phase 5 supply-chain security
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Validate supply-chain security workflow wiring
+        run: scripts/phase5-supply-chain-security-smoke.sh
+
+      - name: Trivy high/critical vulnerability gate
+        uses: aquasecurity/trivy-action@0.24.0
+        with:
+          scan-type: fs
+          scan-ref: .
+          scanners: vuln
+          severity: HIGH,CRITICAL
+          exit-code: "1"
+          ignore-unfixed: true
+
   docker-image:
     name: Docker image build
     runs-on: ubuntu-24.04
     timeout-minutes: 20
-    needs: [backend-quality, frontend-quality]
+    needs: [backend-quality, frontend-quality, supply-chain-security]
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -128,6 +150,7 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Build backend image
+        id: build
         uses: docker/build-push-action@v6
         with:
           context: backend
@@ -137,6 +160,25 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+      - name: Generate release image SBOM
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: anchore/sbom-action@v0
+        with:
+          image: ghcr.io/lynn-lee/janusgate-backend@${{ steps.build.outputs.digest }}
+          format: spdx-json
+          output-file: janusgate-backend.spdx.json
+          artifact-name: janusgate-backend-sbom
+
+      - name: Install Cosign
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: sigstore/cosign-installer@v4.1.0
+
+      - name: Sign release image digest
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          COSIGN_EXPERIMENTAL: "true"
+        run: cosign sign --yes ghcr.io/lynn-lee/janusgate-backend@${{ steps.build.outputs.digest }}
 
   deploy-smoke:
     name: Phase 3 deploy smoke
