@@ -2,6 +2,8 @@
 
 本手册记录当前管理后台和运维侧可依赖的能力边界。更细的 API 字段以 `docs/api-contract.md` 和 OpenAPI 为准。
 
+配套截图证据见 `admin-screenshots.md`，用于确认管理员手册中的 License / Edition、审计报表和会话回放说明都能对应到真实控制台状态与回归测试。
+
 ## 登录与权限
 
 - 所有受保护 API 默认使用 Bearer access token。
@@ -37,3 +39,9 @@
 - 后端改动运行 `ruff check .`、`mypy app` 和 `pytest -q`。
 - 前端改动运行 `npm run lint`、`npm run typecheck`、`npm test -- --run` 和 `npm run build`。
 - 部署/Helm 改动运行 `docker compose config`、`helm lint deploy/helm/janusgate` 和相关 Phase 5 smoke 脚本。
+
+## 截图证据
+
+- Settings - License / Edition：确认 configured/effective edition、license status 和 feature 列表可见，且不泄露 license key。
+- Audits - SOC2 report export：确认报表摘要、下载动作和签名摘要可见，且不展示原始审计 metadata。
+- Sessions - recording command timeline：确认录制命令时间线和脱敏输出可见，且不展示原始 secret。
