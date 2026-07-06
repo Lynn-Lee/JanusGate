@@ -14,6 +14,7 @@ def test_phase5_docs_site_foundation_is_wired_for_operator_handoff() -> None:
     api_contract = (REPO_ROOT / "docs/api-contract.md").read_text()
     export_script = (REPO_ROOT / "scripts/export-openapi-json.sh").read_text()
     build_script_path = REPO_ROOT / "scripts/build-docs-site.sh"
+    screenshot_script_path = REPO_ROOT / "scripts/phase5-docs-browser-screenshots-smoke.sh"
     workflow = (REPO_ROOT / ".github/workflows/ci.yml").read_text()
     roadmap = (REPO_ROOT / "docs/architecture/10-master-evaluation-and-roadmap.md").read_text()
 
@@ -37,6 +38,8 @@ def test_phase5_docs_site_foundation_is_wired_for_operator_handoff() -> None:
     assert "assets/screenshots/admin-audits-soc2-export.svg" in screenshot_guide
     assert "assets/screenshots/admin-sessions-recording-timeline.svg" in screenshot_guide
     assert "frontend/src/pages/mvp-pages.test.tsx" in screenshot_guide
+    assert "scripts/phase5-docs-browser-screenshots-smoke.sh" in screenshot_guide
+    assert "JANUSGATE_CAPTURE_DOC_SCREENSHOTS=1" in screenshot_guide
     screenshot_assets = [
         REPO_ROOT / "docs/site/assets/screenshots/admin-settings-license-summary.svg",
         REPO_ROOT / "docs/site/assets/screenshots/admin-audits-soc2-export.svg",
@@ -63,9 +66,18 @@ def test_phase5_docs_site_foundation_is_wired_for_operator_handoff() -> None:
     assert "runbooks.md" in build_script
     assert "admin-screenshots.md" in build_script
     assert "assets/screenshots" in build_script
+    assert screenshot_script_path.exists()
+    screenshot_script = screenshot_script_path.read_text()
+    assert "JANUSGATE_CAPTURE_DOC_SCREENSHOTS" in screenshot_script
+    assert "playwright" in screenshot_script
+    assert "admin-settings-license-summary.svg" in screenshot_script
+    assert "admin-audits-soc2-export.svg" in screenshot_script
+    assert "admin-sessions-recording-timeline.svg" in screenshot_script
     assert "scripts/export-openapi-json.sh" in workflow
     assert "scripts/build-docs-site.sh" in workflow
+    assert "scripts/phase5-docs-browser-screenshots-smoke.sh" in workflow
     assert "API 前缀" in api_contract
     assert "#t59" in roadmap
     assert "OpenAPI 自动生成 foundation" in roadmap
     assert "静态站点发布 smoke" in roadmap
+    assert "真实浏览器截图流水线 foundation" in roadmap
