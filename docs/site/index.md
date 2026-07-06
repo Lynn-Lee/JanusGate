@@ -7,6 +7,7 @@ Phase 5 #t59 文档站 foundation 面向安装、运维和 API 集成读者，�
 - [安装手册](install.md)：本地 Docker Compose、Helm 安装、密钥和回滚入口。
 - [管理员手册](admin.md)：登录后常用管理面、License / Edition 摘要、审计和运行门禁。
 - [API 文档](api.md)：稳定 API 分组、OpenAPI 导出和前端/集成方消费方式。
+- [操作 Runbook](runbooks.md)：发布、多副本 smoke、回滚和密钥处理清单。
 
 ## 版本边界
 

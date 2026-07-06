@@ -17,6 +17,7 @@ cp "$repo_root/docs/site/index.md" "$output_abs/index.md"
 cp "$repo_root/docs/site/install.md" "$output_abs/install.md"
 cp "$repo_root/docs/site/admin.md" "$output_abs/admin.md"
 cp "$repo_root/docs/site/api.md" "$output_abs/api.md"
+cp "$repo_root/docs/site/runbooks.md" "$output_abs/runbooks.md"
 
 cat > "$output_abs/manifest.json" <<'JSON'
 {
@@ -28,7 +29,8 @@ cat > "$output_abs/manifest.json" <<'JSON'
     "index.md",
     "install.md",
     "admin.md",
-    "api.md"
+    "api.md",
+    "runbooks.md"
   ]
 }
 JSON
