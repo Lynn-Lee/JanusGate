@@ -10,6 +10,9 @@ required_screenshots=(
   "admin-settings-license-summary.svg"
   "admin-audits-soc2-export.svg"
   "admin-sessions-recording-timeline.svg"
+  "admin-tenancy-organization-inventory.svg"
+  "admin-accounts-credential-rotation.svg"
+  "admin-ssh-ca-trust-bundle.svg"
 )
 
 require_file() {
@@ -33,6 +36,9 @@ grep -q 'docs/site/fixtures/admin-screenshot-data.json' "$repo_root/docs/site/ad
 grep -q 'admin-settings-license-summary' "$fixture_file"
 grep -q 'admin-audits-soc2-export' "$fixture_file"
 grep -q 'admin-sessions-recording-timeline' "$fixture_file"
+grep -q 'admin-tenancy-organization-inventory' "$fixture_file"
+grep -q 'admin-accounts-credential-rotation' "$fixture_file"
+grep -q 'admin-ssh-ca-trust-bundle' "$fixture_file"
 grep -q 'password=\[REDACTED\]' "$fixture_file"
 
 if [[ -f "$docs_package_dir/manifest.json" ]]; then

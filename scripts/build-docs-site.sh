@@ -33,7 +33,10 @@ cat > "$output_abs/manifest.json" <<'JSON'
   "assets": [
     "assets/screenshots/admin-settings-license-summary.svg",
     "assets/screenshots/admin-audits-soc2-export.svg",
-    "assets/screenshots/admin-sessions-recording-timeline.svg"
+    "assets/screenshots/admin-sessions-recording-timeline.svg",
+    "assets/screenshots/admin-tenancy-organization-inventory.svg",
+    "assets/screenshots/admin-accounts-credential-rotation.svg",
+    "assets/screenshots/admin-ssh-ca-trust-bundle.svg"
   ],
   "fixtures": [
     "fixtures/admin-screenshot-data.json"

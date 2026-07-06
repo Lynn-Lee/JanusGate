@@ -9,6 +9,9 @@
 | `admin-settings-license-summary` | `assets/screenshots/admin-settings-license-summary.svg` | Settings - License / Edition | `configured: enterprise`、`effective: community`、`invalid`、enabled/disabled feature 列表；不得出现 `JANUSGATE_LICENSE_KEY`、signing secret 或原始 payload | `frontend/src/pages/mvp-pages.test.tsx` |
 | `admin-audits-soc2-export` | `assets/screenshots/admin-audits-soc2-export.svg` | Audits - SOC2 report export | 报表总事件、高危事件、SIEM failed、SOC2 JSON 下载动作和签名摘要；不得展示原始审计 metadata 或 secret token | `frontend/src/pages/mvp-pages.test.tsx` |
 | `admin-sessions-recording-timeline` | `assets/screenshots/admin-sessions-recording-timeline.svg` | Sessions - recording command timeline | Recording ID 输入、加载回放时间线、命令摘要和 `password=[REDACTED]` 脱敏输出；不得展示原始 secret | `frontend/src/pages/mvp-pages.test.tsx` |
+| `admin-tenancy-organization-inventory` | `assets/screenshots/admin-tenancy-organization-inventory.svg` | Tenancy - organization inventory | Organization、Team、Project 三层边界与租户 ID；不得出现跨租户组织或未脱敏客户域名 | `frontend/src/pages/mvp-pages.test.tsx` |
+| `admin-accounts-credential-rotation` | `assets/screenshots/admin-accounts-credential-rotation.svg` | Accounts - credential rotation custody | 账号托管、Vault secret 引用、轮换记录与调度动作；不得出现 `plaintext-password`、原始 token 或私钥 | `frontend/src/pages/mvp-pages.test.tsx` |
+| `admin-ssh-ca-trust-bundle` | `assets/screenshots/admin-ssh-ca-trust-bundle.svg` | SSH CA - trust bundle and certificates | SSH CA、公钥 trust bundle、issued certificate 与撤销动作；不得出现 CA 私钥或 `private_key_secret_id` | `frontend/src/pages/mvp-pages.test.tsx` |
 
 ## Capture Contract
 

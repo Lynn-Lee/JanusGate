@@ -2,7 +2,7 @@
 
 本手册记录当前管理后台和运维侧可依赖的能力边界。更细的 API 字段以 `docs/api-contract.md` 和 OpenAPI 为准。
 
-配套截图证据见 `admin-screenshots.md`，用于确认管理员手册中的 License / Edition、审计报表和会话回放说明都能对应到真实控制台状态与回归测试。
+配套截图证据见 `admin-screenshots.md`，用于确认管理员手册中的 License / Edition、审计报表、会话回放、Tenancy、账号轮换和 SSH CA 说明都能对应到真实控制台状态与回归测试。
 
 ## 登录与权限
 
@@ -45,3 +45,6 @@
 - Settings - License / Edition：确认 configured/effective edition、license status 和 feature 列表可见，且不泄露 license key。
 - Audits - SOC2 report export：确认报表摘要、下载动作和签名摘要可见，且不展示原始审计 metadata。
 - Sessions - recording command timeline：确认录制命令时间线和脱敏输出可见，且不展示原始 secret。
+- Tenancy - organization inventory：确认 Organization、Team、Project 和租户边界可见，且不出现跨租户或真实客户域名。
+- Accounts - credential rotation custody：确认 Vault secret 引用、轮换记录和调度动作可见，且不出现凭据明文。
+- SSH CA - trust bundle and certificates：确认 SSH CA、公钥 trust bundle 和 issued certificate 可见，且不出现 CA 私钥或 Vault 私钥引用。

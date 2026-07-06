@@ -1,0 +1,36 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="720" viewBox="0 0 1280 720" role="img" aria-labelledby="title desc">
+  <title id="title">Tenancy organization inventory screenshot evidence</title>
+  <desc id="desc">Redacted JanusGate tenancy view showing one tenant organization, team, and project boundary.</desc>
+  <rect width="1280" height="720" fill="#f6f8fb"/>
+  <rect x="0" y="0" width="248" height="720" fill="#152033"/>
+  <text x="32" y="54" fill="#ffffff" font-family="Arial, sans-serif" font-size="28" font-weight="700">JanusGate</text>
+  <text x="32" y="112" fill="#9fb0c8" font-family="Arial, sans-serif" font-size="18">Assets</text>
+  <text x="32" y="156" fill="#9fb0c8" font-family="Arial, sans-serif" font-size="18">Sessions</text>
+  <rect x="20" y="188" width="208" height="44" rx="8" fill="#2b6de8"/>
+  <text x="32" y="216" fill="#ffffff" font-family="Arial, sans-serif" font-size="18">Tenancy</text>
+  <text x="32" y="260" fill="#9fb0c8" font-family="Arial, sans-serif" font-size="18">Accounts</text>
+  <text x="32" y="304" fill="#9fb0c8" font-family="Arial, sans-serif" font-size="18">SSH CA</text>
+  <text x="292" y="72" fill="#172033" font-family="Arial, sans-serif" font-size="32" font-weight="700">Tenancy - organization inventory</text>
+  <text x="292" y="110" fill="#5b6575" font-family="Arial, sans-serif" font-size="18">Current tenant-scoped Organization, Team, and Project inventory.</text>
+  <rect x="292" y="144" width="270" height="44" rx="22" fill="#e6f4ff" stroke="#91caff"/>
+  <text x="320" y="173" fill="#0958d9" font-family="Arial, sans-serif" font-size="17" font-weight="700">1 Organizations</text>
+  <rect x="580" y="144" width="210" height="44" rx="22" fill="#e6fffb" stroke="#87e8de"/>
+  <text x="608" y="173" fill="#006d75" font-family="Arial, sans-serif" font-size="17" font-weight="700">1 Teams</text>
+  <rect x="808" y="144" width="220" height="44" rx="22" fill="#f9f0ff" stroke="#d3adf7"/>
+  <text x="836" y="173" fill="#531dab" font-family="Arial, sans-serif" font-size="17" font-weight="700">1 Projects</text>
+  <rect x="292" y="226" width="884" height="116" rx="10" fill="#ffffff" stroke="#d8dee8"/>
+  <text x="324" y="266" fill="#172033" font-family="Arial, sans-serif" font-size="22" font-weight="700">Organizations</text>
+  <text x="324" y="308" fill="#172033" font-family="Arial, sans-serif" font-size="18">Tenant A Ops</text>
+  <text x="604" y="308" fill="#5b6575" font-family="Arial, sans-serif" font-size="18">org-a</text>
+  <text x="804" y="308" fill="#5b6575" font-family="Arial, sans-serif" font-size="18">tenant-a</text>
+  <rect x="292" y="374" width="884" height="116" rx="10" fill="#ffffff" stroke="#d8dee8"/>
+  <text x="324" y="414" fill="#172033" font-family="Arial, sans-serif" font-size="22" font-weight="700">Teams</text>
+  <text x="324" y="456" fill="#172033" font-family="Arial, sans-serif" font-size="18">Ops Team</text>
+  <text x="604" y="456" fill="#5b6575" font-family="Arial, sans-serif" font-size="18">org-a</text>
+  <text x="804" y="456" fill="#5b6575" font-family="Arial, sans-serif" font-size="18">tenant-a</text>
+  <rect x="292" y="522" width="884" height="116" rx="10" fill="#ffffff" stroke="#d8dee8"/>
+  <text x="324" y="562" fill="#172033" font-family="Arial, sans-serif" font-size="22" font-weight="700">Projects</text>
+  <text x="324" y="604" fill="#172033" font-family="Arial, sans-serif" font-size="18">Production Project</text>
+  <text x="604" y="604" fill="#5b6575" font-family="Arial, sans-serif" font-size="18">team-a</text>
+  <text x="804" y="604" fill="#1f7a4d" font-family="Arial, sans-serif" font-size="18" font-weight="700">active</text>
+</svg>

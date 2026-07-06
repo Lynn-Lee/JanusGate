@@ -198,6 +198,187 @@
         "password=plaintext",
         "private_key"
       ]
+    },
+    {
+      "id": "admin-tenancy-organization-inventory",
+      "route": "/tenancy",
+      "screenshot_file": "assets/screenshots/admin-tenancy-organization-inventory.svg",
+      "api_responses": {
+        "/api/v1/tenancy/organizations": {
+          "items": [
+            {
+              "id": "org-a",
+              "tenant_id": "tenant-a",
+              "name": "Tenant A Ops",
+              "status": "active"
+            }
+          ],
+          "total": 1
+        },
+        "/api/v1/tenancy/teams": {
+          "items": [
+            {
+              "id": "team-a",
+              "tenant_id": "tenant-a",
+              "organization_id": "org-a",
+              "name": "Ops Team"
+            }
+          ],
+          "total": 1
+        },
+        "/api/v1/tenancy/projects": {
+          "items": [
+            {
+              "id": "project-a",
+              "tenant_id": "tenant-a",
+              "organization_id": "org-a",
+              "team_id": "team-a",
+              "name": "Production Project",
+              "status": "active"
+            }
+          ],
+          "total": 1
+        }
+      },
+      "must_show": [
+        "Tenant A Ops",
+        "Ops Team",
+        "Production Project",
+        "tenant-a"
+      ],
+      "must_not_show": [
+        "tenant-b",
+        "Customer Inc",
+        "corp.example.com"
+      ]
+    },
+    {
+      "id": "admin-accounts-credential-rotation",
+      "route": "/accounts",
+      "screenshot_file": "assets/screenshots/admin-accounts-credential-rotation.svg",
+      "api_responses": {
+        "/api/v1/accounts/": {
+          "items": [
+            {
+              "id": 1,
+              "tenant_id": "tenant-a",
+              "asset_id": 1,
+              "username": "deploy",
+              "protocol": "ssh",
+              "secret_id": "sec_tenant_a_deploy",
+              "organization_id": "org-a",
+              "team_id": "team-a",
+              "project_id": "project-a",
+              "status": "active",
+              "rotation_policy": "manual"
+            }
+          ],
+          "total": 1
+        },
+        "/api/v1/accounts/1/rotations": {
+          "items": [
+            {
+              "id": 7,
+              "tenant_id": "tenant-a",
+              "account_id": 1,
+              "status": "scheduled",
+              "reason": "quarterly rotation",
+              "requested_by": "admin",
+              "scheduled_at": "2026-07-04T10:00:00Z"
+            }
+          ],
+          "total": 1
+        }
+      },
+      "capture_actions": [
+        {
+          "type": "click",
+          "role": "button",
+          "name": "调度轮换"
+        }
+      ],
+      "must_show": [
+        "deploy",
+        "sec_tenant_a_deploy",
+        "quarterly rotation",
+        "调度轮换"
+      ],
+      "must_not_show": [
+        "plaintext-password",
+        "raw-token",
+        "private_key"
+      ]
+    },
+    {
+      "id": "admin-ssh-ca-trust-bundle",
+      "route": "/ssh-ca",
+      "screenshot_file": "assets/screenshots/admin-ssh-ca-trust-bundle.svg",
+      "api_responses": {
+        "/api/v1/ssh-certificate-authorities/": {
+          "items": [
+            {
+              "id": 3,
+              "tenant_id": "tenant-a",
+              "name": "Tenant A SSH CA",
+              "public_key": "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAITenantACa",
+              "status": "active",
+              "validity_seconds": 1800
+            }
+          ],
+          "total": 1
+        },
+        "/api/v1/ssh-certificate-authorities/trust-bundle": {
+          "items": [
+            {
+              "ca_id": 3,
+              "name": "Tenant A SSH CA",
+              "public_key": "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAITenantACa",
+              "trusted_asset_ids": [1]
+            }
+          ],
+          "total": 1
+        },
+        "/api/v1/ssh-certificates/": {
+          "items": [
+            {
+              "id": 5,
+              "tenant_id": "tenant-a",
+              "ca_id": 3,
+              "asset_id": 1,
+              "account_id": 1,
+              "principal": "deploy",
+              "public_key": "ssh-ed25519 AAAAC3NzaClient",
+              "serial": "serial-5",
+              "certificate_body": "ssh-ed25519-cert-v01@openssh.com AAAAissued",
+              "requested_by": "admin",
+              "valid_after": "2026-07-04T10:00:00Z",
+              "valid_before": "2026-07-04T10:30:00Z",
+              "status": "issued",
+              "revoked_at": null,
+              "revoke_reason": null
+            }
+          ],
+          "total": 1
+        }
+      },
+      "capture_actions": [
+        {
+          "type": "click",
+          "role": "button",
+          "name": "撤销证书 serial-5"
+        }
+      ],
+      "must_show": [
+        "Tenant A SSH CA",
+        "1 trusted assets",
+        "serial-5",
+        "deploy"
+      ],
+      "must_not_show": [
+        "private_key_secret_id",
+        "ca_private_key",
+        "vault_private_key"
+      ]
     }
   ]
 }

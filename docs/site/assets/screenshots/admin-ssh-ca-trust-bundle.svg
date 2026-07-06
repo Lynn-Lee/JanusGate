@@ -1,0 +1,35 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="720" viewBox="0 0 1280 720" role="img" aria-labelledby="title desc">
+  <title id="title">SSH CA trust bundle screenshot evidence</title>
+  <desc id="desc">Redacted JanusGate SSH CA view showing public CA trust bundle and issued certificate metadata.</desc>
+  <rect width="1280" height="720" fill="#f6f8fb"/>
+  <rect x="0" y="0" width="248" height="720" fill="#152033"/>
+  <text x="32" y="54" fill="#ffffff" font-family="Arial, sans-serif" font-size="28" font-weight="700">JanusGate</text>
+  <text x="32" y="112" fill="#9fb0c8" font-family="Arial, sans-serif" font-size="18">Tenancy</text>
+  <text x="32" y="156" fill="#9fb0c8" font-family="Arial, sans-serif" font-size="18">Accounts</text>
+  <rect x="20" y="188" width="208" height="44" rx="8" fill="#2b6de8"/>
+  <text x="32" y="216" fill="#ffffff" font-family="Arial, sans-serif" font-size="18">SSH CA</text>
+  <text x="32" y="260" fill="#9fb0c8" font-family="Arial, sans-serif" font-size="18">Sessions</text>
+  <text x="292" y="72" fill="#172033" font-family="Arial, sans-serif" font-size="32" font-weight="700">SSH CA - trust bundle and certificates</text>
+  <text x="292" y="110" fill="#5b6575" font-family="Arial, sans-serif" font-size="18">Public CA trust bundle and temporary certificate lifecycle evidence.</text>
+  <rect x="292" y="152" width="884" height="136" rx="10" fill="#ffffff" stroke="#d8dee8"/>
+  <text x="324" y="196" fill="#172033" font-family="Arial, sans-serif" font-size="22" font-weight="700">Certificate authorities</text>
+  <text x="324" y="242" fill="#172033" font-family="Arial, sans-serif" font-size="18" font-weight="700">Tenant A SSH CA</text>
+  <rect x="500" y="218" width="84" height="34" rx="17" fill="#f6ffed" stroke="#b7eb8f"/>
+  <text x="526" y="241" fill="#237804" font-family="Arial, sans-serif" font-size="16" font-weight="700">active</text>
+  <text x="624" y="242" fill="#5b6575" font-family="Arial, sans-serif" font-size="18">validity 1800s</text>
+  <text x="324" y="272" fill="#5b6575" font-family="Arial, sans-serif" font-size="15">public key only: ssh-ed25519 AAAAC3Nza...TenantACa</text>
+  <rect x="292" y="322" width="884" height="136" rx="10" fill="#ffffff" stroke="#d8dee8"/>
+  <text x="324" y="366" fill="#172033" font-family="Arial, sans-serif" font-size="22" font-weight="700">Trust bundle</text>
+  <text x="324" y="412" fill="#172033" font-family="Arial, sans-serif" font-size="18">CA #3</text>
+  <text x="500" y="412" fill="#172033" font-family="Arial, sans-serif" font-size="18">1 trusted assets</text>
+  <text x="728" y="412" fill="#5b6575" font-family="Arial, sans-serif" font-size="18">tenant-a public trust</text>
+  <rect x="292" y="492" width="884" height="136" rx="10" fill="#ffffff" stroke="#d8dee8"/>
+  <text x="324" y="536" fill="#172033" font-family="Arial, sans-serif" font-size="22" font-weight="700">Temporary certificates</text>
+  <text x="324" y="582" fill="#172033" font-family="Arial, sans-serif" font-size="18" font-weight="700">serial-5</text>
+  <text x="500" y="582" fill="#172033" font-family="Arial, sans-serif" font-size="18">principal deploy</text>
+  <rect x="704" y="558" width="84" height="34" rx="17" fill="#f6ffed" stroke="#b7eb8f"/>
+  <text x="730" y="581" fill="#237804" font-family="Arial, sans-serif" font-size="16" font-weight="700">issued</text>
+  <rect x="948" y="550" width="102" height="42" rx="8" fill="#ffffff" stroke="#ffccc7"/>
+  <text x="976" y="577" fill="#cf1322" font-family="Arial, sans-serif" font-size="16" font-weight="700">Revoke</text>
+  <text x="324" y="650" fill="#8c5a00" font-family="Arial, sans-serif" font-size="16">CA private key and Vault private key references are not displayed.</text>
+</svg>

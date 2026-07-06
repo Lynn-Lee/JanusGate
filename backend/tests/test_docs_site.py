@@ -35,9 +35,15 @@ def test_phase5_docs_site_foundation_is_wired_for_operator_handoff() -> None:
     assert "Settings - License / Edition" in screenshot_guide
     assert "Audits - SOC2 report export" in screenshot_guide
     assert "Sessions - recording command timeline" in screenshot_guide
+    assert "Tenancy - organization inventory" in screenshot_guide
+    assert "Accounts - credential rotation custody" in screenshot_guide
+    assert "SSH CA - trust bundle and certificates" in screenshot_guide
     assert "assets/screenshots/admin-settings-license-summary.svg" in screenshot_guide
     assert "assets/screenshots/admin-audits-soc2-export.svg" in screenshot_guide
     assert "assets/screenshots/admin-sessions-recording-timeline.svg" in screenshot_guide
+    assert "assets/screenshots/admin-tenancy-organization-inventory.svg" in screenshot_guide
+    assert "assets/screenshots/admin-accounts-credential-rotation.svg" in screenshot_guide
+    assert "assets/screenshots/admin-ssh-ca-trust-bundle.svg" in screenshot_guide
     assert "frontend/src/pages/mvp-pages.test.tsx" in screenshot_guide
     assert "docs/site/fixtures/admin-screenshot-data.json" in screenshot_guide
     assert "scripts/phase5-docs-browser-screenshots-smoke.sh" in screenshot_guide
@@ -46,6 +52,9 @@ def test_phase5_docs_site_foundation_is_wired_for_operator_handoff() -> None:
         REPO_ROOT / "docs/site/assets/screenshots/admin-settings-license-summary.svg",
         REPO_ROOT / "docs/site/assets/screenshots/admin-audits-soc2-export.svg",
         REPO_ROOT / "docs/site/assets/screenshots/admin-sessions-recording-timeline.svg",
+        REPO_ROOT / "docs/site/assets/screenshots/admin-tenancy-organization-inventory.svg",
+        REPO_ROOT / "docs/site/assets/screenshots/admin-accounts-credential-rotation.svg",
+        REPO_ROOT / "docs/site/assets/screenshots/admin-ssh-ca-trust-bundle.svg",
     ]
     for screenshot_asset in screenshot_assets:
         assert screenshot_asset.exists()
@@ -79,6 +88,14 @@ def test_phase5_docs_site_foundation_is_wired_for_operator_handoff() -> None:
     assert "worm_content_hash" in screenshot_fixture
     assert "admin-sessions-recording-timeline" in screenshot_fixture
     assert "password=[REDACTED]" in screenshot_fixture
+    assert "admin-tenancy-organization-inventory" in screenshot_fixture
+    assert "Tenant A Ops" in screenshot_fixture
+    assert "admin-accounts-credential-rotation" in screenshot_fixture
+    assert "sec_tenant_a_deploy" in screenshot_fixture
+    assert "plaintext-password" in screenshot_fixture
+    assert "admin-ssh-ca-trust-bundle" in screenshot_fixture
+    assert "Tenant A SSH CA" in screenshot_fixture
+    assert "private_key_secret_id" in screenshot_fixture
     assert "JANUSGATE_CAPTURE_DOC_SCREENSHOTS" in screenshot_script
     assert "docs/site/fixtures/admin-screenshot-data.json" in screenshot_script
     assert "playwright" in screenshot_script
@@ -90,6 +107,9 @@ def test_phase5_docs_site_foundation_is_wired_for_operator_handoff() -> None:
     assert "admin-settings-license-summary.svg" in screenshot_script
     assert "admin-audits-soc2-export.svg" in screenshot_script
     assert "admin-sessions-recording-timeline.svg" in screenshot_script
+    assert "admin-tenancy-organization-inventory.svg" in screenshot_script
+    assert "admin-accounts-credential-rotation.svg" in screenshot_script
+    assert "admin-ssh-ca-trust-bundle.svg" in screenshot_script
     assert "scripts/export-openapi-json.sh" in workflow
     assert "scripts/build-docs-site.sh" in workflow
     assert "scripts/phase5-docs-browser-screenshots-smoke.sh" in workflow
