@@ -19,6 +19,8 @@ cp "$repo_root/docs/site/admin.md" "$output_abs/admin.md"
 cp "$repo_root/docs/site/admin-screenshots.md" "$output_abs/admin-screenshots.md"
 cp "$repo_root/docs/site/api.md" "$output_abs/api.md"
 cp "$repo_root/docs/site/runbooks.md" "$output_abs/runbooks.md"
+mkdir -p "$output_abs/assets"
+cp -R "$repo_root/docs/site/assets/screenshots" "$output_abs/assets/screenshots"
 
 cat > "$output_abs/manifest.json" <<'JSON'
 {
@@ -26,6 +28,11 @@ cat > "$output_abs/manifest.json" <<'JSON'
   "format": "markdown-static-package",
   "entry": "index.md",
   "openapi": "openapi.json",
+  "assets": [
+    "assets/screenshots/admin-settings-license-summary.svg",
+    "assets/screenshots/admin-audits-soc2-export.svg",
+    "assets/screenshots/admin-sessions-recording-timeline.svg"
+  ],
   "pages": [
     "index.md",
     "install.md",
