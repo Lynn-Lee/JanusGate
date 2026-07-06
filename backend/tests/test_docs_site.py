@@ -82,6 +82,11 @@ def test_phase5_docs_site_foundation_is_wired_for_operator_handoff() -> None:
     assert "JANUSGATE_CAPTURE_DOC_SCREENSHOTS" in screenshot_script
     assert "docs/site/fixtures/admin-screenshot-data.json" in screenshot_script
     assert "playwright" in screenshot_script
+    assert "capture_actions" in screenshot_fixture
+    assert "must_show" in screenshot_script
+    assert "must_not_show" in screenshot_script
+    assert "getByRole" in screenshot_script
+    assert "getByLabel" in screenshot_script
     assert "admin-settings-license-summary.svg" in screenshot_script
     assert "admin-audits-soc2-export.svg" in screenshot_script
     assert "admin-sessions-recording-timeline.svg" in screenshot_script

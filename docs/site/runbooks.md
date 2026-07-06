@@ -31,7 +31,7 @@
    scripts/phase5-docs-browser-screenshots-smoke.sh
    ```
 
-3. 需要重新捕获真实浏览器截图时，在可访问测试控制台和 Playwright 环境中执行：
+3. 需要重新捕获真实浏览器截图时，在可访问前端 dev/test 控制台和 Playwright 环境中执行；脚本会注入 `docs/site/fixtures/admin-screenshot-data.json`，按 `capture_actions` 完成页面操作，并在截图前校验 `must_show` / `must_not_show`：
 
    ```bash
    JANUSGATE_CAPTURE_DOC_SCREENSHOTS=1 \

@@ -59,6 +59,37 @@ export type ApiClientOptions = {
   onUnauthorized?: () => void;
 };
 
+type DocsScreenshotFixture = {
+  api_responses?: Record<string, unknown>;
+  evidence?: Array<{
+    api_responses?: Record<string, unknown>;
+  }>;
+};
+
+function getDocsScreenshotFixtureResponse(path: string): unknown | undefined {
+  if (!import.meta.env.DEV) {
+    return undefined;
+  }
+  const rawFixture = globalThis.localStorage?.getItem('janusgate-doc-screenshot-fixture');
+  if (!rawFixture) {
+    return undefined;
+  }
+  try {
+    const fixture = JSON.parse(rawFixture) as DocsScreenshotFixture;
+    if (fixture.api_responses && path in fixture.api_responses) {
+      return fixture.api_responses[path];
+    }
+    for (const evidence of fixture.evidence ?? []) {
+      if (evidence.api_responses && path in evidence.api_responses) {
+        return evidence.api_responses[path];
+      }
+    }
+  } catch {
+    return undefined;
+  }
+  return undefined;
+}
+
 export class ApiClient {
   private readonly baseUrl: string;
   private readonly getToken?: () => string | null;
@@ -71,6 +102,11 @@ export class ApiClient {
   }
 
   async request<T>(path: string, init: RequestInit = {}): Promise<T> {
+    const docsFixtureResponse = getDocsScreenshotFixtureResponse(path);
+    if (docsFixtureResponse !== undefined) {
+      return docsFixtureResponse as T;
+    }
+
     const headers = new Headers(init.headers);
     if (!headers.has('Content-Type') && init.body) {
       headers.set('Content-Type', 'application/json');

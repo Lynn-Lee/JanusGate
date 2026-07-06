@@ -1,5 +1,10 @@
-import { describe, expect, it } from 'vitest';
-import { parseApiError } from './client';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { ApiClient, parseApiError } from './client';
+
+beforeEach(() => {
+  localStorage.clear();
+  vi.restoreAllMocks();
+});
 
 describe('parseApiError', () => {
   it('prefers Phase 3 ErrorResponse message and keeps request id', async () => {
@@ -32,5 +37,60 @@ describe('parseApiError', () => {
       message: '用户名或密码错误',
       status: 401
     });
+  });
+});
+
+describe('ApiClient docs screenshot fixture', () => {
+  it('serves configured screenshot fixture responses without calling fetch', async () => {
+    localStorage.setItem(
+      'janusgate-doc-screenshot-fixture',
+      JSON.stringify({
+        evidence: [
+          {
+            id: 'admin-settings-license-summary',
+            route: '/settings',
+            api_responses: {
+              '/api/v1/admin/license-summary': {
+                configured_edition: 'enterprise',
+                effective_edition: 'community',
+                license_status: 'invalid'
+              }
+            }
+          }
+        ]
+      })
+    );
+    const fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+
+    await expect(new ApiClient().get('/api/v1/admin/license-summary')).resolves.toEqual({
+      configured_edition: 'enterprise',
+      effective_edition: 'community',
+      license_status: 'invalid'
+    });
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('serves shared screenshot fixture responses for common API calls', async () => {
+    localStorage.setItem(
+      'janusgate-doc-screenshot-fixture',
+      JSON.stringify({
+        api_responses: {
+          '/api/v1/auth/me': {
+            username: 'admin',
+            display_name: 'Docs Admin'
+          }
+        },
+        evidence: []
+      })
+    );
+    const fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+
+    await expect(new ApiClient().get('/api/v1/auth/me')).resolves.toEqual({
+      username: 'admin',
+      display_name: 'Docs Admin'
+    });
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 });

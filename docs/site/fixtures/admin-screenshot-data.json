@@ -1,6 +1,20 @@
 {
   "schema_version": "janusgate.docs.admin-screenshot-fixtures.v1",
   "purpose": "Redacted browser screenshot fixture data for Phase 5 #t59 documentation evidence.",
+  "api_responses": {
+    "/api/v1/auth/me": {
+      "id": 1,
+      "username": "admin",
+      "display_name": "Docs Admin",
+      "email": "admin@example.com",
+      "is_superuser": true,
+      "totp_enabled": false
+    },
+    "/health": {
+      "status": "ok",
+      "version": "0.1.0"
+    }
+  },
   "evidence": [
     {
       "id": "admin-settings-license-summary",
@@ -75,8 +89,39 @@
           "worm_record_id": "worm-report-1",
           "worm_sequence_number": 1,
           "worm_content_hash": "sha256-report-payload"
+        },
+        "/api/v1/audits/events": {
+          "items": [
+            {
+              "id": "audit-1",
+              "tenant_id": "tenant-a",
+              "actor_id": "1",
+              "actor_username": "admin",
+              "event_type": "workflow.request.approved",
+              "category": "workflow",
+              "action": "approve",
+              "resource_type": "workflow_request",
+              "resource_id": "req-1",
+              "session_id": null,
+              "severity": "medium",
+              "message": "审批通过",
+              "metadata": { "safe": "visible" },
+              "sequence_number": 1,
+              "created_at": "2026-07-01T00:02:00Z"
+            }
+          ],
+          "total": 1,
+          "limit": 50,
+          "offset": 0
         }
       },
+      "capture_actions": [
+        {
+          "type": "click",
+          "role": "button",
+          "name": "下载 SOC2 报表"
+        }
+      ],
       "must_show": [
         "12",
         "3",
@@ -131,6 +176,18 @@
           "total": 1
         }
       },
+      "capture_actions": [
+        {
+          "type": "fill",
+          "label": "Recording ID",
+          "value": "1"
+        },
+        {
+          "type": "click",
+          "role": "button",
+          "name": "加载回放时间线"
+        }
+      ],
       "must_show": [
         "Recording ID",
         "sudo systemctl restart nginx",
