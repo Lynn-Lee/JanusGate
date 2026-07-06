@@ -96,7 +96,7 @@
 - 响应不返回 `JANUSGATE_LICENSE_KEY`、`JANUSGATE_LICENSE_SIGNING_SECRET`、签名值或原始 license payload。
 - 响应不返回 `JANUSGATE_LICENSE_PUBLIC_KEY` 或任何签名私钥材料。
 - `enterprise` 配置没有有效 license 时不能启用 enterprise feature。
-- `POST /api/v1/admin/license-config` 可由 `admin` 持久化当前激活 license 配置，请求字段为 `configured_edition`、`license_verifier`、`license_key`、`license_signing_secret` 与 `license_public_key`；响应复用 `LicenseSummary`，不回显 license key、signing secret、公钥或原始 payload。前端 `/settings` 的激活表单仅展示提交后的脱敏摘要；外部商业授权服务、license 轮换审计和密钥托管仍是后续 #t58 切片。
+- `POST /api/v1/admin/license-config` 可由 `admin` 持久化当前激活 license 配置，请求字段为 `configured_edition`、`license_verifier`、`license_key`、`license_signing_secret` 与 `license_public_key`；响应复用 `LicenseSummary`，不回显 license key、signing secret、公钥或原始 payload。成功写入会追加 `admin.license_config.updated` 审计事件，metadata 只包含 configured/effective edition、license status、verifier、license key / signing material / public key 是否已配置和 enabled feature 摘要；外部商业授权服务和密钥托管仍是后续 #t58 切片。
 
 ## Phase 4 Automation Worker Queue（#t52）
 

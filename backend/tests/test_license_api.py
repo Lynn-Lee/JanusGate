@@ -10,6 +10,7 @@ from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
 from fastapi.testclient import TestClient
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
+from app.api.audits.service import repository as audit_repository
 from app.core.database import Base, get_db, get_read_db
 from app.core.deps import current_user
 from app.core.license import build_license_key, get_license_summary
@@ -264,3 +265,57 @@ def test_admin_can_persist_license_config_without_secret_echo(
     assert summary_body["license_status"] == "active"
     assert summary_body["effective_edition"] == "enterprise"
     assert "license_key" not in summary_body
+
+
+def test_license_config_update_writes_redacted_audit_event(
+    session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    app.dependency_overrides.clear()
+    audit_repository.clear()
+    install_db(session_factory)
+    license_key = build_license_key(
+        payload={
+            "edition": "enterprise",
+            "features": ["license_management"],
+            "expires_at": "2026-08-01T00:00:00Z",
+        },
+        signing_secret="test-signing-secret",
+    )
+
+    with TestClient(app) as client:
+        install_user(permissions=["admin", "audit:read"])
+        saved = client.post(
+            "/api/v1/admin/license-config",
+            json={
+                "configured_edition": "enterprise",
+                "license_verifier": "hmac",
+                "license_key": license_key,
+                "license_signing_secret": "test-signing-secret",
+            },
+        )
+        audits = client.get("/api/v1/audits/events?event_type=admin.license_config.updated")
+
+    assert saved.status_code == 200
+    assert audits.status_code == 200
+    body = audits.json()
+    assert body["total"] == 1
+    event = body["items"][0]
+    assert event["tenant_id"] == "tenant-a"
+    assert event["actor_id"] == "user-1"
+    assert event["event_type"] == "admin.license_config.updated"
+    assert event["category"] == "audit"
+    assert event["action"] == "license_config.update"
+    assert event["resource_type"] == "license_configuration"
+    assert event["resource_id"] == "active"
+    assert event["metadata"] == {
+        "configured_edition": "enterprise",
+        "effective_edition": "enterprise",
+        "license_status": "active",
+        "license_verifier": "hmac",
+        "has_license_key": True,
+        "has_signing_material": True,
+        "has_public_key": False,
+        "enabled_features": ["audit_reports", "core_pam", "license_management", "workflow_jit"],
+    }
+    assert license_key not in str(event)
+    assert "test-signing-secret" not in str(event)

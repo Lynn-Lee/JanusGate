@@ -23,6 +23,8 @@
 
 前端 Settings 页已提供最小 License lifecycle 表单，可选择 `community` / `enterprise`、`hmac` / `ed25519` 验签模式，并提交 license key、signing secret 或公钥到 `POST /api/v1/admin/license-config`。提交后页面只刷新脱敏 `LicenseSummary`，不会展示请求中的 license key、signing secret、公钥或原始 payload。
 
+每次成功写入 license 配置都会追加 `admin.license_config.updated` 审计事件，记录 configured/effective edition、license status、verifier、license key / signing material / public key 是否已配置以及启用 feature 列表。审计 metadata 不保存 license key、signing secret、公钥或原始 payload。
+
 版本验签支持两种本地可审计模式：
 
 - `JANUSGATE_LICENSE_VERIFIER=hmac`：使用 `JANUSGATE_LICENSE_SIGNING_SECRET` 校验 HMAC-SHA256 license。
@@ -36,6 +38,7 @@
 - 响应不返回原始 license payload。
 - `JANUSGATE_EDITION=enterprise` 但 license 缺失、过期或签名无效时，effective edition fail-closed 回退到 `community`。
 - `POST /api/v1/admin/license-config` 只返回脱敏 `LicenseSummary`，不回显请求中的 license key、signing secret、公钥或原始 payload。
+- `admin.license_config.updated` 审计事件只记录脱敏布尔/状态摘要，不写入商业授权密钥材料。
 
 ## 审计与报表
 

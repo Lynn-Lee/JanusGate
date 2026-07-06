@@ -6,6 +6,8 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, ConfigDict
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.audits.schemas import AuditCategory, AuditEventCreate, AuditSeverity
+from app.api.audits.service import audit_service
 from app.core.config import settings
 from app.core.database import get_db, get_read_db
 from app.core.deps import current_user
@@ -72,7 +74,9 @@ async def update_admin_license_config(
         config.license_public_key = payload.license_public_key
         config.updated_by = str(user.get("id", ""))
     await db.flush()
-    return _build_summary_from_config(config)
+    summary = _build_summary_from_config(config)
+    await _audit_license_config_update(payload=payload, summary=summary, user=user)
+    return summary
 
 
 def _require_admin(user: dict[str, Any]) -> None:
@@ -88,4 +92,34 @@ def _build_summary_from_config(config: LicenseConfigurationModel) -> LicenseSumm
         public_key=config.license_public_key,
         license_verifier=cast(LicenseVerifier, config.license_verifier),
         now=datetime.now(UTC),
+    )
+
+
+async def _audit_license_config_update(
+    *,
+    payload: LicenseConfigRequest,
+    summary: LicenseSummary,
+    user: dict[str, Any],
+) -> None:
+    await audit_service.create_event(
+        AuditEventCreate(
+            event_type="admin.license_config.updated",
+            category=AuditCategory.audit,
+            action="license_config.update",
+            resource_type="license_configuration",
+            resource_id=ACTIVE_LICENSE_CONFIG_ID,
+            severity=AuditSeverity.medium,
+            message="Admin license configuration updated",
+            metadata={
+                "configured_edition": summary.configured_edition,
+                "effective_edition": summary.effective_edition,
+                "license_status": summary.license_status,
+                "license_verifier": payload.license_verifier,
+                "has_license_key": bool(payload.license_key.strip()),
+                "has_signing_material": bool(payload.license_signing_secret.strip()),
+                "has_public_key": bool(payload.license_public_key.strip()),
+                "enabled_features": summary.enabled_features,
+            },
+        ),
+        user,
     )
