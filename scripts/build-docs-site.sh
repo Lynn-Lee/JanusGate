@@ -21,6 +21,8 @@ cp "$repo_root/docs/site/api.md" "$output_abs/api.md"
 cp "$repo_root/docs/site/runbooks.md" "$output_abs/runbooks.md"
 mkdir -p "$output_abs/assets"
 cp -R "$repo_root/docs/site/assets/screenshots" "$output_abs/assets/screenshots"
+mkdir -p "$output_abs/fixtures"
+cp "$repo_root/docs/site/fixtures/admin-screenshot-data.json" "$output_abs/fixtures/admin-screenshot-data.json"
 
 cat > "$output_abs/manifest.json" <<'JSON'
 {
@@ -33,8 +35,12 @@ cat > "$output_abs/manifest.json" <<'JSON'
     "assets/screenshots/admin-audits-soc2-export.svg",
     "assets/screenshots/admin-sessions-recording-timeline.svg"
   ],
+  "fixtures": [
+    "fixtures/admin-screenshot-data.json"
+  ],
   "screenshotCapture": {
     "smoke": "scripts/phase5-docs-browser-screenshots-smoke.sh",
+    "fixture": "docs/site/fixtures/admin-screenshot-data.json",
     "captureEnv": "JANUSGATE_CAPTURE_DOC_SCREENSHOTS=1",
     "frontendBaseUrlEnv": "JANUSGATE_FRONTEND_BASE_URL"
   },

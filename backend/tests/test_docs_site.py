@@ -9,6 +9,7 @@ def test_phase5_docs_site_foundation_is_wired_for_operator_handoff() -> None:
     install_guide = (REPO_ROOT / "docs/site/install.md").read_text()
     admin_guide = (REPO_ROOT / "docs/site/admin.md").read_text()
     screenshot_guide = (REPO_ROOT / "docs/site/admin-screenshots.md").read_text()
+    screenshot_fixture_path = REPO_ROOT / "docs/site/fixtures/admin-screenshot-data.json"
     api_docs = (REPO_ROOT / "docs/site/api.md").read_text()
     runbooks = (REPO_ROOT / "docs/site/runbooks.md").read_text()
     api_contract = (REPO_ROOT / "docs/api-contract.md").read_text()
@@ -38,6 +39,7 @@ def test_phase5_docs_site_foundation_is_wired_for_operator_handoff() -> None:
     assert "assets/screenshots/admin-audits-soc2-export.svg" in screenshot_guide
     assert "assets/screenshots/admin-sessions-recording-timeline.svg" in screenshot_guide
     assert "frontend/src/pages/mvp-pages.test.tsx" in screenshot_guide
+    assert "docs/site/fixtures/admin-screenshot-data.json" in screenshot_guide
     assert "scripts/phase5-docs-browser-screenshots-smoke.sh" in screenshot_guide
     assert "JANUSGATE_CAPTURE_DOC_SCREENSHOTS=1" in screenshot_guide
     screenshot_assets = [
@@ -66,9 +68,19 @@ def test_phase5_docs_site_foundation_is_wired_for_operator_handoff() -> None:
     assert "runbooks.md" in build_script
     assert "admin-screenshots.md" in build_script
     assert "assets/screenshots" in build_script
+    assert "fixtures/admin-screenshot-data.json" in build_script
     assert screenshot_script_path.exists()
     screenshot_script = screenshot_script_path.read_text()
+    assert screenshot_fixture_path.exists()
+    screenshot_fixture = screenshot_fixture_path.read_text()
+    assert "admin-settings-license-summary" in screenshot_fixture
+    assert "configured_edition" in screenshot_fixture
+    assert "admin-audits-soc2-export" in screenshot_fixture
+    assert "worm_content_hash" in screenshot_fixture
+    assert "admin-sessions-recording-timeline" in screenshot_fixture
+    assert "password=[REDACTED]" in screenshot_fixture
     assert "JANUSGATE_CAPTURE_DOC_SCREENSHOTS" in screenshot_script
+    assert "docs/site/fixtures/admin-screenshot-data.json" in screenshot_script
     assert "playwright" in screenshot_script
     assert "admin-settings-license-summary.svg" in screenshot_script
     assert "admin-audits-soc2-export.svg" in screenshot_script
