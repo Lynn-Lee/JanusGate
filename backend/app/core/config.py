@@ -45,10 +45,13 @@ class Settings(BaseSettings):
 
     # ── Edition / License ──
     JANUSGATE_EDITION: Literal["community", "enterprise"] = "community"
-    JANUSGATE_LICENSE_VERIFIER: Literal["hmac", "ed25519"] = "hmac"
+    JANUSGATE_LICENSE_VERIFIER: Literal["hmac", "ed25519", "external-http"] = "hmac"
     JANUSGATE_LICENSE_KEY: str = ""
     JANUSGATE_LICENSE_SIGNING_SECRET: str = ""
     JANUSGATE_LICENSE_PUBLIC_KEY: str = ""
+    JANUSGATE_LICENSE_VALIDATION_URL: str = ""
+    JANUSGATE_LICENSE_VALIDATION_TOKEN: str = ""
+    JANUSGATE_LICENSE_VALIDATION_TIMEOUT_SECONDS: float = 5.0
 
     # ── Security ──
     SECRET_KEY: str = ""

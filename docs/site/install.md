@@ -1,6 +1,6 @@
 # JanusGate 安装手册
 
-本手册覆盖最小可重复部署路径。生产环境不得把真实密钥、数据库连接串、license signing secret 或 license private key 写入 Git、ConfigMap 或普通 values 文件。离线公钥验签模式只在部署环境注入 `JANUSGATE_LICENSE_PUBLIC_KEY`，签名私钥必须保存在授权系统外部。
+本手册覆盖最小可重复部署路径。生产环境不得把真实密钥、数据库连接串、license signing secret、license validation token 或 license private key 写入 Git、ConfigMap 或普通 values 文件。离线公钥验签模式只在部署环境注入 `JANUSGATE_LICENSE_PUBLIC_KEY`，签名私钥必须保存在授权系统外部；外部授权服务模式只允许通过 Secret 注入 `JANUSGATE_LICENSE_VALIDATION_TOKEN`。
 
 ## 本地 Docker Compose
 
@@ -13,7 +13,7 @@
 
 2. 将生成值写入 `.env` 的 `SECRET_KEY`，并设置 `POSTGRES_PASSWORD`。
 
-   如需本地验证 enterprise license，可设置 `JANUSGATE_EDITION=enterprise`、`JANUSGATE_LICENSE_VERIFIER=hmac|ed25519`、`JANUSGATE_LICENSE_KEY`，并按验签模式提供 `JANUSGATE_LICENSE_SIGNING_SECRET` 或 `JANUSGATE_LICENSE_PUBLIC_KEY`；也可由管理员调用 `POST /api/v1/admin/license-config` 写入持久化配置。不要把 license key、signing secret 或私钥提交到 Git。
+   如需本地验证 enterprise license，可设置 `JANUSGATE_EDITION=enterprise`、`JANUSGATE_LICENSE_VERIFIER=hmac|ed25519|external-http`、`JANUSGATE_LICENSE_KEY`，并按验签模式提供 `JANUSGATE_LICENSE_SIGNING_SECRET`、`JANUSGATE_LICENSE_PUBLIC_KEY`，或 `JANUSGATE_LICENSE_VALIDATION_URL` + `JANUSGATE_LICENSE_VALIDATION_TOKEN`；也可由管理员调用 `POST /api/v1/admin/license-config` 写入持久化配置。不要把 license key、signing secret、validation token 或私钥提交到 Git。
 
 3. 启动：
 

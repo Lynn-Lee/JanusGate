@@ -11,7 +11,14 @@ from app.api.audits.service import audit_service
 from app.core.config import settings
 from app.core.database import get_db, get_read_db
 from app.core.deps import current_user
-from app.core.license import Edition, LicenseSummary, LicenseVerifier, get_license_summary
+from app.core.license import (
+    Edition,
+    HttpLicenseValidationClient,
+    LicenseSummary,
+    LicenseVerifier,
+    get_license_summary,
+    get_license_summary_from_external_verifier,
+)
 from app.models.admin import LicenseConfigurationModel
 
 router = APIRouter(prefix="/admin", tags=["Admin"])
@@ -36,8 +43,8 @@ async def get_admin_license_summary(
     _require_admin(user)
     config = await db.get(LicenseConfigurationModel, ACTIVE_LICENSE_CONFIG_ID)
     if config is not None:
-        return _build_summary_from_config(config)
-    return get_license_summary(
+        return await _build_summary_from_config(config)
+    return await _build_summary_from_values(
         configured_edition=settings.JANUSGATE_EDITION,
         license_key=settings.JANUSGATE_LICENSE_KEY,
         signing_secret=settings.JANUSGATE_LICENSE_SIGNING_SECRET,
@@ -74,7 +81,7 @@ async def update_admin_license_config(
         config.license_public_key = payload.license_public_key
         config.updated_by = str(user.get("id", ""))
     await db.flush()
-    summary = _build_summary_from_config(config)
+    summary = await _build_summary_from_config(config)
     await _audit_license_config_update(payload=payload, summary=summary, user=user)
     return summary
 
@@ -84,14 +91,50 @@ def _require_admin(user: dict[str, Any]) -> None:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="缺少权限: admin")
 
 
-def _build_summary_from_config(config: LicenseConfigurationModel) -> LicenseSummary:
-    return get_license_summary(
+async def _build_summary_from_config(config: LicenseConfigurationModel) -> LicenseSummary:
+    return await _build_summary_from_values(
         configured_edition=cast(Edition, config.configured_edition),
         license_key=config.license_key,
         signing_secret=config.license_signing_secret,
         public_key=config.license_public_key,
         license_verifier=cast(LicenseVerifier, config.license_verifier),
         now=datetime.now(UTC),
+    )
+
+
+async def _build_summary_from_values(
+    *,
+    configured_edition: Edition,
+    license_key: str,
+    signing_secret: str,
+    public_key: str,
+    license_verifier: LicenseVerifier,
+    now: datetime,
+) -> LicenseSummary:
+    if license_verifier == "external-http":
+        return await get_license_summary_from_external_verifier(
+            configured_edition=configured_edition,
+            license_key=license_key,
+            client=_build_external_license_client(),
+            now=now,
+        )
+    return get_license_summary(
+        configured_edition=configured_edition,
+        license_key=license_key,
+        signing_secret=signing_secret,
+        public_key=public_key,
+        license_verifier=license_verifier,
+        now=now,
+    )
+
+
+def _build_external_license_client() -> HttpLicenseValidationClient | None:
+    if not settings.JANUSGATE_LICENSE_VALIDATION_URL.strip():
+        return None
+    return HttpLicenseValidationClient(
+        endpoint_url=settings.JANUSGATE_LICENSE_VALIDATION_URL,
+        bearer_token=settings.JANUSGATE_LICENSE_VALIDATION_TOKEN,
+        timeout_seconds=settings.JANUSGATE_LICENSE_VALIDATION_TIMEOUT_SECONDS,
     )
 
 

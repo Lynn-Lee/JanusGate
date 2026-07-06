@@ -4,6 +4,7 @@ from __future__ import annotations
 from collections.abc import AsyncGenerator
 from datetime import UTC, datetime
 
+import httpx
 import pytest
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
@@ -13,7 +14,12 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 from app.api.audits.service import repository as audit_repository
 from app.core.database import Base, get_db, get_read_db
 from app.core.deps import current_user
-from app.core.license import build_license_key, get_license_summary
+from app.core.license import (
+    HttpLicenseValidationClient,
+    build_license_key,
+    get_license_summary,
+    get_license_summary_from_external_verifier,
+)
 from app.main import app
 
 
@@ -153,7 +159,9 @@ def test_offline_public_key_license_verifier_fails_closed_for_tampered_license()
         encoding=Encoding.Raw,
         format=PublicFormat.Raw,
     )
-    tampered_license_key = license_key[:-1] + ("A" if license_key[-1] != "A" else "B")
+    payload_part, signature_part = license_key.split(".", maxsplit=1)
+    tampered_signature = ("A" if signature_part[0] != "A" else "B") + signature_part[1:]
+    tampered_license_key = f"{payload_part}.{tampered_signature}"
 
     summary = get_license_summary(
         configured_edition="enterprise",
@@ -161,6 +169,62 @@ def test_offline_public_key_license_verifier_fails_closed_for_tampered_license()
         signing_secret="",
         public_key=public_key,
         license_verifier="ed25519",
+        now=datetime(2026, 7, 6, tzinfo=UTC),
+    )
+
+    assert summary.license_status == "invalid"
+    assert summary.effective_edition == "community"
+    assert "license_management" in summary.disabled_features
+
+
+@pytest.mark.asyncio
+async def test_external_license_validation_enables_enterprise_without_local_signing_material() -> None:
+    requests: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        return httpx.Response(
+            200,
+            json={
+                "edition": "enterprise",
+                "features": ["license_management", "admin_console"],
+                "expires_at": "2026-08-01T00:00:00Z",
+            },
+        )
+
+    client = HttpLicenseValidationClient(
+        endpoint_url="https://license.example.test/v1/validate",
+        bearer_token="service-token",
+        transport=httpx.MockTransport(handler),
+    )
+
+    summary = await get_license_summary_from_external_verifier(
+        configured_edition="enterprise",
+        license_key="opaque-commercial-license",
+        client=client,
+        now=datetime(2026, 7, 6, tzinfo=UTC),
+    )
+
+    assert summary.license_status == "active"
+    assert summary.effective_edition == "enterprise"
+    assert "license_management" in summary.enabled_features
+    assert len(requests) == 1
+    assert requests[0].headers["authorization"] == "Bearer service-token"
+    assert requests[0].read() == b'{"license_key":"opaque-commercial-license"}'
+
+
+@pytest.mark.asyncio
+async def test_external_license_validation_fails_closed_for_service_errors() -> None:
+    client = HttpLicenseValidationClient(
+        endpoint_url="https://license.example.test/v1/validate",
+        bearer_token="service-token",
+        transport=httpx.MockTransport(lambda _request: httpx.Response(503, text="unavailable")),
+    )
+
+    summary = await get_license_summary_from_external_verifier(
+        configured_edition="enterprise",
+        license_key="opaque-commercial-license",
+        client=client,
         now=datetime(2026, 7, 6, tzinfo=UTC),
     )
 

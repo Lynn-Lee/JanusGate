@@ -8,13 +8,14 @@ import json
 from datetime import UTC, datetime
 from typing import Literal
 
+import httpx
 from cryptography.exceptions import InvalidSignature
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey, Ed25519PublicKey
 from pydantic import BaseModel
 
 Edition = Literal["community", "enterprise"]
 LicenseStatus = Literal["not_configured", "active", "expired", "invalid"]
-LicenseVerifier = Literal["hmac", "ed25519"]
+LicenseVerifier = Literal["hmac", "ed25519", "external-http"]
 
 COMMUNITY_FEATURES = frozenset(
     {
@@ -44,6 +45,52 @@ class LicenseSummary(BaseModel):
     expires_at: str | None = None
 
 
+class HttpLicenseValidationClient:
+    """Minimal HTTPS adapter for external commercial license validation."""
+
+    def __init__(
+        self,
+        *,
+        endpoint_url: str,
+        bearer_token: str = "",
+        timeout_seconds: float = 5.0,
+        transport: httpx.AsyncBaseTransport | None = None,
+    ) -> None:
+        if not endpoint_url.startswith("https://"):
+            raise ValueError("license validation endpoint must use https")
+        self._endpoint_url = endpoint_url
+        self._bearer_token = bearer_token
+        self._timeout_seconds = timeout_seconds
+        self._transport = transport
+
+    async def validate(self, *, license_key: str) -> dict[str, object] | None:
+        if not license_key.strip():
+            return None
+        headers: dict[str, str] = {}
+        if self._bearer_token.strip():
+            headers["Authorization"] = f"Bearer {self._bearer_token}"
+        try:
+            async with httpx.AsyncClient(
+                timeout=self._timeout_seconds,
+                transport=self._transport,
+            ) as client:
+                response = await client.post(
+                    self._endpoint_url,
+                    json={"license_key": license_key},
+                    headers=headers,
+                )
+            if response.status_code != 200:
+                return None
+            payload = response.json()
+        except (httpx.HTTPError, ValueError):
+            return None
+        if not isinstance(payload, dict):
+            return None
+        if payload.get("active") is False:
+            return None
+        return payload
+
+
 def get_license_summary(
     *,
     configured_edition: Edition,
@@ -67,6 +114,43 @@ def get_license_summary(
         status: LicenseStatus = "not_configured" if not license_key.strip() else "invalid"
         return _community_summary(configured_edition=configured_edition, status=status)
 
+    return _summary_from_verified_payload(
+        configured_edition=configured_edition,
+        payload=payload,
+        checked_at=checked_at,
+    )
+
+
+async def get_license_summary_from_external_verifier(
+    *,
+    configured_edition: Edition,
+    license_key: str,
+    client: HttpLicenseValidationClient | None,
+    now: datetime | None = None,
+) -> LicenseSummary:
+    checked_at = _coerce_utc(now or datetime.now(UTC))
+    if configured_edition == "community":
+        return _community_summary(configured_edition=configured_edition, status="not_configured")
+    if client is None:
+        status: LicenseStatus = "not_configured" if not license_key.strip() else "invalid"
+        return _community_summary(configured_edition=configured_edition, status=status)
+    payload = await client.validate(license_key=license_key)
+    if payload is None:
+        status = "not_configured" if not license_key.strip() else "invalid"
+        return _community_summary(configured_edition=configured_edition, status=status)
+    return _summary_from_verified_payload(
+        configured_edition=configured_edition,
+        payload=payload,
+        checked_at=checked_at,
+    )
+
+
+def _summary_from_verified_payload(
+    *,
+    configured_edition: Edition,
+    payload: dict[str, object],
+    checked_at: datetime,
+) -> LicenseSummary:
     expires_at = _parse_expires_at(payload.get("expires_at"))
     if expires_at is None or expires_at <= checked_at:
         return _community_summary(
@@ -172,6 +256,8 @@ def _verify_license_signature(
             return False
         expected = hmac.new(signing_secret.encode(), payload_bytes, hashlib.sha256).digest()
         return hmac.compare_digest(signature, expected)
+    if license_verifier == "external-http":
+        return False
     if not public_key:
         return False
     try:

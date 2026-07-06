@@ -131,7 +131,7 @@ COMPLIANCE_REPORT_EXTERNAL_HMAC_SECRET=<external-signing-secret>
 
 `COMPLIANCE_REPORT_EXTERNAL_HMAC_SECRET` 属于 signing secret，必须通过 Secret 注入，不写入 ConfigMap、values 明文或日志。启用 external HMAC provider 时缺少 key id 或 signing secret 会 fail-closed；真实云 KMS/证书签章服务接入仍需后续 adapter。
 
-License / Edition 默认使用 community。Phase 5 #t58 起，enterprise license 支持两种验签模式：
+License / Edition 默认使用 community。Phase 5 #t58 起，enterprise license 支持三种验签模式：
 
 ```bash
 # HMAC foundation
@@ -145,9 +145,17 @@ JANUSGATE_EDITION=enterprise
 JANUSGATE_LICENSE_VERIFIER=ed25519
 JANUSGATE_LICENSE_KEY=<license-key>
 JANUSGATE_LICENSE_PUBLIC_KEY=<base64-raw-ed25519-public-key>
+
+# External commercial license service foundation
+JANUSGATE_EDITION=enterprise
+JANUSGATE_LICENSE_VERIFIER=external-http
+JANUSGATE_LICENSE_KEY=<opaque-license-key>
+JANUSGATE_LICENSE_VALIDATION_URL=https://license.example.com/v1/validate
+JANUSGATE_LICENSE_VALIDATION_TOKEN=<service-bearer-token>
+JANUSGATE_LICENSE_VALIDATION_TIMEOUT_SECONDS=5
 ```
 
-`JANUSGATE_LICENSE_KEY`、`JANUSGATE_LICENSE_SIGNING_SECRET` 和任何签名私钥都不得写入 Git、ConfigMap、values 明文或日志。Ed25519 模式只需要在部署环境注入公钥；签名私钥必须保留在外部授权系统。
+`JANUSGATE_LICENSE_KEY`、`JANUSGATE_LICENSE_SIGNING_SECRET`、`JANUSGATE_LICENSE_VALIDATION_TOKEN` 和任何签名私钥都不得写入 Git、ConfigMap、values 明文或日志。Ed25519 模式只需要在部署环境注入公钥；签名私钥必须保留在外部授权系统。`external-http` 模式只向 HTTPS validation endpoint 发送 opaque license key，缺少 URL、服务不可用、非 200 或无效 payload 都 fail-closed 回退 community。
 
 管理员也可以通过 `POST /api/v1/admin/license-config` 写入当前激活 license 配置；后续 `GET /api/v1/admin/license-summary` 会优先读取 DB 中的持久化配置，无记录时回退上述环境变量。该接口只返回脱敏摘要，不回显 license key、signing secret、公钥或原始 payload。生产环境仍应把数据库备份、访问控制和审计日志纳入 license 配置保护范围。
 

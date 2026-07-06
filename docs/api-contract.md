@@ -66,11 +66,11 @@
 - Webhook Endpoints：`/api/v1/webhook-endpoints/*`，Phase 4 WebHook / 通知中心 endpoint 管理基础。
 - Notification Rules：`/api/v1/notification-rules/*`，Phase 4 WebHook / 通知规则管理基础。
 - Notification Deliveries：`/api/v1/notification-rules/{rule_id}/deliveries` 与 `/api/v1/notification-deliveries/*`，Phase 4 WebHook 可靠投递队列基础；`NotificationDeliveryWorker` 负责到期投递、失败重试和 dead-letter 状态推进，`HttpWebhookNotificationSender` 负责向 HTTPS WebHook endpoint 投递已脱敏 payload。
-- Admin：`/api/v1/admin/license-summary` 与 `/api/v1/admin/license-config`，Phase 5 #t58 Edition / License 边界摘要和 admin-only 持久化配置 foundation，不返回 license key、签名 secret 或任何商业密钥材料。
+- Admin：`/api/v1/admin/license-summary` 与 `/api/v1/admin/license-config`，Phase 5 #t58 Edition / License 边界摘要和 admin-only 持久化配置 foundation，不返回 license key、签名 secret、外部 validation token 或任何商业密钥材料。
 
 ## Phase 5 Edition / License Boundary（#t58）
 
-当前切片提供后端最小 feature flag 与 license 摘要基础。`JANUSGATE_EDITION=community|enterprise` 配置期望版本；默认 `community` 不需要 license，只启用 `core_pam`、`workflow_jit` 和 `audit_reports` 基础能力。`enterprise` 版本只有在 `JANUSGATE_LICENSE_KEY` 通过配置的验签器校验、payload edition 为 `enterprise`、且 `expires_at` 未过期时才生效；缺失、非法、过期或签名不匹配时 fail-closed，`effective_edition` 回退为 `community`，enterprise feature 保持 disabled。当前支持 `JANUSGATE_LICENSE_VERIFIER=hmac` + `JANUSGATE_LICENSE_SIGNING_SECRET` 的 HMAC-SHA256 验签，以及 `JANUSGATE_LICENSE_VERIFIER=ed25519` + `JANUSGATE_LICENSE_PUBLIC_KEY` 的离线公钥验签；Ed25519 模式不要求部署环境保存签名私钥。
+当前切片提供后端最小 feature flag 与 license 摘要基础。`JANUSGATE_EDITION=community|enterprise` 配置期望版本；默认 `community` 不需要 license，只启用 `core_pam`、`workflow_jit` 和 `audit_reports` 基础能力。`enterprise` 版本只有在 `JANUSGATE_LICENSE_KEY` 通过配置的验签器校验、payload edition 为 `enterprise`、且 `expires_at` 未过期时才生效；缺失、非法、过期或签名不匹配时 fail-closed，`effective_edition` 回退为 `community`，enterprise feature 保持 disabled。当前支持 `JANUSGATE_LICENSE_VERIFIER=hmac` + `JANUSGATE_LICENSE_SIGNING_SECRET` 的 HMAC-SHA256 验签、`JANUSGATE_LICENSE_VERIFIER=ed25519` + `JANUSGATE_LICENSE_PUBLIC_KEY` 的离线公钥验签，以及 `JANUSGATE_LICENSE_VERIFIER=external-http` + `JANUSGATE_LICENSE_VALIDATION_URL` 的外部商业授权服务验证 foundation；Ed25519 模式不要求部署环境保存签名私钥，external-http 模式只向 HTTPS validation endpoint 发送 opaque license key。
 
 ### GET `/api/v1/admin/license-summary`
 
@@ -94,9 +94,9 @@
 安全语义：
 
 - 响应不返回 `JANUSGATE_LICENSE_KEY`、`JANUSGATE_LICENSE_SIGNING_SECRET`、签名值或原始 license payload。
-- 响应不返回 `JANUSGATE_LICENSE_PUBLIC_KEY` 或任何签名私钥材料。
+- 响应不返回 `JANUSGATE_LICENSE_PUBLIC_KEY`、`JANUSGATE_LICENSE_VALIDATION_TOKEN` 或任何签名私钥材料。
 - `enterprise` 配置没有有效 license 时不能启用 enterprise feature。
-- `POST /api/v1/admin/license-config` 可由 `admin` 持久化当前激活 license 配置，请求字段为 `configured_edition`、`license_verifier`、`license_key`、`license_signing_secret` 与 `license_public_key`；响应复用 `LicenseSummary`，不回显 license key、signing secret、公钥或原始 payload。成功写入会追加 `admin.license_config.updated` 审计事件，metadata 只包含 configured/effective edition、license status、verifier、license key / signing material / public key 是否已配置和 enabled feature 摘要；外部商业授权服务和密钥托管仍是后续 #t58 切片。
+- `POST /api/v1/admin/license-config` 可由 `admin` 持久化当前激活 license 配置，请求字段为 `configured_edition`、`license_verifier`、`license_key`、`license_signing_secret` 与 `license_public_key`；响应复用 `LicenseSummary`，不回显 license key、signing secret、公钥、validation token 或原始 payload。成功写入会追加 `admin.license_config.updated` 审计事件，metadata 只包含 configured/effective edition、license status、verifier、license key / signing material / public key 是否已配置和 enabled feature 摘要；external-http 的 service token 仅从环境读取，不写入 license 配置表。
 
 ## Phase 4 Automation Worker Queue（#t52）
 
