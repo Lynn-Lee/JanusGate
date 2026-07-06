@@ -12,6 +12,7 @@ def test_phase5_docs_site_foundation_is_wired_for_operator_handoff() -> None:
     screenshot_fixture_path = REPO_ROOT / "docs/site/fixtures/admin-screenshot-data.json"
     screenshot_archive_path = REPO_ROOT / "docs/site/fixtures/admin-screenshot-archive.json"
     runbook_evidence_path = REPO_ROOT / "docs/site/fixtures/operation-runbook-evidence.json"
+    license_evidence_path = REPO_ROOT / "docs/site/fixtures/license-operations-evidence.json"
     api_docs = (REPO_ROOT / "docs/site/api.md").read_text()
     runbooks = (REPO_ROOT / "docs/site/runbooks.md").read_text()
     api_contract = (REPO_ROOT / "docs/api-contract.md").read_text()
@@ -29,11 +30,13 @@ def test_phase5_docs_site_foundation_is_wired_for_operator_handoff() -> None:
     assert "runbooks.md" in docs_index
     assert "admin-screenshots.md" in docs_index
     assert "operation-runbook-evidence.json" in docs_index
+    assert "license-operations-evidence.json" in docs_index
     assert "SECRET_KEY" in install_guide
     assert "docker compose up --build -d" in install_guide
     assert "helm upgrade --install" in install_guide
     assert "License / Edition" in admin_guide
     assert "/api/v1/admin/license-summary" in admin_guide
+    assert "External license service evidence" in admin_guide
     assert "截图证据" in admin_guide
     assert "Settings - License / Edition" in screenshot_guide
     assert "Audits - SOC2 report export" in screenshot_guide
@@ -72,7 +75,9 @@ def test_phase5_docs_site_foundation_is_wired_for_operator_handoff() -> None:
     assert "connection token" in runbooks
     assert "Do not print" in runbooks
     assert "Operation evidence manifest" in runbooks
+    assert "License operations evidence manifest" in runbooks
     assert "docs/site/fixtures/operation-runbook-evidence.json" in runbooks
+    assert "docs/site/fixtures/license-operations-evidence.json" in runbooks
     assert "app.main import app" in export_script
     assert "openapi.json" in export_script
     assert build_script_path.exists()
@@ -86,12 +91,14 @@ def test_phase5_docs_site_foundation_is_wired_for_operator_handoff() -> None:
     assert "fixtures/admin-screenshot-data.json" in build_script
     assert "fixtures/admin-screenshot-archive.json" in build_script
     assert "fixtures/operation-runbook-evidence.json" in build_script
+    assert "fixtures/license-operations-evidence.json" in build_script
     assert "assets/screenshots/live-screenshots/admin-settings-license-summary.png" in build_script
     assert screenshot_script_path.exists()
     screenshot_script = screenshot_script_path.read_text()
     assert screenshot_fixture_path.exists()
     assert screenshot_archive_path.exists()
     assert runbook_evidence_path.exists()
+    assert license_evidence_path.exists()
     screenshot_fixture = screenshot_fixture_path.read_text()
     screenshot_archive = screenshot_archive_path.read_text()
     assert "admin-settings-license-summary" in screenshot_fixture
@@ -148,6 +155,15 @@ def test_phase5_docs_site_foundation_is_wired_for_operator_handoff() -> None:
     assert "scripts/phase5-k8s-multi-replica-smoke.sh" in runbook_evidence
     assert "helm rollback" in runbook_evidence
     assert "DATABASE_URL" in runbook_evidence
+    license_evidence = license_evidence_path.read_text()
+    assert "janusgate.docs.license-operations-evidence.v1" in license_evidence
+    assert "external_license_service_sla" in license_evidence
+    assert "JANUSGATE_LICENSE_VALIDATION_URL" in license_evidence
+    assert "JANUSGATE_LICENSE_VALIDATION_TIMEOUT_SECONDS" in license_evidence
+    assert "key_custody_checklist" in license_evidence
+    assert "JANUSGATE_LICENSE_VALIDATION_TOKEN" in license_evidence
+    assert "license key" in license_evidence
+    assert "signing secret" in license_evidence
     assert "scripts/export-openapi-json.sh" in workflow
     assert "scripts/build-docs-site.sh" in workflow
     assert "scripts/phase5-docs-browser-screenshots-smoke.sh" in workflow
@@ -157,3 +173,4 @@ def test_phase5_docs_site_foundation_is_wired_for_operator_handoff() -> None:
     assert "静态站点发布 smoke" in roadmap
     assert "真实浏览器截图流水线 foundation" in roadmap
     assert "操作 runbook evidence manifest" in roadmap
+    assert "license operations evidence manifest" in roadmap

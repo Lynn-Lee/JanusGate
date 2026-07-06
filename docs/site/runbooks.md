@@ -6,6 +6,12 @@
 
 可交接的操作证据字段固定在 `docs/site/fixtures/operation-runbook-evidence.json`。该 manifest 把 release、多副本 smoke、rollback 和 secret handling 清单映射到必须记录的命令、结果和密钥边界，随 `scripts/build-docs-site.sh dist/docs-site` 发布到 `fixtures/operation-runbook-evidence.json`，便于审计或外部交付复核。
 
+## License operations evidence manifest
+
+License / Edition 运营证据字段固定在 `docs/site/fixtures/license-operations-evidence.json`，并随 `scripts/build-docs-site.sh dist/docs-site` 发布到 `fixtures/license-operations-evidence.json`。该 manifest 覆盖 external-http 授权服务 SLA、fail-closed drill、timeout budget、目标环境、升级联系人、key custody owner、rotation cadence 和 revocation process。
+
+记录证据时只保存配置状态、负责人和演练结果。不得在 run log、截图、manifest 或 Git 中保存 license key、signing secret、`JANUSGATE_LICENSE_VALIDATION_TOKEN`、私钥、原始授权 payload 或外部授权服务返回的客户数据。
+
 ## Release checklist
 
 1. 确认 `dev` 已合并目标变更，且 CI 通过。

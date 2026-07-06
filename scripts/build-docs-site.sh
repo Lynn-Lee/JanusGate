@@ -25,6 +25,7 @@ mkdir -p "$output_abs/fixtures"
 cp "$repo_root/docs/site/fixtures/admin-screenshot-data.json" "$output_abs/fixtures/admin-screenshot-data.json"
 cp "$repo_root/docs/site/fixtures/admin-screenshot-archive.json" "$output_abs/fixtures/admin-screenshot-archive.json"
 cp "$repo_root/docs/site/fixtures/operation-runbook-evidence.json" "$output_abs/fixtures/operation-runbook-evidence.json"
+cp "$repo_root/docs/site/fixtures/license-operations-evidence.json" "$output_abs/fixtures/license-operations-evidence.json"
 
 cat > "$output_abs/manifest.json" <<'JSON'
 {
@@ -49,13 +50,20 @@ cat > "$output_abs/manifest.json" <<'JSON'
   "fixtures": [
     "fixtures/admin-screenshot-data.json",
     "fixtures/admin-screenshot-archive.json",
-    "fixtures/operation-runbook-evidence.json"
+    "fixtures/operation-runbook-evidence.json",
+    "fixtures/license-operations-evidence.json"
   ],
   "operationRunbookEvidence": {
     "source": "docs/site/runbooks.md",
     "manifest": "docs/site/fixtures/operation-runbook-evidence.json",
     "packagePath": "fixtures/operation-runbook-evidence.json",
     "schemaVersion": "janusgate.docs.operation-runbook-evidence.v1"
+  },
+  "licenseOperationsEvidence": {
+    "source": "docs/site/runbooks.md",
+    "manifest": "docs/site/fixtures/license-operations-evidence.json",
+    "packagePath": "fixtures/license-operations-evidence.json",
+    "schemaVersion": "janusgate.docs.license-operations-evidence.v1"
   },
   "screenshotCapture": {
     "smoke": "scripts/phase5-docs-browser-screenshots-smoke.sh",

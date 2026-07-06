@@ -23,6 +23,8 @@
 
 前端 Settings 页已提供最小 License lifecycle 表单，可选择 `community` / `enterprise`、`hmac` / `ed25519` 验签模式，并提交 license key、signing secret 或公钥到 `POST /api/v1/admin/license-config`。后端也支持 `external-http` 外部商业授权服务验证 foundation，该模式从环境读取 HTTPS validation endpoint 和 service token，不通过页面提交 service token。提交后页面只刷新脱敏 `LicenseSummary`，不会展示请求中的 license key、signing secret、公钥或原始 payload。
 
+External license service evidence 固定在 `docs/site/fixtures/license-operations-evidence.json`。该 manifest 只要求记录 external validation endpoint owner、SLA / support window、timeout budget、fail-closed drill、key custody owner、rotation cadence 和 revocation process；不得记录 license key、signing secret、validation token、私钥或原始授权 payload。
+
 每次成功写入 license 配置都会追加 `admin.license_config.updated` 审计事件，记录 configured/effective edition、license status、verifier、license key / signing material / public key 是否已配置以及启用 feature 列表。审计 metadata 不保存 license key、signing secret、公钥或原始 payload。
 
 版本验签支持两种本地可审计模式和一种外部授权服务模式：

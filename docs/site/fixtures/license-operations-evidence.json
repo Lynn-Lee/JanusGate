@@ -1,0 +1,54 @@
+{
+  "schema_version": "janusgate.docs.license-operations-evidence.v1",
+  "purpose": "Machine-readable evidence contract for Phase 5 #t58 external license service operations, SLA handoff, and key custody review.",
+  "source": "docs/site/runbooks.md",
+  "evidence": [
+    {
+      "id": "external_license_service_sla",
+      "runbook_section": "License operations evidence manifest",
+      "required_configuration": [
+        "JANUSGATE_LICENSE_VERIFIER=external-http",
+        "JANUSGATE_LICENSE_VALIDATION_URL uses https",
+        "JANUSGATE_LICENSE_VALIDATION_TIMEOUT_SECONDS is recorded",
+        "JANUSGATE_LICENSE_VALIDATION_TOKEN is injected through environment or secret manager only"
+      ],
+      "required_records": [
+        "target environment",
+        "license validation endpoint owner",
+        "SLA or support window",
+        "timeout budget",
+        "fail-closed drill result",
+        "last successful validation timestamp",
+        "incident escalation contact"
+      ],
+      "secret_handling": [
+        "Record whether the service token is configured, but never record JANUSGATE_LICENSE_VALIDATION_TOKEN.",
+        "Record whether a license key was installed, but never record the license key value.",
+        "Do not store external authorization service responses when they include customer data."
+      ]
+    },
+    {
+      "id": "key_custody_checklist",
+      "runbook_section": "License operations evidence manifest",
+      "required_configuration": [
+        "JANUSGATE_LICENSE_VERIFIER=hmac or ed25519 or external-http",
+        "JANUSGATE_LICENSE_SIGNING_SECRET is only used for HMAC deployments",
+        "JANUSGATE_LICENSE_PUBLIC_KEY is public material for Ed25519 deployments",
+        "signing private keys stay outside JanusGate runtime"
+      ],
+      "required_records": [
+        "license verifier mode",
+        "signing key custody owner",
+        "rotation cadence",
+        "revocation process",
+        "break-glass approver",
+        "backup and recovery owner"
+      ],
+      "secret_handling": [
+        "Do not print license key, signing secret, validation token, private key, or raw license payload.",
+        "Do not commit license key, signing secret, validation token, private key, or customer entitlement payload to Git.",
+        "For Ed25519, only the public key may be present in runtime configuration."
+      ]
+    }
+  ]
+}
