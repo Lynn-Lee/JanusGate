@@ -35,6 +35,12 @@ def test_ci_runs_phase5_k8s_multi_replica_smoke_gate() -> None:
     assert "scripts/phase5-k8s-multi-replica-smoke.sh" in workflow
 
 
+def test_ci_runs_phase5_capacity_model_smoke_gate() -> None:
+    workflow = (REPO_ROOT / ".github/workflows/ci.yml").read_text()
+
+    assert "scripts/phase5-capacity-model-smoke.sh" in workflow
+
+
 def test_phase5_ha_config_smoke_covers_redis_hpa_and_read_replica() -> None:
     script = (REPO_ROOT / "scripts/phase5-ha-config-smoke.sh").read_text()
 
@@ -60,6 +66,21 @@ def test_phase5_k8s_multi_replica_smoke_verifies_live_cluster_rollout() -> None:
     assert "kubectl port-forward svc/" in script
     assert "http://127.0.0.1:${local_port}/health" in script
     assert "helm uninstall" in script
+
+
+def test_phase5_capacity_model_smoke_defines_slo_and_load_inputs() -> None:
+    script = (REPO_ROOT / "scripts/phase5-capacity-model-smoke.sh").read_text()
+    baseline = (REPO_ROOT / "docs/performance/phase5-capacity-model.md").read_text()
+
+    assert "JANUSGATE_LOAD_TEST_RPS" in script
+    assert "JANUSGATE_LOAD_TEST_P95_MS" in script
+    assert "JANUSGATE_CAPACITY_MODEL_MAX_CORE_RPS" in script
+    assert "JANUSGATE_SLO_P95_MS" in script
+    assert "capacity_headroom_percent" in script
+    assert "Phase 5 #t55" in baseline
+    assert "SLO" in baseline
+    assert "p95" in baseline
+    assert "capacity_headroom_percent" in baseline
 
 
 def test_compose_internal_dependencies_do_not_bind_fixed_host_ports() -> None:
