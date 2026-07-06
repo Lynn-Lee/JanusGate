@@ -9,6 +9,7 @@ def test_phase5_docs_site_foundation_is_wired_for_operator_handoff() -> None:
     install_guide = (REPO_ROOT / "docs/site/install.md").read_text()
     admin_guide = (REPO_ROOT / "docs/site/admin.md").read_text()
     api_docs = (REPO_ROOT / "docs/site/api.md").read_text()
+    runbooks = (REPO_ROOT / "docs/site/runbooks.md").read_text()
     api_contract = (REPO_ROOT / "docs/api-contract.md").read_text()
     export_script = (REPO_ROOT / "scripts/export-openapi-json.sh").read_text()
     build_script_path = REPO_ROOT / "scripts/build-docs-site.sh"
@@ -20,6 +21,7 @@ def test_phase5_docs_site_foundation_is_wired_for_operator_handoff() -> None:
     assert "install.md" in docs_index
     assert "admin.md" in docs_index
     assert "api.md" in docs_index
+    assert "runbooks.md" in docs_index
     assert "SECRET_KEY" in install_guide
     assert "docker compose up --build -d" in install_guide
     assert "helm upgrade --install" in install_guide
@@ -29,6 +31,10 @@ def test_phase5_docs_site_foundation_is_wired_for_operator_handoff() -> None:
     assert "/api/v1/sessions/" in api_docs
     assert "/api/v1/admin/license-summary" in api_docs
     assert "scripts/export-openapi-json.sh" in api_docs
+    assert "Release checklist" in runbooks
+    assert "helm rollback" in runbooks
+    assert "connection token" in runbooks
+    assert "Do not print" in runbooks
     assert "app.main import app" in export_script
     assert "openapi.json" in export_script
     assert build_script_path.exists()
@@ -36,6 +42,7 @@ def test_phase5_docs_site_foundation_is_wired_for_operator_handoff() -> None:
     assert "docs-site" in build_script
     assert "openapi.json" in build_script
     assert "index.md" in build_script
+    assert "runbooks.md" in build_script
     assert "scripts/export-openapi-json.sh" in workflow
     assert "scripts/build-docs-site.sh" in workflow
     assert "API 前缀" in api_contract
