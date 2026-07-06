@@ -76,11 +76,29 @@ const fixturePath = process.env.JANUSGATE_DOC_SCREENSHOT_FIXTURE_PATH;
 const accessToken = process.env.JANUSGATE_DOC_SCREENSHOT_ACCESS_TOKEN || 'docs-screenshot-token';
 const fixtureData = JSON.parse(fs.readFileSync(fixturePath, 'utf8'));
 
-const shots = [
-  { route: '/settings', file: 'admin-settings-license-summary.svg' },
-  { route: '/audits', file: 'admin-audits-soc2-export.svg' },
-  { route: '/sessions', file: 'admin-sessions-recording-timeline.svg' }
-];
+async function runCaptureAction(page, action) {
+  if (action.type === 'fill') {
+    await page.getByLabel(action.label).fill(action.value);
+    return;
+  }
+  if (action.type === 'click') {
+    await page.getByRole(action.role, { name: action.name }).click();
+    return;
+  }
+  throw new Error(`Unsupported docs screenshot capture action: ${action.type}`);
+}
+
+async function assertScreenshotContract(page, evidence) {
+  for (const text of evidence.must_show || []) {
+    await page.getByText(text, { exact: false }).first().waitFor({ state: 'visible' });
+  }
+  for (const text of evidence.must_not_show || []) {
+    const count = await page.getByText(text, { exact: false }).count();
+    if (count > 0) {
+      throw new Error(`Forbidden screenshot text is visible for ${evidence.id}: ${text}`);
+    }
+  }
+}
 
 (async () => {
   const browser = await chromium.launch();
@@ -92,11 +110,15 @@ const shots = [
     window.localStorage.setItem('janusgate-doc-screenshot-fixture', JSON.stringify(fixture));
   }, fixtureData);
 
-  for (const shot of shots) {
+  for (const evidence of fixtureData.evidence) {
     const page = await context.newPage();
-    await page.goto(`${baseUrl}${shot.route}`, { waitUntil: 'networkidle' });
+    await page.goto(`${baseUrl}${evidence.route}`, { waitUntil: 'networkidle' });
+    for (const action of evidence.capture_actions || []) {
+      await runCaptureAction(page, action);
+    }
+    await assertScreenshotContract(page, evidence);
     await page.screenshot({
-      path: path.join(outputDir, shot.file),
+      path: path.join(outputDir, path.basename(evidence.screenshot_file)),
       fullPage: true
     });
     await page.close();
