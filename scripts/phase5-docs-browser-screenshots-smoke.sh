@@ -3,6 +3,7 @@ set -euo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 screenshot_dir="$repo_root/docs/site/assets/screenshots"
+live_screenshot_dir="$screenshot_dir/live-screenshots"
 fixture_file="$repo_root/docs/site/fixtures/admin-screenshot-data.json"
 archive_file="$repo_root/docs/site/fixtures/admin-screenshot-archive.json"
 docs_package_dir="${JANUSGATE_DOCS_SITE_DIR:-$repo_root/dist/docs-site}"
@@ -14,6 +15,14 @@ required_screenshots=(
   "admin-tenancy-organization-inventory.svg"
   "admin-accounts-credential-rotation.svg"
   "admin-ssh-ca-trust-bundle.svg"
+)
+required_live_screenshots=(
+  "admin-settings-license-summary.png"
+  "admin-audits-soc2-export.png"
+  "admin-sessions-recording-timeline.png"
+  "admin-tenancy-organization-inventory.png"
+  "admin-accounts-credential-rotation.png"
+  "admin-ssh-ca-trust-bundle.png"
 )
 
 require_file() {
@@ -27,6 +36,9 @@ require_file() {
 for screenshot in "${required_screenshots[@]}"; do
   require_file "$screenshot_dir/$screenshot"
   grep -q '<svg' "$screenshot_dir/$screenshot"
+done
+for screenshot in "${required_live_screenshots[@]}"; do
+  require_file "$live_screenshot_dir/$screenshot"
 done
 
 require_file "$repo_root/docs/site/admin-screenshots.md"
@@ -57,6 +69,9 @@ if [[ -f "$docs_package_dir/manifest.json" ]]; then
   for screenshot in "${required_screenshots[@]}"; do
     grep -q "assets/screenshots/$screenshot" "$docs_package_dir/manifest.json"
   done
+  for screenshot in "${required_live_screenshots[@]}"; do
+    grep -q "assets/screenshots/live-screenshots/$screenshot" "$docs_package_dir/manifest.json"
+  done
 fi
 
 if [[ "${JANUSGATE_CAPTURE_DOC_SCREENSHOTS:-0}" != "1" ]]; then
@@ -78,6 +93,8 @@ if ! (cd "$repo_root/frontend" && node -e "require.resolve('playwright')" >/dev/
   printf 'Playwright is required for capture mode. Install it in frontend/ before setting JANUSGATE_CAPTURE_DOC_SCREENSHOTS=1.\n' >&2
   exit 1
 fi
+
+mkdir -p "$live_screenshot_dir"
 
 capture_script="$(mktemp)"
 trap 'rm -f "$capture_script"' EXIT
@@ -133,8 +150,9 @@ async function assertScreenshotContract(page, evidence) {
       await runCaptureAction(page, action);
     }
     await assertScreenshotContract(page, evidence);
+    const liveScreenshotFile = path.basename(evidence.screenshot_file).replace(/\.svg$/u, '.png');
     await page.screenshot({
-      path: path.join(outputDir, path.basename(evidence.screenshot_file)),
+      path: path.join(outputDir, liveScreenshotFile),
       fullPage: true
     });
     await page.close();
@@ -144,8 +162,9 @@ async function assertScreenshotContract(page, evidence) {
 })();
 JS
 
-JANUSGATE_DOC_SCREENSHOT_OUTPUT_DIR="$screenshot_dir" \
+JANUSGATE_DOC_SCREENSHOT_OUTPUT_DIR="$live_screenshot_dir" \
 JANUSGATE_DOC_SCREENSHOT_FIXTURE_PATH="$fixture_file" \
+NODE_PATH="$repo_root/frontend/node_modules" \
   node "$capture_script"
 
-printf 'Captured browser screenshots into %s\n' "$screenshot_dir"
+printf 'Captured browser screenshots into %s\n' "$live_screenshot_dir"

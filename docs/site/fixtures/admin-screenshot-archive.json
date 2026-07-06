@@ -6,6 +6,8 @@
   "capture_command": "JANUSGATE_CAPTURE_DOC_SCREENSHOTS=1 JANUSGATE_FRONTEND_BASE_URL=http://127.0.0.1:5173 scripts/phase5-docs-browser-screenshots-smoke.sh",
   "fixture": "docs/site/fixtures/admin-screenshot-data.json",
   "output_directory": "docs/site/assets/screenshots",
+  "live_output_directory": "docs/site/assets/screenshots/live-screenshots",
+  "live_artifact_format": "png",
   "required_checks": [
     "must_show",
     "must_not_show",
@@ -17,36 +19,42 @@
       "id": "admin-settings-license-summary",
       "route": "/settings",
       "artifact": "assets/screenshots/admin-settings-license-summary.svg",
+      "live_artifact": "assets/screenshots/live-screenshots/admin-settings-license-summary.png",
       "regression_source": "frontend/src/pages/mvp-pages.test.tsx"
     },
     {
       "id": "admin-audits-soc2-export",
       "route": "/audits",
       "artifact": "assets/screenshots/admin-audits-soc2-export.svg",
+      "live_artifact": "assets/screenshots/live-screenshots/admin-audits-soc2-export.png",
       "regression_source": "frontend/src/pages/mvp-pages.test.tsx"
     },
     {
       "id": "admin-sessions-recording-timeline",
       "route": "/sessions",
       "artifact": "assets/screenshots/admin-sessions-recording-timeline.svg",
+      "live_artifact": "assets/screenshots/live-screenshots/admin-sessions-recording-timeline.png",
       "regression_source": "frontend/src/pages/mvp-pages.test.tsx"
     },
     {
       "id": "admin-tenancy-organization-inventory",
       "route": "/tenancy",
       "artifact": "assets/screenshots/admin-tenancy-organization-inventory.svg",
+      "live_artifact": "assets/screenshots/live-screenshots/admin-tenancy-organization-inventory.png",
       "regression_source": "frontend/src/pages/mvp-pages.test.tsx"
     },
     {
       "id": "admin-accounts-credential-rotation",
       "route": "/accounts",
       "artifact": "assets/screenshots/admin-accounts-credential-rotation.svg",
+      "live_artifact": "assets/screenshots/live-screenshots/admin-accounts-credential-rotation.png",
       "regression_source": "frontend/src/pages/mvp-pages.test.tsx"
     },
     {
       "id": "admin-ssh-ca-trust-bundle",
       "route": "/ssh-ca",
       "artifact": "assets/screenshots/admin-ssh-ca-trust-bundle.svg",
+      "live_artifact": "assets/screenshots/live-screenshots/admin-ssh-ca-trust-bundle.png",
       "regression_source": "frontend/src/pages/mvp-pages.test.tsx"
     }
   ]

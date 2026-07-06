@@ -43,7 +43,7 @@
    scripts/phase5-docs-browser-screenshots-smoke.sh
    ```
 
-4. 捕获后复核 `docs/site/assets/screenshots/`，不得包含 bearer token、license key、signing secret、连接串、私钥或真实客户数据。
+4. 捕获后复核 `docs/site/assets/screenshots/live-screenshots/*.png`，不得包含 bearer token、license key、signing secret、连接串、私钥或真实客户数据；根目录 SVG 资产保留为静态发布包脱敏基线证据。
 5. 重新运行 `scripts/build-docs-site.sh dist/docs-site`，确认 manifest 仍包含截图资产和 `screenshotCapture`。
 
 ## Multi-replica smoke checklist

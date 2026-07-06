@@ -189,7 +189,7 @@
         }
       ],
       "must_show": [
-        "Recording ID",
+        "录制回放时间线",
         "sudo systemctl restart nginx",
         "password=[REDACTED]"
       ],
@@ -359,6 +359,23 @@
             }
           ],
           "total": 1
+        },
+        "/api/v1/ssh-certificates/5/revoke": {
+          "id": 5,
+          "tenant_id": "tenant-a",
+          "ca_id": 3,
+          "asset_id": 1,
+          "account_id": 1,
+          "principal": "deploy",
+          "public_key": "ssh-ed25519 AAAAC3NzaClient",
+          "serial": "serial-5",
+          "certificate_body": "ssh-ed25519-cert-v01@openssh.com AAAAissued",
+          "requested_by": "admin",
+          "valid_after": "2026-07-04T10:00:00Z",
+          "valid_before": "2026-07-04T10:30:00Z",
+          "status": "revoked",
+          "revoked_at": "2026-07-04T10:20:00Z",
+          "revoke_reason": "console revoked"
         }
       },
       "capture_actions": [

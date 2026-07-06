@@ -38,7 +38,13 @@ cat > "$output_abs/manifest.json" <<'JSON'
     "assets/screenshots/admin-sessions-recording-timeline.svg",
     "assets/screenshots/admin-tenancy-organization-inventory.svg",
     "assets/screenshots/admin-accounts-credential-rotation.svg",
-    "assets/screenshots/admin-ssh-ca-trust-bundle.svg"
+    "assets/screenshots/admin-ssh-ca-trust-bundle.svg",
+    "assets/screenshots/live-screenshots/admin-settings-license-summary.png",
+    "assets/screenshots/live-screenshots/admin-audits-soc2-export.png",
+    "assets/screenshots/live-screenshots/admin-sessions-recording-timeline.png",
+    "assets/screenshots/live-screenshots/admin-tenancy-organization-inventory.png",
+    "assets/screenshots/live-screenshots/admin-accounts-credential-rotation.png",
+    "assets/screenshots/live-screenshots/admin-ssh-ca-trust-bundle.png"
   ],
   "fixtures": [
     "fixtures/admin-screenshot-data.json",
@@ -55,6 +61,8 @@ cat > "$output_abs/manifest.json" <<'JSON'
     "smoke": "scripts/phase5-docs-browser-screenshots-smoke.sh",
     "fixture": "docs/site/fixtures/admin-screenshot-data.json",
     "archive": "docs/site/fixtures/admin-screenshot-archive.json",
+    "liveOutputDirectory": "docs/site/assets/screenshots/live-screenshots",
+    "liveArtifactFormat": "png",
     "captureEnv": "JANUSGATE_CAPTURE_DOC_SCREENSHOTS=1",
     "frontendBaseUrlEnv": "JANUSGATE_FRONTEND_BASE_URL"
   },

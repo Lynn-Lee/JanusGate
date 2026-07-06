@@ -86,6 +86,7 @@ def test_phase5_docs_site_foundation_is_wired_for_operator_handoff() -> None:
     assert "fixtures/admin-screenshot-data.json" in build_script
     assert "fixtures/admin-screenshot-archive.json" in build_script
     assert "fixtures/operation-runbook-evidence.json" in build_script
+    assert "assets/screenshots/live-screenshots/admin-settings-license-summary.png" in build_script
     assert screenshot_script_path.exists()
     screenshot_script = screenshot_script_path.read_text()
     assert screenshot_fixture_path.exists()
@@ -98,6 +99,8 @@ def test_phase5_docs_site_foundation_is_wired_for_operator_handoff() -> None:
     assert "admin-audits-soc2-export" in screenshot_fixture
     assert "worm_content_hash" in screenshot_fixture
     assert "admin-sessions-recording-timeline" in screenshot_fixture
+    assert '"label": "Recording ID"' in screenshot_fixture
+    assert '"录制回放时间线"' in screenshot_fixture
     assert "password=[REDACTED]" in screenshot_fixture
     assert "admin-tenancy-organization-inventory" in screenshot_fixture
     assert "Tenant A Ops" in screenshot_fixture
@@ -106,6 +109,7 @@ def test_phase5_docs_site_foundation_is_wired_for_operator_handoff() -> None:
     assert "plaintext-password" in screenshot_fixture
     assert "admin-ssh-ca-trust-bundle" in screenshot_fixture
     assert "Tenant A SSH CA" in screenshot_fixture
+    assert "/api/v1/ssh-certificates/5/revoke" in screenshot_fixture
     assert "private_key_secret_id" in screenshot_fixture
     assert "JANUSGATE_CAPTURE_DOC_SCREENSHOTS" in screenshot_script
     assert "docs/site/fixtures/admin-screenshot-data.json" in screenshot_script
@@ -116,7 +120,11 @@ def test_phase5_docs_site_foundation_is_wired_for_operator_handoff() -> None:
     assert "must_not_show" in screenshot_script
     assert "getByRole" in screenshot_script
     assert "getByLabel" in screenshot_script
+    assert "live-screenshots" in screenshot_script
+    assert "NODE_PATH" in screenshot_script
+    assert "replace(/\\.svg$/u, '.png')" in screenshot_script
     assert "admin-settings-license-summary.svg" in screenshot_script
+    assert "admin-settings-license-summary.png" in screenshot_script
     assert "admin-audits-soc2-export.svg" in screenshot_script
     assert "admin-sessions-recording-timeline.svg" in screenshot_script
     assert "admin-tenancy-organization-inventory.svg" in screenshot_script
@@ -125,6 +133,8 @@ def test_phase5_docs_site_foundation_is_wired_for_operator_handoff() -> None:
     assert "janusgate.docs.admin-screenshot-archive.v1" in screenshot_archive
     assert "JANUSGATE_FRONTEND_BASE_URL" in screenshot_archive
     assert "live_browser_capture" in screenshot_archive
+    assert "live_output_directory" in screenshot_archive
+    assert "assets/screenshots/live-screenshots/admin-settings-license-summary.png" in screenshot_archive
     assert "admin-settings-license-summary" in screenshot_archive
     assert "admin-ssh-ca-trust-bundle" in screenshot_archive
     runbook_evidence = runbook_evidence_path.read_text()
