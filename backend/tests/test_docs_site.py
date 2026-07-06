@@ -172,5 +172,7 @@ def test_phase5_docs_site_foundation_is_wired_for_operator_handoff() -> None:
     assert "OpenAPI 自动生成 foundation" in roadmap
     assert "静态站点发布 smoke" in roadmap
     assert "真实浏览器截图流水线 foundation" in roadmap
+    assert "live PNG 已在真实 Vite 前端环境刷新" in roadmap
+    assert "真实浏览器 PNG 已完成刷新" in docs_readme
     assert "操作 runbook evidence manifest" in roadmap
     assert "license operations evidence manifest" in roadmap
