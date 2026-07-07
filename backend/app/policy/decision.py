@@ -137,9 +137,46 @@ class PolicyDecisionService:
             return False
         if not conditions:
             return True
+        return self._approval_policy_dsl_node_includes(conditions, request)
+
+    def _approval_policy_dsl_node_includes(
+        self, conditions: Any, request: PolicyDecisionRequest
+    ) -> bool:
+        if not isinstance(conditions, dict):
+            return False
         if any(
-            key not in {"context_equals", "context_in", "context_not_equals", "context_not_in"}
+            key
+            not in {
+                "context_equals",
+                "context_in",
+                "context_not_equals",
+                "context_not_in",
+                "all",
+                "any",
+            }
             for key in conditions
+        ):
+            return False
+
+        all_conditions = conditions.get("all", [])
+        if not isinstance(all_conditions, list):
+            return False
+        if "all" in conditions and not all_conditions:
+            return False
+        if not all(
+            self._approval_policy_dsl_node_includes(condition, request)
+            for condition in all_conditions
+        ):
+            return False
+
+        any_conditions = conditions.get("any", [])
+        if not isinstance(any_conditions, list):
+            return False
+        if "any" in conditions and not any_conditions:
+            return False
+        if any_conditions and not any(
+            self._approval_policy_dsl_node_includes(condition, request)
+            for condition in any_conditions
         ):
             return False
 

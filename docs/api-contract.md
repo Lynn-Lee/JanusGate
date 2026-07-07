@@ -365,7 +365,16 @@ template=soc2-access
     },
     "context_not_in": {
       "account_tier": ["sandbox", "break-glass"]
-    }
+    },
+    "any": [
+      {
+        "all": [
+          {"context_equals": {"protocol": "ssh"}},
+          {"context_in": {"risk_level": ["high", "critical"]}}
+        ]
+      },
+      {"context_equals": {"break_glass": "true"}}
+    ]
   }
 }
 ```
@@ -399,7 +408,7 @@ template=soc2-access
 - 策略模板只能写入当前租户；跨租户读取不会返回该策略。
 - `PolicyDecisionService` 可接收已加载的 approval policy template；匹配当前租户、action selector、resource selector 且落入 deterministic rollout bucket 的请求会要求 JIT approval，并在 `APPROVAL_REQUIRED` obligations 中返回 approval policy、审批人、MFA、TTL 和风险级别元数据。
 - `rollout_percentage` 默认为 `100`，取值范围 `0-100`；`0` 表示当前 active policy 不命中任何 subject/resource，`100` 表示全部命中，`1-99` 使用策略 ID、租户、subject ID 和 resource ID 做稳定哈希分桶。灰度排除时响应保持 deny-by-default 的 `NO_MATCHING_POLICY`，不会返回 secret 或跨租户信息。
-- `dsl_conditions.context_equals` 支持按请求 `context` 中的键值做精确匹配；`dsl_conditions.context_in` 支持按请求 `context` 中的键值做枚举匹配，枚举值必须是数组；`dsl_conditions.context_not_equals` 支持按请求 `context` 中的键值做排除匹配，值相等时该策略不命中；`dsl_conditions.context_not_in` 支持按请求 `context` 中的键值做枚举排除匹配，枚举值必须是数组，命中枚举值时该策略不命中。不匹配、DSL JSON 损坏、`context_in` / `context_not_in` 非数组、`context_not_equals` 非对象或出现未支持操作符时 fail-closed 为 `NO_MATCHING_POLICY`。
+- `dsl_conditions.context_equals` 支持按请求 `context` 中的键值做精确匹配；`dsl_conditions.context_in` 支持按请求 `context` 中的键值做枚举匹配，枚举值必须是数组；`dsl_conditions.context_not_equals` 支持按请求 `context` 中的键值做排除匹配，值相等时该策略不命中；`dsl_conditions.context_not_in` 支持按请求 `context` 中的键值做枚举排除匹配，枚举值必须是数组，命中枚举值时该策略不命中。`dsl_conditions.all` 和 `dsl_conditions.any` 支持非空数组形式的递归组合表达式，同一对象内多个条件按 AND 语义同时满足。不匹配、DSL JSON 损坏、`context_in` / `context_not_in` 非数组、`all` / `any` 非数组或空数组、`context_not_equals` 非对象或出现未支持操作符时 fail-closed 为 `NO_MATCHING_POLICY`。
 - Phase 4 #t48 版本管理基础中，响应会返回 `policy_family_id`、`version` 与 `is_active`；新建策略默认为同 family 的 v1 active 版本。
 - 响应不返回 DSL 条件、凭据、连接 token、审批下游密钥或外部通知 secret。
 
@@ -423,7 +432,7 @@ template=soc2-access
 
 - 新版本创建只在当前租户 policy family 内生效；不能借此探测或覆盖跨租户策略。
 - 响应仍只返回 selector、审批人、MFA、TTL、风险级别和版本元数据，不返回 DSL、凭据、连接 token、Webhook secret 或任何下游密钥。
-- 版本可携带新的 `dsl_conditions.context_equals` / `context_in` / `context_not_equals` / `context_not_in` 条件；响应仍不回显 DSL 条件。
+- 版本可携带新的 `dsl_conditions.context_equals` / `context_in` / `context_not_equals` / `context_not_in` 条件，也可携带 `all` / `any` 组合表达式；响应仍不回显 DSL 条件。
 
 ### POST `/api/v1/workflows/approval-policies/{policy_id}/rollback`
 
@@ -437,7 +446,7 @@ template=soc2-access
 
 - 回滚只在当前租户 policy family 内生效；不能借此探测或覆盖跨租户策略。
 - 响应仍只返回 selector、审批人、MFA、TTL、风险级别和版本元数据，不返回 DSL、凭据、连接 token、Webhook secret 或任何下游密钥。
-- 回滚会恢复目标版本保存的 `dsl_conditions.context_equals` / `context_in` / `context_not_equals` / `context_not_in` 条件；响应仍不回显 DSL 条件。
+- 回滚会恢复目标版本保存的 `dsl_conditions.context_equals` / `context_in` / `context_not_equals` / `context_not_in` 条件以及 `all` / `any` 组合表达式；响应仍不回显 DSL 条件。
 
 ### POST `/api/v1/workflows/approval-policies/simulate`
 
@@ -497,7 +506,7 @@ template=soc2-access
 
 - 模拟结果只基于当前租户策略；跨租户策略不会被读取或命中。
 - 响应只返回决策解释和 obligations，不返回凭据、连接 token、Webhook secret 或任何下游密钥。
-- 当前切片模拟已保存策略模板、`context_equals` / `context_in` / `context_not_equals` / `context_not_in` DSL 条件和 rollout 分桶；复杂表达式与更多 DSL 操作符仍未提供。
+- 当前切片模拟已保存策略模板、`context_equals` / `context_in` / `context_not_equals` / `context_not_in` DSL 条件、`all` / `any` 组合表达式和 rollout 分桶；更多 DSL 操作符仍待后续切片。
 
 ## Phase 4 Webhook Endpoint API（#t47）
 

@@ -418,6 +418,84 @@ async def test_approval_policy_dsl_context_not_in_filters_simulation_requests(
 
 
 @pytest.mark.asyncio
+async def test_approval_policy_dsl_any_all_composes_simulation_conditions(
+    session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    install_db(session_factory)
+
+    with TestClient(app) as client:
+        install_user(tenant_id="tenant-a", permissions=["workflow:admin"])
+        create_response = client.post(
+            "/api/v1/workflows/approval-policies",
+            json={
+                "resource_selector": {"asset_id": "asset-1"},
+                "action_selector": "session.connect",
+                "approver_subject_ids": ["manager-1"],
+                "max_grant_ttl_seconds": 900,
+                "risk_level": "high",
+                "dsl_conditions": {
+                    "any": [
+                        {
+                            "all": [
+                                {"context_equals": {"protocol": "ssh"}},
+                                {"context_in": {"risk_level": ["high", "critical"]}},
+                            ]
+                        },
+                        {"context_equals": {"break_glass": "true"}},
+                    ]
+                },
+            },
+        )
+        low_risk_response = client.post(
+            "/api/v1/workflows/approval-policies/simulate",
+            json={
+                "subject": {"id": "user-2", "tenant_id": "tenant-a"},
+                "action": "session.connect",
+                "resource": {"id": "asset-1", "type": "asset", "tenant_id": "tenant-a"},
+                "context": {"protocol": "ssh", "risk_level": "low"},
+                "connector_trusted": True,
+            },
+        )
+        high_risk_response = client.post(
+            "/api/v1/workflows/approval-policies/simulate",
+            json={
+                "subject": {"id": "user-2", "tenant_id": "tenant-a"},
+                "action": "session.connect",
+                "resource": {"id": "asset-1", "type": "asset", "tenant_id": "tenant-a"},
+                "context": {"protocol": "ssh", "risk_level": "high"},
+                "connector_trusted": True,
+            },
+        )
+        break_glass_response = client.post(
+            "/api/v1/workflows/approval-policies/simulate",
+            json={
+                "subject": {"id": "user-2", "tenant_id": "tenant-a"},
+                "action": "session.connect",
+                "resource": {"id": "asset-1", "type": "asset", "tenant_id": "tenant-a"},
+                "context": {"protocol": "rdp", "break_glass": "true"},
+                "connector_trusted": True,
+            },
+        )
+
+    assert create_response.status_code == 201
+    created = create_response.json()
+    assert low_risk_response.status_code == 200
+    low_risk_simulated = low_risk_response.json()
+    assert low_risk_simulated["reason_code"] == "NO_MATCHING_POLICY"
+    assert f"approval_policy:{created['id']}:dsl_excluded" in low_risk_simulated[
+        "explain_trace"
+    ]
+    assert high_risk_response.status_code == 200
+    high_risk_simulated = high_risk_response.json()
+    assert high_risk_simulated["reason_code"] == "APPROVAL_REQUIRED"
+    assert high_risk_simulated["obligations"]["approval_policy_id"] == created["id"]
+    assert break_glass_response.status_code == 200
+    break_glass_simulated = break_glass_response.json()
+    assert break_glass_simulated["reason_code"] == "APPROVAL_REQUIRED"
+    assert break_glass_simulated["obligations"]["approval_policy_id"] == created["id"]
+
+
+@pytest.mark.asyncio
 async def test_approval_policy_version_api_supersedes_current_tenant_policy(
     session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
