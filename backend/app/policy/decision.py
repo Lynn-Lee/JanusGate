@@ -152,7 +152,9 @@ class PolicyDecisionService:
             not in {
                 "context_equals",
                 "context_in",
+                "context_number_gt",
                 "context_number_gte",
+                "context_number_lt",
                 "context_number_lte",
                 "context_not_equals",
                 "context_not_in",
@@ -212,12 +214,30 @@ class PolicyDecisionService:
         ):
             return False
 
+        context_number_gt = conditions.get("context_number_gt", {})
+        if not isinstance(context_number_gt, dict):
+            return False
+        if not all(
+            self._context_number_satisfies(request.context.get(key), minimum, operator="gt")
+            for key, minimum in context_number_gt.items()
+        ):
+            return False
+
         context_number_gte = conditions.get("context_number_gte", {})
         if not isinstance(context_number_gte, dict):
             return False
         if not all(
             self._context_number_satisfies(request.context.get(key), minimum, operator="gte")
             for key, minimum in context_number_gte.items()
+        ):
+            return False
+
+        context_number_lt = conditions.get("context_number_lt", {})
+        if not isinstance(context_number_lt, dict):
+            return False
+        if not all(
+            self._context_number_satisfies(request.context.get(key), maximum, operator="lt")
+            for key, maximum in context_number_lt.items()
         ):
             return False
 
@@ -328,8 +348,12 @@ class PolicyDecisionService:
         expected_number = self._coerce_finite_number(expected)
         if actual_number is None or expected_number is None:
             return False
+        if operator == "gt":
+            return actual_number > expected_number
         if operator == "gte":
             return actual_number >= expected_number
+        if operator == "lt":
+            return actual_number < expected_number
         if operator == "lte":
             return actual_number <= expected_number
         return False
