@@ -154,6 +154,7 @@ class PolicyDecisionService:
                 "context_number_lte",
                 "context_not_equals",
                 "context_not_in",
+                "context_exists",
                 "all",
                 "any",
             }
@@ -232,11 +233,22 @@ class PolicyDecisionService:
         context_not_in = conditions.get("context_not_in", {})
         if not isinstance(context_not_in, dict):
             return False
-        return all(
+        if not all(
             isinstance(disallowed_values, list)
             and str(request.context.get(key, ""))
             not in {str(value) for value in disallowed_values}
             for key, disallowed_values in context_not_in.items()
+        ):
+            return False
+
+        context_exists = conditions.get("context_exists", [])
+        if not isinstance(context_exists, list):
+            return False
+        if "context_exists" in conditions and not context_exists:
+            return False
+        return all(
+            isinstance(key, str) and key in request.context and request.context[key] is not None
+            for key in context_exists
         )
 
     def _context_number_satisfies(self, actual: Any, expected: Any, *, operator: str) -> bool:
