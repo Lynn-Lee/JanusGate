@@ -753,6 +753,93 @@ async def test_approval_policy_dsl_context_starts_with_filters_simulation_reques
 
 
 @pytest.mark.asyncio
+async def test_approval_policy_dsl_context_ends_with_filters_simulation_requests(
+    session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    install_db(session_factory)
+
+    with TestClient(app) as client:
+        install_user(tenant_id="tenant-a", permissions=["workflow:admin"])
+        create_response = client.post(
+            "/api/v1/workflows/approval-policies",
+            json={
+                "resource_selector": {"asset_id": "asset-1"},
+                "action_selector": "session.connect",
+                "approver_subject_ids": ["manager-1"],
+                "max_grant_ttl_seconds": 900,
+                "risk_level": "high",
+                "dsl_conditions": {"context_ends_with": {"ticket_id": "-EMERGENCY"}},
+            },
+        )
+        missing_ticket_response = client.post(
+            "/api/v1/workflows/approval-policies/simulate",
+            json={
+                "subject": {"id": "user-2", "tenant_id": "tenant-a"},
+                "action": "session.connect",
+                "resource": {"id": "asset-1", "type": "asset", "tenant_id": "tenant-a"},
+                "context": {},
+                "connector_trusted": True,
+            },
+        )
+        numeric_ticket_response = client.post(
+            "/api/v1/workflows/approval-policies/simulate",
+            json={
+                "subject": {"id": "user-2", "tenant_id": "tenant-a"},
+                "action": "session.connect",
+                "resource": {"id": "asset-1", "type": "asset", "tenant_id": "tenant-a"},
+                "context": {"ticket_id": 12345},
+                "connector_trusted": True,
+            },
+        )
+        standard_ticket_response = client.post(
+            "/api/v1/workflows/approval-policies/simulate",
+            json={
+                "subject": {"id": "user-2", "tenant_id": "tenant-a"},
+                "action": "session.connect",
+                "resource": {"id": "asset-1", "type": "asset", "tenant_id": "tenant-a"},
+                "context": {"ticket_id": "CHG-123-STANDARD"},
+                "connector_trusted": True,
+            },
+        )
+        matching_response = client.post(
+            "/api/v1/workflows/approval-policies/simulate",
+            json={
+                "subject": {"id": "user-2", "tenant_id": "tenant-a"},
+                "action": "session.connect",
+                "resource": {"id": "asset-1", "type": "asset", "tenant_id": "tenant-a"},
+                "context": {"ticket_id": "CHG-123-EMERGENCY"},
+                "connector_trusted": True,
+            },
+        )
+
+    assert create_response.status_code == 201
+    created = create_response.json()
+    assert "dsl_conditions" not in created
+    assert missing_ticket_response.status_code == 200
+    missing_ticket_simulated = missing_ticket_response.json()
+    assert missing_ticket_simulated["reason_code"] == "NO_MATCHING_POLICY"
+    assert f"approval_policy:{created['id']}:dsl_excluded" in missing_ticket_simulated[
+        "explain_trace"
+    ]
+    assert numeric_ticket_response.status_code == 200
+    numeric_ticket_simulated = numeric_ticket_response.json()
+    assert numeric_ticket_simulated["reason_code"] == "NO_MATCHING_POLICY"
+    assert f"approval_policy:{created['id']}:dsl_excluded" in numeric_ticket_simulated[
+        "explain_trace"
+    ]
+    assert standard_ticket_response.status_code == 200
+    standard_ticket_simulated = standard_ticket_response.json()
+    assert standard_ticket_simulated["reason_code"] == "NO_MATCHING_POLICY"
+    assert f"approval_policy:{created['id']}:dsl_excluded" in standard_ticket_simulated[
+        "explain_trace"
+    ]
+    assert matching_response.status_code == 200
+    matching_simulated = matching_response.json()
+    assert matching_simulated["reason_code"] == "APPROVAL_REQUIRED"
+    assert matching_simulated["obligations"]["approval_policy_id"] == created["id"]
+
+
+@pytest.mark.asyncio
 async def test_approval_policy_dsl_any_all_composes_simulation_conditions(
     session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
