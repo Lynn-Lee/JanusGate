@@ -155,6 +155,7 @@ class PolicyDecisionService:
                 "context_not_equals",
                 "context_not_in",
                 "context_exists",
+                "context_contains",
                 "all",
                 "any",
             }
@@ -246,9 +247,18 @@ class PolicyDecisionService:
             return False
         if "context_exists" in conditions and not context_exists:
             return False
-        return all(
+        if not all(
             isinstance(key, str) and key in request.context and request.context[key] is not None
             for key in context_exists
+        ):
+            return False
+
+        context_contains = conditions.get("context_contains", {})
+        if not isinstance(context_contains, dict):
+            return False
+        return all(
+            self._context_string_contains(request.context.get(key), expected)
+            for key, expected in context_contains.items()
         )
 
     def _context_number_satisfies(self, actual: Any, expected: Any, *, operator: str) -> bool:
@@ -261,6 +271,11 @@ class PolicyDecisionService:
         if operator == "lte":
             return actual_number <= expected_number
         return False
+
+    def _context_string_contains(self, actual: Any, expected: Any) -> bool:
+        if not isinstance(actual, str) or not isinstance(expected, str) or not expected:
+            return False
+        return expected in actual
 
     def _coerce_finite_number(self, value: Any) -> float | None:
         if isinstance(value, bool):
