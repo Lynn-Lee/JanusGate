@@ -162,6 +162,7 @@ class PolicyDecisionService:
                 "context_not_in",
                 "context_exists",
                 "context_contains",
+                "context_not_contains",
                 "context_starts_with",
                 "context_ends_with",
                 "context_matches_regex",
@@ -310,6 +311,15 @@ class PolicyDecisionService:
         ):
             return False
 
+        context_not_contains = conditions.get("context_not_contains", {})
+        if not isinstance(context_not_contains, dict):
+            return False
+        if not all(
+            self._context_string_not_contains(request.context.get(key), disallowed)
+            for key, disallowed in context_not_contains.items()
+        ):
+            return False
+
         context_starts_with = conditions.get("context_starts_with", {})
         if not isinstance(context_starts_with, dict):
             return False
@@ -406,6 +416,11 @@ class PolicyDecisionService:
         if not isinstance(actual, str) or not isinstance(expected, str) or not expected:
             return False
         return expected in actual
+
+    def _context_string_not_contains(self, actual: Any, disallowed: Any) -> bool:
+        if not isinstance(actual, str) or not isinstance(disallowed, str) or not disallowed:
+            return False
+        return disallowed not in actual
 
     def _context_string_starts_with(self, actual: Any, expected: Any) -> bool:
         if not isinstance(actual, str) or not isinstance(expected, str) or not expected:

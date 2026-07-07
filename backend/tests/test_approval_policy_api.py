@@ -900,6 +900,80 @@ async def test_approval_policy_dsl_context_contains_filters_simulation_requests(
 
 
 @pytest.mark.asyncio
+async def test_approval_policy_dsl_context_not_contains_filters_simulation_requests(
+    session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    install_db(session_factory)
+
+    with TestClient(app) as client:
+        install_user(tenant_id="tenant-a", permissions=["workflow:admin"])
+        create_response = client.post(
+            "/api/v1/workflows/approval-policies",
+            json={
+                "resource_selector": {"asset_id": "asset-1"},
+                "action_selector": "session.connect",
+                "approver_subject_ids": ["manager-1"],
+                "max_grant_ttl_seconds": 900,
+                "risk_level": "high",
+                "dsl_conditions": {"context_not_contains": {"ticket_id": "BREAKGLASS"}},
+            },
+        )
+        missing_ticket_response = client.post(
+            "/api/v1/workflows/approval-policies/simulate",
+            json={
+                "subject": {"id": "user-2", "tenant_id": "tenant-a"},
+                "action": "session.connect",
+                "resource": {"id": "asset-1", "type": "asset", "tenant_id": "tenant-a"},
+                "context": {},
+                "connector_trusted": True,
+            },
+        )
+        numeric_ticket_response = client.post(
+            "/api/v1/workflows/approval-policies/simulate",
+            json={
+                "subject": {"id": "user-2", "tenant_id": "tenant-a"},
+                "action": "session.connect",
+                "resource": {"id": "asset-1", "type": "asset", "tenant_id": "tenant-a"},
+                "context": {"ticket_id": 12345},
+                "connector_trusted": True,
+            },
+        )
+        excluded_ticket_response = client.post(
+            "/api/v1/workflows/approval-policies/simulate",
+            json={
+                "subject": {"id": "user-2", "tenant_id": "tenant-a"},
+                "action": "session.connect",
+                "resource": {"id": "asset-1", "type": "asset", "tenant_id": "tenant-a"},
+                "context": {"ticket_id": "CHG-123-BREAKGLASS"},
+                "connector_trusted": True,
+            },
+        )
+        matching_response = client.post(
+            "/api/v1/workflows/approval-policies/simulate",
+            json={
+                "subject": {"id": "user-2", "tenant_id": "tenant-a"},
+                "action": "session.connect",
+                "resource": {"id": "asset-1", "type": "asset", "tenant_id": "tenant-a"},
+                "context": {"ticket_id": "CHG-123-STANDARD"},
+                "connector_trusted": True,
+            },
+        )
+
+    assert create_response.status_code == 201
+    created = create_response.json()
+    assert "dsl_conditions" not in created
+    for response in [missing_ticket_response, numeric_ticket_response, excluded_ticket_response]:
+        assert response.status_code == 200
+        simulated = response.json()
+        assert simulated["reason_code"] == "NO_MATCHING_POLICY"
+        assert f"approval_policy:{created['id']}:dsl_excluded" in simulated["explain_trace"]
+    assert matching_response.status_code == 200
+    matching_simulated = matching_response.json()
+    assert matching_simulated["reason_code"] == "APPROVAL_REQUIRED"
+    assert matching_simulated["obligations"]["approval_policy_id"] == created["id"]
+
+
+@pytest.mark.asyncio
 async def test_approval_policy_dsl_context_starts_with_filters_simulation_requests(
     session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
