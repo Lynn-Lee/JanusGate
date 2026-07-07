@@ -26,6 +26,7 @@ cp "$repo_root/docs/site/fixtures/admin-screenshot-data.json" "$output_abs/fixtu
 cp "$repo_root/docs/site/fixtures/admin-screenshot-archive.json" "$output_abs/fixtures/admin-screenshot-archive.json"
 cp "$repo_root/docs/site/fixtures/operation-runbook-evidence.json" "$output_abs/fixtures/operation-runbook-evidence.json"
 cp "$repo_root/docs/site/fixtures/license-operations-evidence.json" "$output_abs/fixtures/license-operations-evidence.json"
+cp "$repo_root/docs/site/fixtures/runtime-alert-evidence.json" "$output_abs/fixtures/runtime-alert-evidence.json"
 
 cat > "$output_abs/manifest.json" <<'JSON'
 {
@@ -51,7 +52,8 @@ cat > "$output_abs/manifest.json" <<'JSON'
     "fixtures/admin-screenshot-data.json",
     "fixtures/admin-screenshot-archive.json",
     "fixtures/operation-runbook-evidence.json",
-    "fixtures/license-operations-evidence.json"
+    "fixtures/license-operations-evidence.json",
+    "fixtures/runtime-alert-evidence.json"
   ],
   "operationRunbookEvidence": {
     "source": "docs/site/runbooks.md",
@@ -64,6 +66,12 @@ cat > "$output_abs/manifest.json" <<'JSON'
     "manifest": "docs/site/fixtures/license-operations-evidence.json",
     "packagePath": "fixtures/license-operations-evidence.json",
     "schemaVersion": "janusgate.docs.license-operations-evidence.v1"
+  },
+  "runtimeAlertEvidence": {
+    "source": "docs/site/runbooks.md",
+    "manifest": "docs/site/fixtures/runtime-alert-evidence.json",
+    "packagePath": "fixtures/runtime-alert-evidence.json",
+    "schemaVersion": "janusgate.docs.runtime-alert-evidence.v1"
   },
   "screenshotCapture": {
     "smoke": "scripts/phase5-docs-browser-screenshots-smoke.sh",

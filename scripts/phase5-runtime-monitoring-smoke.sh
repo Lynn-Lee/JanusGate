@@ -19,6 +19,7 @@ helm_values="$repo_root/deploy/helm/janusgate/values.yaml"
 helm_deployment="$repo_root/deploy/helm/janusgate/templates/deployment.yaml"
 metrics_test="$repo_root/backend/tests/test_observability_metrics.py"
 alert_rules="$repo_root/deploy/monitoring/phase5-runtime-alerts.yaml"
+runtime_alert_evidence="$repo_root/docs/site/fixtures/runtime-alert-evidence.json"
 
 require_file_text "$compose_file" "read_only: true" "Compose read-only backend filesystem"
 require_file_text "$compose_file" "no-new-privileges:true" "Compose no-new-privileges runtime guard"
@@ -40,5 +41,11 @@ require_file_text "$alert_rules" "JanusGateRuntimeHighP95Latency" "runtime p95 l
 require_file_text "$alert_rules" "JanusGateRuntimeMetricsEndpointMissing" "runtime metrics missing alert rule"
 require_file_text "$alert_rules" "janusgate_http_requests_total" "runtime alert request metric"
 require_file_text "$alert_rules" "janusgate_http_request_duration_seconds_bucket" "runtime alert latency metric"
+require_file_text "$runtime_alert_evidence" "janusgate.docs.runtime-alert-evidence.v1" "runtime alert evidence schema"
+require_file_text "$runtime_alert_evidence" "deploy/monitoring/phase5-runtime-alerts.yaml" "runtime alert rule source"
+require_file_text "$runtime_alert_evidence" "promtool check rules" "runtime alert rule validation record"
+require_file_text "$runtime_alert_evidence" "alertmanager_route_drill" "Alertmanager route drill evidence"
+require_file_text "$runtime_alert_evidence" "receiver token" "runtime alert receiver token redaction boundary"
+require_file_text "$runtime_alert_evidence" "Alertmanager webhook payload" "runtime alert webhook payload redaction boundary"
 
 printf 'Phase 5 runtime monitoring smoke passed\n'

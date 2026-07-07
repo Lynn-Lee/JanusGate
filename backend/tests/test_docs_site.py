@@ -13,6 +13,9 @@ def test_phase5_docs_site_foundation_is_wired_for_operator_handoff() -> None:
     screenshot_archive_path = REPO_ROOT / "docs/site/fixtures/admin-screenshot-archive.json"
     runbook_evidence_path = REPO_ROOT / "docs/site/fixtures/operation-runbook-evidence.json"
     license_evidence_path = REPO_ROOT / "docs/site/fixtures/license-operations-evidence.json"
+    runtime_alert_evidence_path = (
+        REPO_ROOT / "docs/site/fixtures/runtime-alert-evidence.json"
+    )
     api_docs = (REPO_ROOT / "docs/site/api.md").read_text()
     runbooks = (REPO_ROOT / "docs/site/runbooks.md").read_text()
     api_contract = (REPO_ROOT / "docs/api-contract.md").read_text()
@@ -31,6 +34,7 @@ def test_phase5_docs_site_foundation_is_wired_for_operator_handoff() -> None:
     assert "admin-screenshots.md" in docs_index
     assert "operation-runbook-evidence.json" in docs_index
     assert "license-operations-evidence.json" in docs_index
+    assert "runtime-alert-evidence.json" in docs_index
     assert "SECRET_KEY" in install_guide
     assert "docker compose up --build -d" in install_guide
     assert "helm upgrade --install" in install_guide
@@ -76,8 +80,10 @@ def test_phase5_docs_site_foundation_is_wired_for_operator_handoff() -> None:
     assert "Do not print" in runbooks
     assert "Operation evidence manifest" in runbooks
     assert "License operations evidence manifest" in runbooks
+    assert "Runtime alert evidence manifest" in runbooks
     assert "docs/site/fixtures/operation-runbook-evidence.json" in runbooks
     assert "docs/site/fixtures/license-operations-evidence.json" in runbooks
+    assert "docs/site/fixtures/runtime-alert-evidence.json" in runbooks
     assert "app.main import app" in export_script
     assert "openapi.json" in export_script
     assert build_script_path.exists()
@@ -92,6 +98,7 @@ def test_phase5_docs_site_foundation_is_wired_for_operator_handoff() -> None:
     assert "fixtures/admin-screenshot-archive.json" in build_script
     assert "fixtures/operation-runbook-evidence.json" in build_script
     assert "fixtures/license-operations-evidence.json" in build_script
+    assert "fixtures/runtime-alert-evidence.json" in build_script
     assert "assets/screenshots/live-screenshots/admin-settings-license-summary.png" in build_script
     assert screenshot_script_path.exists()
     screenshot_script = screenshot_script_path.read_text()
@@ -99,6 +106,7 @@ def test_phase5_docs_site_foundation_is_wired_for_operator_handoff() -> None:
     assert screenshot_archive_path.exists()
     assert runbook_evidence_path.exists()
     assert license_evidence_path.exists()
+    assert runtime_alert_evidence_path.exists()
     screenshot_fixture = screenshot_fixture_path.read_text()
     screenshot_archive = screenshot_archive_path.read_text()
     assert "admin-settings-license-summary" in screenshot_fixture
@@ -164,6 +172,13 @@ def test_phase5_docs_site_foundation_is_wired_for_operator_handoff() -> None:
     assert "JANUSGATE_LICENSE_VALIDATION_TOKEN" in license_evidence
     assert "license key" in license_evidence
     assert "signing secret" in license_evidence
+    runtime_alert_evidence = runtime_alert_evidence_path.read_text()
+    assert "janusgate.docs.runtime-alert-evidence.v1" in runtime_alert_evidence
+    assert "alertmanager_route_drill" in runtime_alert_evidence
+    assert "deploy/monitoring/phase5-runtime-alerts.yaml" in runtime_alert_evidence
+    assert "promtool check rules" in runtime_alert_evidence
+    assert "receiver token" in runtime_alert_evidence
+    assert "Alertmanager webhook payload" in runtime_alert_evidence
     assert "scripts/export-openapi-json.sh" in workflow
     assert "scripts/build-docs-site.sh" in workflow
     assert "scripts/phase5-docs-browser-screenshots-smoke.sh" in workflow
@@ -176,3 +191,4 @@ def test_phase5_docs_site_foundation_is_wired_for_operator_handoff() -> None:
     assert "真实浏览器 PNG 已完成刷新" in docs_readme
     assert "操作 runbook evidence manifest" in roadmap
     assert "license operations evidence manifest" in roadmap
+    assert "runtime alert evidence manifest" in roadmap

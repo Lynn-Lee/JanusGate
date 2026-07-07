@@ -86,9 +86,13 @@ def test_phase5_capacity_model_smoke_defines_slo_and_load_inputs() -> None:
 def test_phase5_runtime_monitoring_smoke_covers_runtime_security_and_metrics() -> None:
     workflow = (REPO_ROOT / ".github/workflows/ci.yml").read_text()
     script = (REPO_ROOT / "scripts/phase5-runtime-monitoring-smoke.sh").read_text()
+    deploy_readme = (REPO_ROOT / "deploy/README.md").read_text()
     alert_rules = yaml.safe_load(
         (REPO_ROOT / "deploy/monitoring/phase5-runtime-alerts.yaml").read_text()
     )
+    runtime_alert_evidence = (
+        REPO_ROOT / "docs/site/fixtures/runtime-alert-evidence.json"
+    ).read_text()
 
     assert "scripts/phase5-runtime-monitoring-smoke.sh" in workflow
     assert "read_only: true" in script
@@ -102,6 +106,12 @@ def test_phase5_runtime_monitoring_smoke_covers_runtime_security_and_metrics() -
     assert "phase5-runtime-alerts.yaml" in script
     assert "JanusGateRuntimeHigh5xxRate" in script
     assert "JanusGateRuntimeHighP95Latency" in script
+    assert "runtime-alert-evidence.json" in script
+    assert "promtool check rules" in deploy_readme
+    assert "Alertmanager" in deploy_readme
+    assert "janusgate.docs.runtime-alert-evidence.v1" in runtime_alert_evidence
+    assert "alertmanager_route_drill" in runtime_alert_evidence
+    assert "receiver token" in runtime_alert_evidence
 
     alert_names = {
         rule["alert"]

@@ -1,0 +1,52 @@
+{
+  "schema_version": "janusgate.docs.runtime-alert-evidence.v1",
+  "purpose": "Machine-readable evidence contract for Phase 5 #t56 runtime alert routing, Alertmanager handoff, and target-environment drill review.",
+  "source": "docs/site/runbooks.md",
+  "evidence": [
+    {
+      "id": "prometheus_rule_validation",
+      "runbook_section": "Runtime alert evidence manifest",
+      "required_configuration": [
+        "deploy/monitoring/phase5-runtime-alerts.yaml is loaded by the target Prometheus or equivalent rule manager",
+        "janusgate_http_requests_total is scraped from the target JanusGate backend",
+        "janusgate_http_request_duration_seconds_bucket is scraped from the target JanusGate backend"
+      ],
+      "required_records": [
+        "target environment",
+        "Prometheus or rule manager owner",
+        "promtool check rules or equivalent validation command",
+        "validation result",
+        "rule file revision or Git SHA",
+        "scrape target label used for JanusGate"
+      ],
+      "secret_handling": [
+        "Do not record Prometheus credentials, bearer tokens, receiver token values, or datasource passwords.",
+        "Do not archive raw metrics that include customer-specific labels beyond the approved service, namespace, route, method, and status labels."
+      ]
+    },
+    {
+      "id": "alertmanager_route_drill",
+      "runbook_section": "Runtime alert evidence manifest",
+      "required_configuration": [
+        "Alertmanager or equivalent notification router is configured for JanusGate runtime alerts",
+        "JanusGateRuntimeHigh5xxRate routes to the production incident receiver",
+        "JanusGateRuntimeHighP95Latency routes to the production incident receiver",
+        "JanusGateRuntimeMetricsEndpointMissing routes to the production incident receiver"
+      ],
+      "required_records": [
+        "target environment",
+        "receiver owner",
+        "routing policy name",
+        "test alert or synthetic drill timestamp",
+        "notification delivery result",
+        "acknowledgement owner",
+        "incident escalation contact"
+      ],
+      "secret_handling": [
+        "Record whether a receiver token is configured, but never record the receiver token value.",
+        "Do not store Alertmanager webhook payload bodies when they include customer, token, or integration-secret data.",
+        "Do not commit PagerDuty, Slack, email relay, webhook, or on-call platform secrets to Git."
+      ]
+    }
+  ]
+}

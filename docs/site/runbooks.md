@@ -12,6 +12,12 @@ License / Edition 运营证据字段固定在 `docs/site/fixtures/license-operat
 
 记录证据时只保存配置状态、负责人和演练结果。不得在 run log、截图、manifest 或 Git 中保存 license key、signing secret、`JANUSGATE_LICENSE_VALIDATION_TOKEN`、私钥、原始授权 payload 或外部授权服务返回的客户数据。
 
+## Runtime alert evidence manifest
+
+运行时告警证据字段固定在 `docs/site/fixtures/runtime-alert-evidence.json`，并随 `scripts/build-docs-site.sh dist/docs-site` 发布到 `fixtures/runtime-alert-evidence.json`。该 manifest 覆盖 Prometheus 规则校验、Alertmanager 路由演练、接收人 owner、通知结果、升级联系人和敏感字段边界。
+
+记录证据时只保存目标环境、规则校验命令、路由策略名称、通知结果和负责人。不得在 run log、manifest 或 Git 中保存 Prometheus 凭据、receiver token、Alertmanager webhook payload、PagerDuty/Slack/email relay secret 或客户指标明细。
+
 ## Release checklist
 
 1. 确认 `dev` 已合并目标变更，且 CI 通过。
@@ -29,6 +35,26 @@ License / Edition 运营证据字段固定在 `docs/site/fixtures/license-operat
 5. 打 `v*` tag 触发 release pipeline，等待 GHCR image、SBOM 和 Cosign signing 结果。
 6. 使用 release image tag 执行 Helm upgrade，并记录 Helm revision。
 7. 执行 `/health`、登录、JIT grant、connection token、会话创建和审计写入 smoke。
+
+## Runtime alert drill checklist
+
+目标环境接入运行时告警前，先确认 `deploy/monitoring/phase5-runtime-alerts.yaml` 已由目标 Prometheus 或等价规则管理器加载。
+
+1. 运行仓库内 wiring smoke：
+
+   ```bash
+   scripts/phase5-runtime-monitoring-smoke.sh
+   ```
+
+2. 在目标监控环境执行规则校验，并记录命令与结果：
+
+   ```bash
+   promtool check rules deploy/monitoring/phase5-runtime-alerts.yaml
+   ```
+
+3. 确认 `JanusGateRuntimeHigh5xxRate`、`JanusGateRuntimeHighP95Latency` 和 `JanusGateRuntimeMetricsEndpointMissing` 都路由到生产 incident receiver。
+4. 触发一次测试告警或合成演练，记录通知送达、ack owner 和升级联系人。
+5. 按 `docs/site/fixtures/runtime-alert-evidence.json` 归档证据；不要归档 receiver token、Alertmanager webhook payload、通知平台 secret 或客户指标明细。
 
 ## Docs screenshot checklist
 

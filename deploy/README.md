@@ -266,3 +266,5 @@ Phase 5 #t56 提供 Prometheus 告警规则基线：`deploy/monitoring/phase5-ru
 3. `JanusGateRuntimeMetricsEndpointMissing`：Prometheus 未收到 JanusGate HTTP 指标，持续 5 分钟。
 
 部署到真实监控平台前，需要把该规则文件接入目标 Prometheus/Alertmanager 管理方式，并在目标环境记录一次 `promtool check rules` 或等价校验结果。仓库内 smoke 只校验规则文件与现有 `/metrics` 合约的 wiring，不假设本地存在 Prometheus。
+
+Phase 5 #t56 runtime alert evidence manifest 位于 `docs/site/fixtures/runtime-alert-evidence.json`，用于真实 Alertmanager route drill 时固定证据字段：目标环境、规则校验命令、receiver owner、路由策略、测试告警时间、通知送达结果、ack owner 和升级联系人。记录时只保存配置状态和演练结果，不保存 Prometheus 凭据、receiver token、Alertmanager webhook payload、通知平台 secret 或客户指标明细。该 manifest 会随 `scripts/build-docs-site.sh dist/docs-site` 发布，并由 `scripts/phase5-runtime-monitoring-smoke.sh` 检查 schema 和敏感字段边界。
