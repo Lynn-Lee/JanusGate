@@ -100,7 +100,7 @@
 
 ## Phase 4 Automation Worker Queue（#t52）
 
-Approval policy DSL 当前支持 `context_equals`、`context_in`、`context_number_gt`、`context_number_gte`、`context_number_lt`、`context_number_lte`、`context_number_between`、`context_not_equals`、`context_not_in`、`context_exists`、`context_contains`、`context_starts_with`、`context_ends_with`、`context_matches_regex`、`context_ip_in_cidr`、`context_time_between`、`context_time_not_between` 以及 `all` / `any` 递归组合表达式。数值比较和数值区间会拒绝 bool、非数字、NaN/Infinity、缺失字段或非法区间；任何未知 DSL key、非法结构或条件不匹配都 fail-closed 为 `NO_MATCHING_POLICY`，响应不回显 DSL 条件。
+Approval policy DSL 当前支持 `context_equals`、`context_in`、`context_number_gt`、`context_number_gte`、`context_number_lt`、`context_number_lte`、`context_number_between`、`context_number_not_between`、`context_not_equals`、`context_not_in`、`context_exists`、`context_contains`、`context_starts_with`、`context_ends_with`、`context_matches_regex`、`context_ip_in_cidr`、`context_time_between`、`context_time_not_between` 以及 `all` / `any` 递归组合表达式。数值比较和数值区间会拒绝 bool、非数字、NaN/Infinity、缺失字段或非法区间；任何未知 DSL key、非法结构或条件不匹配都 fail-closed 为 `NO_MATCHING_POLICY`，响应不回显 DSL 条件。
 
 当前切片定义后端 worker 队列写入、单轮消费循环、最小调度 API、`asset.scan` worker handler、`credential.rotate` worker handler 与 `ansible.playbook` worker handler 契约。`AutomationJobQueue` 使用 Redis Streams 风格 `xadd` 写入 `janusgate:automation:jobs`，字段均为字符串，payload 以 `payload_json` 保存，并显式标记 `payload_format=json`。`AutomationWorker` 通过 Redis Streams consumer group 读取消息，按 `job_type` 分发到显式注册的 handler，并仅在 handler 成功后 ack。`AssetScanWorkerHandler` 消费 `asset.scan` 消息时会按当前租户和 active 状态确认资产存在，并只把资产 ID、租户、名称、地址、端口和平台 ID 传给扫描执行器，不传递 legacy credential 字段。`CredentialRotateWorkerHandler` 消费 `credential.rotate` 消息时会按当前租户和 active account 边界确认账号存在，创建 `CredentialRotation` 记录并调用显式改密执行器；队列 payload 只携带 account id 与可选 reason，不携带 secret 引用之外的凭据材料。`AnsiblePlaybookWorkerHandler` 消费 `ansible.playbook` 消息时会按当前租户和 active asset 边界确认全部目标资产存在，并只把 playbook 名称、check mode、请求人和不含 legacy credential 的目标摘要传给显式 runner 契约。`LocalAnsiblePlaybookRunner` 会把 playbook 名称收敛到配置的 playbook root 内相对 `.yml/.yaml` 文件，渲染不含凭据的临时 JSON inventory，在临时 runtime 目录执行 `ansible-playbook`，仅传递去敏后的基础环境变量，并通过 `ANSIBLE_PLAYBOOK_TIMEOUT_SECONDS` 限制执行时间；超时时会返回 `ANSIBLE_PLAYBOOK_TIMED_OUT` 并回收本地子进程。后端可通过 `ANSIBLE_PLAYBOOK_ROOT`、`ANSIBLE_RUNTIME_ROOT`、`ANSIBLE_PLAYBOOK_EXECUTABLE`、`ANSIBLE_PLAYBOOK_TIMEOUT_SECONDS`、`ANSIBLE_PLAYBOOK_MEMORY_LIMIT_MB` 和 `ANSIBLE_PLAYBOOK_CPU_LIMIT_SECONDS` 装配该 runner；CPU/内存限制在支持 POSIX `setrlimit` 的本地执行环境中应用于子进程。`AutomationJobRun` 会持久化 `ansible.playbook` 的 running/completed/failed 状态、Redis message id、请求人、playbook 名称、check mode、目标数量和脱敏错误码，不保存 inventory、stdout、stderr 或 secret payload；`GET /api/v1/automation/jobs/runs` 可按当前租户只读查询这些执行状态元数据。
 
@@ -371,6 +371,9 @@ template=soc2-access
     "context_number_between": {
       "risk_score": {"min": 70, "max": 90}
     },
+    "context_number_not_between": {
+      "risk_score": {"min": 0, "max": 69}
+    },
     "context_not_equals": {
       "maintenance_window": "true"
     },
@@ -441,7 +444,7 @@ template=soc2-access
 - 策略模板只能写入当前租户；跨租户读取不会返回该策略。
 - `PolicyDecisionService` 可接收已加载的 approval policy template；匹配当前租户、action selector、resource selector 且落入 deterministic rollout bucket 的请求会要求 JIT approval，并在 `APPROVAL_REQUIRED` obligations 中返回 approval policy、审批人、MFA、TTL 和风险级别元数据。
 - `rollout_percentage` 默认为 `100`，取值范围 `0-100`；`0` 表示当前 active policy 不命中任何 subject/resource，`100` 表示全部命中，`1-99` 使用策略 ID、租户、subject ID 和 resource ID 做稳定哈希分桶。灰度排除时响应保持 deny-by-default 的 `NO_MATCHING_POLICY`，不会返回 secret 或跨租户信息。
-- `dsl_conditions.context_equals` 支持按请求 `context` 中的键值做精确匹配；`dsl_conditions.context_in` 支持按请求 `context` 中的键值做枚举匹配，枚举值必须是数组；`dsl_conditions.context_number_gte` / `context_number_lte` 支持按请求 `context` 中的数值做大于等于 / 小于等于阈值匹配；`context_number_between` 支持 `{min,max}` 闭区间匹配。数值可为 JSON number 或可解析数字字符串，缺失、布尔值、非数字、NaN、Infinity、非法区间或 min 大于 max 均 fail-closed 为不命中；`dsl_conditions.context_not_equals` 支持按请求 `context` 中的键值做排除匹配，值相等时该策略不命中；`dsl_conditions.context_not_in` 支持按请求 `context` 中的键值做枚举排除匹配，枚举值必须是数组，命中枚举值时该策略不命中；`dsl_conditions.context_exists` 支持要求请求 `context` 携带指定字段，字段列表必须是非空字符串数组，缺失或值为 `null` 时不命中；`dsl_conditions.context_contains` / `context_starts_with` / `context_ends_with` 支持要求请求 `context` 中指定字段为字符串且包含、前缀匹配或后缀匹配非空字符串片段，缺失、非字符串或空片段均不命中；`dsl_conditions.context_matches_regex` 支持要求请求 `context` 中指定字段为字符串且完整匹配非空 Python 正则表达式，缺失、非字符串、空 pattern 或非法 pattern 均不命中；`dsl_conditions.context_ip_in_cidr` 支持要求请求 `context` 中指定字段为 IPv4/IPv6 字符串且落入非空 CIDR 字符串数组任一网段，缺失、非法 IP、非法 CIDR、空数组或非字符串项均不命中；`dsl_conditions.context_time_between` 支持要求请求 `context` 中指定字段为 `HH:MM` / `HH:MM:SS` 或 ISO 8601 时间戳，且落入 `{start,end}` 定义的时间窗口，窗口边界同样使用时间字符串；`dsl_conditions.context_time_not_between` 使用相同时间格式和窗口语义，但要求请求时间落在窗口外；缺失、非法时间、非法窗口或非对象均不命中。`dsl_conditions.all` 和 `dsl_conditions.any` 支持非空数组形式的递归组合表达式，同一对象内多个条件按 AND 语义同时满足。不匹配、DSL JSON 损坏、`context_in` / `context_not_in` 非数组、数值阈值或区间非对象、`context_exists` 非数组或空数组、`context_contains` / `context_starts_with` / `context_ends_with` / `context_matches_regex` / `context_ip_in_cidr` / `context_time_between` / `context_time_not_between` 非对象、`all` / `any` 非数组或空数组、`context_not_equals` 非对象或出现未支持操作符时 fail-closed 为 `NO_MATCHING_POLICY`。
+- `dsl_conditions.context_equals` 支持按请求 `context` 中的键值做精确匹配；`dsl_conditions.context_in` 支持按请求 `context` 中的键值做枚举匹配，枚举值必须是数组；`dsl_conditions.context_number_gte` / `context_number_lte` 支持按请求 `context` 中的数值做大于等于 / 小于等于阈值匹配；`context_number_between` 支持 `{min,max}` 闭区间匹配；`context_number_not_between` 支持 `{min,max}` 闭区间排除匹配。数值可为 JSON number 或可解析数字字符串，缺失、布尔值、非数字、NaN、Infinity、非法区间或 min 大于 max 均 fail-closed 为不命中；`dsl_conditions.context_not_equals` 支持按请求 `context` 中的键值做排除匹配，值相等时该策略不命中；`dsl_conditions.context_not_in` 支持按请求 `context` 中的键值做枚举排除匹配，枚举值必须是数组，命中枚举值时该策略不命中；`dsl_conditions.context_exists` 支持要求请求 `context` 携带指定字段，字段列表必须是非空字符串数组，缺失或值为 `null` 时不命中；`dsl_conditions.context_contains` / `context_starts_with` / `context_ends_with` 支持要求请求 `context` 中指定字段为字符串且包含、前缀匹配或后缀匹配非空字符串片段，缺失、非字符串或空片段均不命中；`dsl_conditions.context_matches_regex` 支持要求请求 `context` 中指定字段为字符串且完整匹配非空 Python 正则表达式，缺失、非字符串、空 pattern 或非法 pattern 均不命中；`dsl_conditions.context_ip_in_cidr` 支持要求请求 `context` 中指定字段为 IPv4/IPv6 字符串且落入非空 CIDR 字符串数组任一网段，缺失、非法 IP、非法 CIDR、空数组或非字符串项均不命中；`dsl_conditions.context_time_between` 支持要求请求 `context` 中指定字段为 `HH:MM` / `HH:MM:SS` 或 ISO 8601 时间戳，且落入 `{start,end}` 定义的时间窗口，窗口边界同样使用时间字符串；`dsl_conditions.context_time_not_between` 使用相同时间格式和窗口语义，但要求请求时间落在窗口外；缺失、非法时间、非法窗口或非对象均不命中。`dsl_conditions.all` 和 `dsl_conditions.any` 支持非空数组形式的递归组合表达式，同一对象内多个条件按 AND 语义同时满足。不匹配、DSL JSON 损坏、`context_in` / `context_not_in` 非数组、数值阈值或区间非对象、`context_exists` 非数组或空数组、`context_contains` / `context_starts_with` / `context_ends_with` / `context_matches_regex` / `context_ip_in_cidr` / `context_time_between` / `context_time_not_between` 非对象、`all` / `any` 非数组或空数组、`context_not_equals` 非对象或出现未支持操作符时 fail-closed 为 `NO_MATCHING_POLICY`。
 - Phase 4 #t48 版本管理基础中，响应会返回 `policy_family_id`、`version` 与 `is_active`；新建策略默认为同 family 的 v1 active 版本。
 - 响应不返回 DSL 条件、凭据、连接 token、审批下游密钥或外部通知 secret。
 
@@ -465,7 +468,7 @@ template=soc2-access
 
 - 新版本创建只在当前租户 policy family 内生效；不能借此探测或覆盖跨租户策略。
 - 响应仍只返回 selector、审批人、MFA、TTL、风险级别和版本元数据，不返回 DSL、凭据、连接 token、Webhook secret 或任何下游密钥。
-- 版本可携带新的 `dsl_conditions.context_equals` / `context_in` / `context_number_gte` / `context_number_lte` / `context_not_equals` / `context_not_in` / `context_exists` / `context_contains` / `context_starts_with` / `context_ends_with` / `context_matches_regex` / `context_ip_in_cidr` / `context_time_between` / `context_time_not_between` 条件，也可携带 `all` / `any` 组合表达式；响应仍不回显 DSL 条件。
+- 版本可携带新的 `dsl_conditions.context_equals` / `context_in` / `context_number_gte` / `context_number_lte` / `context_number_between` / `context_number_not_between` / `context_not_equals` / `context_not_in` / `context_exists` / `context_contains` / `context_starts_with` / `context_ends_with` / `context_matches_regex` / `context_ip_in_cidr` / `context_time_between` / `context_time_not_between` 条件，也可携带 `all` / `any` 组合表达式；响应仍不回显 DSL 条件。
 
 ### POST `/api/v1/workflows/approval-policies/{policy_id}/rollback`
 
@@ -479,7 +482,7 @@ template=soc2-access
 
 - 回滚只在当前租户 policy family 内生效；不能借此探测或覆盖跨租户策略。
 - 响应仍只返回 selector、审批人、MFA、TTL、风险级别和版本元数据，不返回 DSL、凭据、连接 token、Webhook secret 或任何下游密钥。
-- 回滚会恢复目标版本保存的 `dsl_conditions.context_equals` / `context_in` / `context_number_gte` / `context_number_lte` / `context_not_equals` / `context_not_in` / `context_exists` / `context_contains` / `context_starts_with` / `context_ends_with` / `context_matches_regex` / `context_ip_in_cidr` / `context_time_between` / `context_time_not_between` 条件以及 `all` / `any` 组合表达式；响应仍不回显 DSL 条件。
+- 回滚会恢复目标版本保存的 `dsl_conditions.context_equals` / `context_in` / `context_number_gte` / `context_number_lte` / `context_number_between` / `context_number_not_between` / `context_not_equals` / `context_not_in` / `context_exists` / `context_contains` / `context_starts_with` / `context_ends_with` / `context_matches_regex` / `context_ip_in_cidr` / `context_time_between` / `context_time_not_between` 条件以及 `all` / `any` 组合表达式；响应仍不回显 DSL 条件。
 
 ### POST `/api/v1/workflows/approval-policies/simulate`
 
@@ -539,7 +542,7 @@ template=soc2-access
 
 - 模拟结果只基于当前租户策略；跨租户策略不会被读取或命中。
 - 响应只返回决策解释和 obligations，不返回凭据、连接 token、Webhook secret 或任何下游密钥。
-- 当前切片模拟已保存策略模板、`context_equals` / `context_in` / `context_number_gte` / `context_number_lte` / `context_not_equals` / `context_not_in` / `context_exists` / `context_contains` / `context_starts_with` / `context_ends_with` / `context_matches_regex` / `context_ip_in_cidr` / `context_time_between` / `context_time_not_between` DSL 条件、`all` / `any` 组合表达式和 rollout 分桶；更多 DSL 操作符仍待后续切片。
+- 当前切片模拟已保存策略模板、`context_equals` / `context_in` / `context_number_gte` / `context_number_lte` / `context_number_between` / `context_number_not_between` / `context_not_equals` / `context_not_in` / `context_exists` / `context_contains` / `context_starts_with` / `context_ends_with` / `context_matches_regex` / `context_ip_in_cidr` / `context_time_between` / `context_time_not_between` DSL 条件、`all` / `any` 组合表达式和 rollout 分桶；更多 DSL 操作符仍待后续切片。
 
 ## Phase 4 Webhook Endpoint API（#t47）
 
