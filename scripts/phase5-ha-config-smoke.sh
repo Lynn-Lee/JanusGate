@@ -62,7 +62,7 @@ helm template janusgate deploy/helm/janusgate \
   --set autoscaling.maxReplicas=4 \
   --set config.sessionConnectionTokenStore=redis \
   --set config.redisMode=sentinel \
-  --set config.redisSentinelUrls='redis://redis-sentinel-0:26379/0,redis://redis-sentinel-1:26379/0' \
+  --set config.redisSentinelUrls='redis://redis-sentinel-0:26379/0\,redis://redis-sentinel-1:26379/0' \
   --set config.redisSentinelMasterName=mymaster \
   --set config.redisUrl='redis://redis-master:6379/0' \
   >"$rendered"
