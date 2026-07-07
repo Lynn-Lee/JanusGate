@@ -156,6 +156,7 @@ class PolicyDecisionService:
                 "context_number_gte",
                 "context_number_lt",
                 "context_number_lte",
+                "context_number_between",
                 "context_not_equals",
                 "context_not_in",
                 "context_exists",
@@ -247,6 +248,15 @@ class PolicyDecisionService:
         if not all(
             self._context_number_satisfies(request.context.get(key), maximum, operator="lte")
             for key, maximum in context_number_lte.items()
+        ):
+            return False
+
+        context_number_between = conditions.get("context_number_between", {})
+        if not isinstance(context_number_between, dict):
+            return False
+        if not all(
+            self._context_number_between(request.context.get(key), expected_range)
+            for key, expected_range in context_number_between.items()
         ):
             return False
 
@@ -357,6 +367,18 @@ class PolicyDecisionService:
         if operator == "lte":
             return actual_number <= expected_number
         return False
+
+    def _context_number_between(self, actual: Any, expected_range: Any) -> bool:
+        if not isinstance(expected_range, dict):
+            return False
+        actual_number = self._coerce_finite_number(actual)
+        minimum = self._coerce_finite_number(expected_range.get("min"))
+        maximum = self._coerce_finite_number(expected_range.get("max"))
+        if actual_number is None or minimum is None or maximum is None:
+            return False
+        if minimum > maximum:
+            return False
+        return minimum <= actual_number <= maximum
 
     def _context_string_contains(self, actual: Any, expected: Any) -> bool:
         if not isinstance(actual, str) or not isinstance(expected, str) or not expected:

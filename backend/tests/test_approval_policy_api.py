@@ -508,6 +508,85 @@ async def test_approval_policy_dsl_numeric_thresholds_filter_simulation_requests
 
 
 @pytest.mark.asyncio
+async def test_approval_policy_dsl_context_number_between_filters_simulation_requests(
+    session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    install_db(session_factory)
+
+    with TestClient(app) as client:
+        install_user(tenant_id="tenant-a", permissions=["workflow:admin"])
+        create_response = client.post(
+            "/api/v1/workflows/approval-policies",
+            json={
+                "resource_selector": {"asset_id": "asset-1"},
+                "action_selector": "session.connect",
+                "approver_subject_ids": ["manager-1"],
+                "max_grant_ttl_seconds": 900,
+                "risk_level": "high",
+                "dsl_conditions": {
+                    "context_number_between": {
+                        "risk_score": {"min": 70, "max": 90},
+                        "session_duration_minutes": {"min": 15, "max": 60},
+                    }
+                },
+            },
+        )
+        below_min_response = client.post(
+            "/api/v1/workflows/approval-policies/simulate",
+            json={
+                "subject": {"id": "user-2", "tenant_id": "tenant-a"},
+                "action": "session.connect",
+                "resource": {"id": "asset-1", "type": "asset", "tenant_id": "tenant-a"},
+                "context": {"risk_score": 69.9, "session_duration_minutes": 30},
+                "connector_trusted": True,
+            },
+        )
+        above_max_response = client.post(
+            "/api/v1/workflows/approval-policies/simulate",
+            json={
+                "subject": {"id": "user-2", "tenant_id": "tenant-a"},
+                "action": "session.connect",
+                "resource": {"id": "asset-1", "type": "asset", "tenant_id": "tenant-a"},
+                "context": {"risk_score": 80, "session_duration_minutes": 60.1},
+                "connector_trusted": True,
+            },
+        )
+        invalid_numeric_response = client.post(
+            "/api/v1/workflows/approval-policies/simulate",
+            json={
+                "subject": {"id": "user-2", "tenant_id": "tenant-a"},
+                "action": "session.connect",
+                "resource": {"id": "asset-1", "type": "asset", "tenant_id": "tenant-a"},
+                "context": {"risk_score": True, "session_duration_minutes": 30},
+                "connector_trusted": True,
+            },
+        )
+        matching_response = client.post(
+            "/api/v1/workflows/approval-policies/simulate",
+            json={
+                "subject": {"id": "user-2", "tenant_id": "tenant-a"},
+                "action": "session.connect",
+                "resource": {"id": "asset-1", "type": "asset", "tenant_id": "tenant-a"},
+                "context": {"risk_score": "70", "session_duration_minutes": "60"},
+                "connector_trusted": True,
+            },
+        )
+
+    assert create_response.status_code == 201
+    created = create_response.json()
+    assert "dsl_conditions" not in created
+    for response in [below_min_response, above_max_response, invalid_numeric_response]:
+        assert response.status_code == 200
+        simulated = response.json()
+        assert simulated["reason_code"] == "NO_MATCHING_POLICY"
+        assert f"approval_policy:{created['id']}:dsl_excluded" in simulated["explain_trace"]
+    assert matching_response.status_code == 200
+    matching_simulated = matching_response.json()
+    assert matching_simulated["reason_code"] == "APPROVAL_REQUIRED"
+    assert matching_simulated["obligations"]["approval_policy_id"] == created["id"]
+
+
+@pytest.mark.asyncio
 async def test_approval_policy_dsl_strict_numeric_thresholds_filter_simulation_requests(
     session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
