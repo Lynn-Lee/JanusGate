@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import math
+import re
 from datetime import UTC, datetime
 from typing import Any
 from uuid import uuid4
@@ -158,6 +159,7 @@ class PolicyDecisionService:
                 "context_contains",
                 "context_starts_with",
                 "context_ends_with",
+                "context_matches_regex",
                 "all",
                 "any",
             }
@@ -276,9 +278,18 @@ class PolicyDecisionService:
         context_ends_with = conditions.get("context_ends_with", {})
         if not isinstance(context_ends_with, dict):
             return False
-        return all(
+        if not all(
             self._context_string_ends_with(request.context.get(key), expected)
             for key, expected in context_ends_with.items()
+        ):
+            return False
+
+        context_matches_regex = conditions.get("context_matches_regex", {})
+        if not isinstance(context_matches_regex, dict):
+            return False
+        return all(
+            self._context_string_matches_regex(request.context.get(key), expected)
+            for key, expected in context_matches_regex.items()
         )
 
     def _context_number_satisfies(self, actual: Any, expected: Any, *, operator: str) -> bool:
@@ -306,6 +317,14 @@ class PolicyDecisionService:
         if not isinstance(actual, str) or not isinstance(expected, str) or not expected:
             return False
         return actual.endswith(expected)
+
+    def _context_string_matches_regex(self, actual: Any, expected: Any) -> bool:
+        if not isinstance(actual, str) or not isinstance(expected, str) or not expected:
+            return False
+        try:
+            return re.fullmatch(expected, actual) is not None
+        except re.error:
+            return False
 
     def _coerce_finite_number(self, value: Any) -> float | None:
         if isinstance(value, bool):
