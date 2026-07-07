@@ -3,7 +3,9 @@ from fastapi.testclient import TestClient
 from app.api.audits.schemas import AuditEvent
 from app.api.audits.service import (
     AuditEventRepository,
+    ComplianceReportArchiveRecord,
     audit_service,
+    build_compliance_report_archive_store,
     build_compliance_report_signer,
 )
 from app.core.config import Settings
@@ -37,6 +39,23 @@ class RecordingComplianceReportSigner:
         assert report.tenant_id == "tenant-a"
         assert report.template == "soc2-access"
         return "external-signed-report"
+
+
+class RecordingComplianceReportArchiveStore:
+    def __init__(self) -> None:
+        self.payloads = []
+
+    def append(self, report, *, content_hash: str) -> ComplianceReportArchiveRecord:
+        self.payloads.append(report.model_dump(mode="json") | {"content_hash": content_hash})
+        return ComplianceReportArchiveRecord(
+            id="external-worm-record-1",
+            tenant_id=report.tenant_id,
+            template=report.template,
+            sequence_number=42,
+            content_hash=content_hash,
+            report_signature=report.report_signature,
+            created_at=report.generated_at,
+        )
 
 
 def test_create_audit_event_persists_and_masks_sensitive_fields():
@@ -449,6 +468,41 @@ def test_compliance_report_export_uses_injected_signer_metadata_for_external_sig
     assert report.worm_content_hash
 
 
+def test_compliance_report_export_can_use_injected_external_worm_archive_store():
+    archive_store = RecordingComplianceReportArchiveStore()
+    repository = AuditEventRepository(
+        compliance_report_signer=RecordingComplianceReportSigner(),
+        compliance_report_archive_store=archive_store,
+    )
+    event = AuditEvent(
+        tenant_id="tenant-a",
+        actor_id="user-1",
+        actor_username="alice",
+        event_type="session.started",
+        category="session",
+        action="start_session",
+        resource_type="asset",
+        resource_id="asset-1",
+        severity="high",
+        metadata={"token": "***REDACTED***"},
+        sequence_number=1,
+        event_hash="event-hash-1",
+    )
+    repository.append(event)
+
+    report = repository.compliance_report(tenant_id="tenant-a", template="soc2-access")
+
+    assert report.worm_storage_status == "recorded"
+    assert report.worm_record_id == "external-worm-record-1"
+    assert report.worm_sequence_number == 42
+    assert archive_store.payloads[0]["tenant_id"] == "tenant-a"
+    assert archive_store.payloads[0]["event_ids"] == [event.id]
+    serialized_payload = str(archive_store.payloads[0])
+    assert "metadata" not in serialized_payload
+    assert "resource_id" not in serialized_payload
+    assert "raw-session-token" not in serialized_payload
+
+
 def test_compliance_report_signer_can_use_configured_external_hmac_adapter():
     signer = build_compliance_report_signer(
         Settings(
@@ -496,3 +550,18 @@ def test_compliance_report_external_hmac_signer_fails_closed_without_secret():
         assert "COMPLIANCE_REPORT_EXTERNAL_HMAC_SECRET" in str(exc)
     else:
         raise AssertionError("external signer without secret must fail closed")
+
+
+def test_compliance_report_external_worm_archive_store_fails_closed_without_https_url():
+    settings = Settings(
+        SECRET_KEY="local-signing-secret-with-enough-length",
+        COMPLIANCE_REPORT_WORM_ARCHIVE_PROVIDER="external-http",
+        COMPLIANCE_REPORT_WORM_ARCHIVE_TOKEN="worm-token",
+    )
+
+    try:
+        build_compliance_report_archive_store(settings)
+    except ValueError as exc:
+        assert "COMPLIANCE_REPORT_WORM_ARCHIVE_URL" in str(exc)
+    else:
+        raise AssertionError("external WORM archive without HTTPS URL must fail closed")

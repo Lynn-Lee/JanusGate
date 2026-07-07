@@ -131,6 +131,17 @@ COMPLIANCE_REPORT_EXTERNAL_HMAC_SECRET=<external-signing-secret>
 
 `COMPLIANCE_REPORT_EXTERNAL_HMAC_SECRET` 属于 signing secret，必须通过 Secret 注入，不写入 ConfigMap、values 明文或日志。启用 external HMAC provider 时缺少 key id 或 signing secret 会 fail-closed；真实云 KMS/证书签章服务接入仍需后续 adapter。
 
+合规报表 WORM 归档默认使用进程内 append-only store，适合本地开发和 API 契约 smoke。需要接入外部 WORM 归档服务时可启用 `external-http` adapter foundation：
+
+```bash
+COMPLIANCE_REPORT_WORM_ARCHIVE_PROVIDER=external-http
+COMPLIANCE_REPORT_WORM_ARCHIVE_URL=https://worm-archive.example.com/v1/compliance-reports
+COMPLIANCE_REPORT_WORM_ARCHIVE_TOKEN=<worm-archive-bearer-token>
+COMPLIANCE_REPORT_WORM_ARCHIVE_TIMEOUT_SECONDS=5
+```
+
+`COMPLIANCE_REPORT_WORM_ARCHIVE_TOKEN` 必须通过 Secret 注入，不写入 ConfigMap、values 明文或日志。外部 adapter 只发送合规报表摘要、hash chain、签名元数据和 `worm_content_hash`，不发送原始 audit metadata、message、resource_id、session_id、token、secret 或连接串；URL 非 HTTPS、缺 token、外部服务非 2xx 或响应缺少 `record_id` / `sequence_number` 时会 fail-closed。
+
 License / Edition 默认使用 community。Phase 5 #t58 起，enterprise license 支持三种验签模式：
 
 ```bash

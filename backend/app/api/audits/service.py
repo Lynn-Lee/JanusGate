@@ -9,6 +9,8 @@ from datetime import UTC, datetime, timedelta
 from typing import Any, Protocol
 from uuid import uuid4
 
+import httpx
+
 from app.api.audits.schemas import (
     AuditComplianceReport,
     AuditEvent,
@@ -54,6 +56,12 @@ class ComplianceReportSigner(Protocol):
     def sign(self, report: AuditComplianceReport) -> str: ...
 
 
+class ComplianceReportArchiveStore(Protocol):
+    def append(
+        self, report: AuditComplianceReport, *, content_hash: str
+    ) -> ComplianceReportArchiveRecord: ...
+
+
 class HmacComplianceReportSigner:
     algorithm = "hmac-sha256"
     key_id = "local-secret-key"
@@ -92,16 +100,101 @@ def build_compliance_report_signer(config: Settings = settings) -> ComplianceRep
     )
 
 
+class InMemoryComplianceReportArchiveStore:
+    def __init__(self) -> None:
+        self._records: list[ComplianceReportArchiveRecord] = []
+
+    def append(
+        self, report: AuditComplianceReport, *, content_hash: str
+    ) -> ComplianceReportArchiveRecord:
+        archive_record = ComplianceReportArchiveRecord(
+            id=str(uuid4()),
+            tenant_id=report.tenant_id,
+            template=report.template,
+            sequence_number=len(self._records) + 1,
+            content_hash=content_hash,
+            report_signature=report.report_signature,
+            created_at=datetime.now(UTC),
+        )
+        self._records.append(archive_record)
+        return archive_record
+
+    def clear(self) -> None:
+        self._records.clear()
+
+
+class ExternalHttpComplianceReportArchiveStore:
+    def __init__(self, *, url: str, token: str, timeout_seconds: float) -> None:
+        if not url.startswith("https://"):
+            raise ValueError("COMPLIANCE_REPORT_WORM_ARCHIVE_URL must be an HTTPS URL")
+        if not token.strip():
+            raise ValueError(
+                "COMPLIANCE_REPORT_WORM_ARCHIVE_TOKEN must be set "
+                "when COMPLIANCE_REPORT_WORM_ARCHIVE_PROVIDER=external-http"
+            )
+        self._url = url
+        self._token = token
+        self._timeout_seconds = timeout_seconds
+
+    def append(
+        self, report: AuditComplianceReport, *, content_hash: str
+    ) -> ComplianceReportArchiveRecord:
+        payload = build_compliance_report_archive_payload(
+            report=report,
+            content_hash=content_hash,
+        )
+        response = httpx.post(
+            self._url,
+            json=payload,
+            headers={"Authorization": f"Bearer {self._token}"},
+            timeout=self._timeout_seconds,
+        )
+        if response.status_code < 200 or response.status_code >= 300:
+            raise ValueError("COMPLIANCE_REPORT_WORM_ARCHIVE_FAILED")
+        body = response.json()
+        record_id = str(body.get("record_id", "")).strip()
+        sequence_number = body.get("sequence_number")
+        if not record_id or not isinstance(sequence_number, int) or sequence_number < 1:
+            raise ValueError("COMPLIANCE_REPORT_WORM_ARCHIVE_INVALID_RESPONSE")
+        return ComplianceReportArchiveRecord(
+            id=record_id,
+            tenant_id=report.tenant_id,
+            template=report.template,
+            sequence_number=sequence_number,
+            content_hash=content_hash,
+            report_signature=report.report_signature,
+            created_at=datetime.now(UTC),
+        )
+
+
+def build_compliance_report_archive_store(
+    config: Settings = settings,
+) -> ComplianceReportArchiveStore:
+    if config.COMPLIANCE_REPORT_WORM_ARCHIVE_PROVIDER == "memory":
+        return InMemoryComplianceReportArchiveStore()
+    return ExternalHttpComplianceReportArchiveStore(
+        url=config.COMPLIANCE_REPORT_WORM_ARCHIVE_URL,
+        token=config.COMPLIANCE_REPORT_WORM_ARCHIVE_TOKEN,
+        timeout_seconds=config.COMPLIANCE_REPORT_WORM_ARCHIVE_TIMEOUT_SECONDS,
+    )
+
+
 class AuditEventRepository:
     """进程内 append-only 审计事件仓库。
 
     当前仓库用于第一版 API 和测试闭环；后续可替换为 SQLAlchemy/WORM 实现，路由层不变。
     """
 
-    def __init__(self, compliance_report_signer: ComplianceReportSigner | None = None) -> None:
+    def __init__(
+        self,
+        compliance_report_signer: ComplianceReportSigner | None = None,
+        compliance_report_archive_store: ComplianceReportArchiveStore | None = None,
+    ) -> None:
         self._events: list[AuditEvent] = []
-        self._compliance_report_archive: list[ComplianceReportArchiveRecord] = []
         self._compliance_report_signer = compliance_report_signer or build_compliance_report_signer()
+        self._compliance_report_archive_store = (
+            compliance_report_archive_store or build_compliance_report_archive_store()
+        )
 
     def append(self, event: AuditEvent) -> AuditEvent:
         self._events.append(event)
@@ -187,21 +280,16 @@ class AuditEventRepository:
     def _append_compliance_report_archive(
         self, report: AuditComplianceReport
     ) -> ComplianceReportArchiveRecord:
-        archive_record = ComplianceReportArchiveRecord(
-            id=str(uuid4()),
-            tenant_id=report.tenant_id,
-            template=report.template,
-            sequence_number=len(self._compliance_report_archive) + 1,
+        return self._compliance_report_archive_store.append(
+            report,
             content_hash=calculate_compliance_report_content_hash(report),
-            report_signature=report.report_signature,
-            created_at=datetime.now(UTC),
         )
-        self._compliance_report_archive.append(archive_record)
-        return archive_record
 
     def clear(self) -> None:
         self._events.clear()
-        self._compliance_report_archive.clear()
+        clear_archive = getattr(self._compliance_report_archive_store, "clear", None)
+        if clear_archive is not None:
+            clear_archive()
 
 
 class SiemDeliveryError(RuntimeError):
@@ -332,6 +420,27 @@ def calculate_compliance_report_content_hash(report: AuditComplianceReport) -> s
     )
     encoded = json.dumps(canonical, sort_keys=True, separators=(",", ":")).encode("utf-8")
     return hashlib.sha256(encoded).hexdigest()
+
+
+def build_compliance_report_archive_payload(
+    *, report: AuditComplianceReport, content_hash: str
+) -> dict[str, Any]:
+    return {
+        "schema_version": "janusgate.audit-compliance-worm-archive.v1",
+        "tenant_id": report.tenant_id,
+        "template": report.template,
+        "total": report.total,
+        "event_ids": report.event_ids,
+        "hash_chain_start": report.hash_chain_start,
+        "hash_chain_end": report.hash_chain_end,
+        "period_start": report.period_start.isoformat() if report.period_start else None,
+        "period_end": report.period_end.isoformat() if report.period_end else None,
+        "generated_at": report.generated_at.isoformat(),
+        "report_signature": report.report_signature,
+        "report_signature_algorithm": report.report_signature_algorithm,
+        "report_signature_key_id": report.report_signature_key_id,
+        "worm_content_hash": content_hash,
+    }
 
 
 def build_compliance_report_filename(

@@ -42,6 +42,10 @@ class Settings(BaseSettings):
     COMPLIANCE_REPORT_SIGNER_PROVIDER: Literal["local-hmac", "external-hmac"] = "local-hmac"
     COMPLIANCE_REPORT_EXTERNAL_SIGNING_KEY_ID: str = ""
     COMPLIANCE_REPORT_EXTERNAL_HMAC_SECRET: str = ""
+    COMPLIANCE_REPORT_WORM_ARCHIVE_PROVIDER: Literal["memory", "external-http"] = "memory"
+    COMPLIANCE_REPORT_WORM_ARCHIVE_URL: str = ""
+    COMPLIANCE_REPORT_WORM_ARCHIVE_TOKEN: str = ""
+    COMPLIANCE_REPORT_WORM_ARCHIVE_TIMEOUT_SECONDS: float = 5.0
 
     # ── Edition / License ──
     JANUSGATE_EDITION: Literal["community", "enterprise"] = "community"
