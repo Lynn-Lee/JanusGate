@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 from datetime import UTC, datetime
 from typing import Any
 from uuid import uuid4
@@ -149,6 +150,8 @@ class PolicyDecisionService:
             not in {
                 "context_equals",
                 "context_in",
+                "context_number_gte",
+                "context_number_lte",
                 "context_not_equals",
                 "context_not_in",
                 "all",
@@ -199,6 +202,24 @@ class PolicyDecisionService:
         ):
             return False
 
+        context_number_gte = conditions.get("context_number_gte", {})
+        if not isinstance(context_number_gte, dict):
+            return False
+        if not all(
+            self._context_number_satisfies(request.context.get(key), minimum, operator="gte")
+            for key, minimum in context_number_gte.items()
+        ):
+            return False
+
+        context_number_lte = conditions.get("context_number_lte", {})
+        if not isinstance(context_number_lte, dict):
+            return False
+        if not all(
+            self._context_number_satisfies(request.context.get(key), maximum, operator="lte")
+            for key, maximum in context_number_lte.items()
+        ):
+            return False
+
         context_not_equals = conditions.get("context_not_equals", {})
         if not isinstance(context_not_equals, dict):
             return False
@@ -217,6 +238,29 @@ class PolicyDecisionService:
             not in {str(value) for value in disallowed_values}
             for key, disallowed_values in context_not_in.items()
         )
+
+    def _context_number_satisfies(self, actual: Any, expected: Any, *, operator: str) -> bool:
+        actual_number = self._coerce_finite_number(actual)
+        expected_number = self._coerce_finite_number(expected)
+        if actual_number is None or expected_number is None:
+            return False
+        if operator == "gte":
+            return actual_number >= expected_number
+        if operator == "lte":
+            return actual_number <= expected_number
+        return False
+
+    def _coerce_finite_number(self, value: Any) -> float | None:
+        if isinstance(value, bool):
+            return None
+        if isinstance(value, int | float | str):
+            try:
+                number = float(value)
+            except ValueError:
+                return None
+            if math.isfinite(number):
+                return number
+        return None
 
     def _approval_policy_rollout_includes(
         self, policy: ApprovalPolicyModel, request: PolicyDecisionRequest
