@@ -156,6 +156,7 @@ class PolicyDecisionService:
                 "context_not_in",
                 "context_exists",
                 "context_contains",
+                "context_starts_with",
                 "all",
                 "any",
             }
@@ -256,9 +257,18 @@ class PolicyDecisionService:
         context_contains = conditions.get("context_contains", {})
         if not isinstance(context_contains, dict):
             return False
-        return all(
+        if not all(
             self._context_string_contains(request.context.get(key), expected)
             for key, expected in context_contains.items()
+        ):
+            return False
+
+        context_starts_with = conditions.get("context_starts_with", {})
+        if not isinstance(context_starts_with, dict):
+            return False
+        return all(
+            self._context_string_starts_with(request.context.get(key), expected)
+            for key, expected in context_starts_with.items()
         )
 
     def _context_number_satisfies(self, actual: Any, expected: Any, *, operator: str) -> bool:
@@ -276,6 +286,11 @@ class PolicyDecisionService:
         if not isinstance(actual, str) or not isinstance(expected, str) or not expected:
             return False
         return expected in actual
+
+    def _context_string_starts_with(self, actual: Any, expected: Any) -> bool:
+        if not isinstance(actual, str) or not isinstance(expected, str) or not expected:
+            return False
+        return actual.startswith(expected)
 
     def _coerce_finite_number(self, value: Any) -> float | None:
         if isinstance(value, bool):
