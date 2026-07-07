@@ -7,7 +7,7 @@ import ipaddress
 import json
 import math
 import re
-from datetime import UTC, datetime
+from datetime import UTC, datetime, time
 from typing import Any
 from uuid import uuid4
 
@@ -162,6 +162,7 @@ class PolicyDecisionService:
                 "context_ends_with",
                 "context_matches_regex",
                 "context_ip_in_cidr",
+                "context_time_between",
                 "all",
                 "any",
             }
@@ -298,9 +299,18 @@ class PolicyDecisionService:
         context_ip_in_cidr = conditions.get("context_ip_in_cidr", {})
         if not isinstance(context_ip_in_cidr, dict):
             return False
-        return all(
+        if not all(
             self._context_ip_in_cidr(request.context.get(key), expected_networks)
             for key, expected_networks in context_ip_in_cidr.items()
+        ):
+            return False
+
+        context_time_between = conditions.get("context_time_between", {})
+        if not isinstance(context_time_between, dict):
+            return False
+        return all(
+            self._context_time_between(request.context.get(key), expected_window)
+            for key, expected_window in context_time_between.items()
         )
 
     def _context_number_satisfies(self, actual: Any, expected: Any, *, operator: str) -> bool:
@@ -354,6 +364,30 @@ class PolicyDecisionService:
         if len(networks) != len(expected_networks):
             return False
         return any(ip_address in network for network in networks)
+
+    def _context_time_between(self, actual: Any, expected_window: Any) -> bool:
+        if not isinstance(actual, str) or not isinstance(expected_window, dict):
+            return False
+        actual_time = self._parse_context_time(actual)
+        start_time = self._parse_context_time(expected_window.get("start"))
+        end_time = self._parse_context_time(expected_window.get("end"))
+        if actual_time is None or start_time is None or end_time is None:
+            return False
+        if start_time <= end_time:
+            return start_time <= actual_time <= end_time
+        return actual_time >= start_time or actual_time <= end_time
+
+    def _parse_context_time(self, value: Any) -> time | None:
+        if not isinstance(value, str) or not value:
+            return None
+        try:
+            return time.fromisoformat(value)
+        except ValueError:
+            pass
+        try:
+            return datetime.fromisoformat(value.replace("Z", "+00:00")).time()
+        except ValueError:
+            return None
 
     def _coerce_finite_number(self, value: Any) -> float | None:
         if isinstance(value, bool):

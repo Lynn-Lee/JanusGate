@@ -1064,6 +1064,83 @@ async def test_approval_policy_dsl_context_ip_in_cidr_filters_simulation_request
 
 
 @pytest.mark.asyncio
+async def test_approval_policy_dsl_context_time_between_filters_simulation_requests(
+    session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    install_db(session_factory)
+
+    with TestClient(app) as client:
+        install_user(tenant_id="tenant-a", permissions=["workflow:admin"])
+        create_response = client.post(
+            "/api/v1/workflows/approval-policies",
+            json={
+                "resource_selector": {"asset_id": "asset-1"},
+                "action_selector": "session.connect",
+                "approver_subject_ids": ["manager-1"],
+                "max_grant_ttl_seconds": 900,
+                "risk_level": "high",
+                "dsl_conditions": {
+                    "context_time_between": {
+                        "request_time": {"start": "09:00", "end": "17:30"}
+                    }
+                },
+            },
+        )
+        missing_time_response = client.post(
+            "/api/v1/workflows/approval-policies/simulate",
+            json={
+                "subject": {"id": "user-2", "tenant_id": "tenant-a"},
+                "action": "session.connect",
+                "resource": {"id": "asset-1", "type": "asset", "tenant_id": "tenant-a"},
+                "context": {},
+                "connector_trusted": True,
+            },
+        )
+        invalid_time_response = client.post(
+            "/api/v1/workflows/approval-policies/simulate",
+            json={
+                "subject": {"id": "user-2", "tenant_id": "tenant-a"},
+                "action": "session.connect",
+                "resource": {"id": "asset-1", "type": "asset", "tenant_id": "tenant-a"},
+                "context": {"request_time": "tomorrow morning"},
+                "connector_trusted": True,
+            },
+        )
+        outside_window_response = client.post(
+            "/api/v1/workflows/approval-policies/simulate",
+            json={
+                "subject": {"id": "user-2", "tenant_id": "tenant-a"},
+                "action": "session.connect",
+                "resource": {"id": "asset-1", "type": "asset", "tenant_id": "tenant-a"},
+                "context": {"request_time": "18:00"},
+                "connector_trusted": True,
+            },
+        )
+        matching_response = client.post(
+            "/api/v1/workflows/approval-policies/simulate",
+            json={
+                "subject": {"id": "user-2", "tenant_id": "tenant-a"},
+                "action": "session.connect",
+                "resource": {"id": "asset-1", "type": "asset", "tenant_id": "tenant-a"},
+                "context": {"request_time": "2026-07-07T10:15:00Z"},
+                "connector_trusted": True,
+            },
+        )
+
+    assert create_response.status_code == 201
+    created = create_response.json()
+    for response in [missing_time_response, invalid_time_response, outside_window_response]:
+        assert response.status_code == 200
+        simulated = response.json()
+        assert simulated["reason_code"] == "NO_MATCHING_POLICY"
+        assert f"approval_policy:{created['id']}:dsl_excluded" in simulated["explain_trace"]
+    assert matching_response.status_code == 200
+    matching_simulated = matching_response.json()
+    assert matching_simulated["reason_code"] == "APPROVAL_REQUIRED"
+    assert matching_simulated["obligations"]["approval_policy_id"] == created["id"]
+
+
+@pytest.mark.asyncio
 async def test_approval_policy_dsl_any_all_composes_simulation_conditions(
     session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
