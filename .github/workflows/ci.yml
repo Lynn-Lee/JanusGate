@@ -40,6 +40,11 @@ jobs:
           cache: pip
           cache-dependency-path: backend/pyproject.toml
 
+      - name: Install backend system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends libldap2-dev libsasl2-dev
+
       - name: Install backend with dev tools
         run: |
           python -m pip install --upgrade pip
@@ -121,7 +126,7 @@ jobs:
         run: scripts/phase5-runtime-monitoring-smoke.sh
 
       - name: Trivy high/critical vulnerability gate
-        uses: aquasecurity/trivy-action@0.24.0
+        uses: aquasecurity/trivy-action@v0.24.0
         with:
           scan-type: fs
           scan-ref: .
@@ -234,7 +239,10 @@ jobs:
         run: helm lint deploy/helm/janusgate
 
       - name: Render JanusGate chart
-        run: helm template janusgate deploy/helm/janusgate
+        run: |
+          helm template janusgate deploy/helm/janusgate \
+            --set secret.secretKey=ci-secret-key-ci-secret-key-ci-secret-key-32 \
+            --set secret.databaseUrl=postgresql+asyncpg://janusgate:janusgate@postgresql:5432/janusgate
 
       - name: Phase 5 HA config smoke
         run: scripts/phase5-ha-config-smoke.sh

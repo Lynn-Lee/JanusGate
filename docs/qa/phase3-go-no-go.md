@@ -65,11 +65,11 @@ The API contract, deployment guide, master roadmap, README, and this QA evidence
 | Frontend build | `cd frontend && npm run build` | Required before merge |
 | Compose config | `docker compose config` with disposable CI `.env` | Required before merge and CI |
 | Compose health smoke | `scripts/phase3-compose-health-smoke.sh` | Required before merge and CI |
-| Helm lint/render | `helm lint deploy/helm/janusgate`; `helm template janusgate deploy/helm/janusgate` | Required in CI; local run depends on Helm availability |
+| Helm lint/render | `helm lint deploy/helm/janusgate`; `helm template janusgate deploy/helm/janusgate` with disposable CI `secret.secretKey` / `secret.databaseUrl` values | Required in CI; local run depends on Helm availability |
 
 ## Deployability evidence
 
-CI executes the Phase 3 deploy smoke through `.github/workflows/ci.yml`: `docker compose config`, `scripts/phase3-compose-health-smoke.sh`, `helm lint deploy/helm/janusgate`, and `helm template janusgate deploy/helm/janusgate`.
+CI executes the Phase 3 deploy smoke through `.github/workflows/ci.yml`: `docker compose config`, `scripts/phase3-compose-health-smoke.sh`, `helm lint deploy/helm/janusgate`, and `helm template janusgate deploy/helm/janusgate` with disposable test values for the required Helm secret fields.
 
 The Compose smoke starts backend plus dependencies, calls `/health`, and removes its containers and volumes on exit. Helm remains single-replica by default until Phase 4 introduces a shared connection-token/session store.
 

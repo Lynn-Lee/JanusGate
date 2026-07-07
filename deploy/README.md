@@ -26,7 +26,7 @@ GitHub Actions 工作流位于 `.github/workflows/ci.yml`，当前包含：
 - `helm lint deploy/helm/janusgate`：Helm chart 基础校验
 - `docker compose config`：Compose 配置渲染 smoke，验证关键环境变量 fail-closed 约束可被 CI 测试值满足
 - `scripts/phase3-compose-health-smoke.sh`：启动 Compose backend 及依赖并请求 `/health`，退出时清理本轮容器和卷
-- `helm template janusgate deploy/helm/janusgate`：Helm chart 渲染 smoke，防止只通过 lint 但模板输出损坏
+- `helm template janusgate deploy/helm/janusgate` + CI 一次性测试 `secret.secretKey` / `secret.databaseUrl`：Helm chart 渲染 smoke，防止只通过 lint 但模板输出损坏，同时保留默认缺失 secret 时 fail-closed
 
 安全边界：工作流只使用 `GITHUB_TOKEN` 在 release tag 场景推送 GHCR，并通过 GitHub OIDC 给 Cosign keyless signing 换取短期签名身份；不会读取或打印业务密钥。CI 中的 `SECRET_KEY` 是一次性测试值，不用于部署。
 
