@@ -163,6 +163,7 @@ class PolicyDecisionService:
                 "context_matches_regex",
                 "context_ip_in_cidr",
                 "context_time_between",
+                "context_time_not_between",
                 "all",
                 "any",
             }
@@ -308,9 +309,18 @@ class PolicyDecisionService:
         context_time_between = conditions.get("context_time_between", {})
         if not isinstance(context_time_between, dict):
             return False
-        return all(
+        if not all(
             self._context_time_between(request.context.get(key), expected_window)
             for key, expected_window in context_time_between.items()
+        ):
+            return False
+
+        context_time_not_between = conditions.get("context_time_not_between", {})
+        if not isinstance(context_time_not_between, dict):
+            return False
+        return all(
+            self._context_time_not_between(request.context.get(key), expected_window)
+            for key, expected_window in context_time_not_between.items()
         )
 
     def _context_number_satisfies(self, actual: Any, expected: Any, *, operator: str) -> bool:
@@ -373,6 +383,19 @@ class PolicyDecisionService:
         end_time = self._parse_context_time(expected_window.get("end"))
         if actual_time is None or start_time is None or end_time is None:
             return False
+        return self._time_in_window(actual_time, start_time, end_time)
+
+    def _context_time_not_between(self, actual: Any, expected_window: Any) -> bool:
+        if not isinstance(actual, str) or not isinstance(expected_window, dict):
+            return False
+        actual_time = self._parse_context_time(actual)
+        start_time = self._parse_context_time(expected_window.get("start"))
+        end_time = self._parse_context_time(expected_window.get("end"))
+        if actual_time is None or start_time is None or end_time is None:
+            return False
+        return not self._time_in_window(actual_time, start_time, end_time)
+
+    def _time_in_window(self, actual_time: time, start_time: time, end_time: time) -> bool:
         if start_time <= end_time:
             return start_time <= actual_time <= end_time
         return actual_time >= start_time or actual_time <= end_time
