@@ -945,6 +945,125 @@ async def test_approval_policy_dsl_context_matches_regex_filters_simulation_requ
 
 
 @pytest.mark.asyncio
+async def test_approval_policy_dsl_context_ip_in_cidr_filters_simulation_requests(
+    session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    install_db(session_factory)
+
+    with TestClient(app) as client:
+        install_user(tenant_id="tenant-a", permissions=["workflow:admin"])
+        create_response = client.post(
+            "/api/v1/workflows/approval-policies",
+            json={
+                "resource_selector": {"asset_id": "asset-1"},
+                "action_selector": "session.connect",
+                "approver_subject_ids": ["manager-1"],
+                "max_grant_ttl_seconds": 900,
+                "risk_level": "high",
+                "dsl_conditions": {
+                    "context_ip_in_cidr": {
+                        "source_ip": ["203.0.113.0/24", "2001:db8:42::/48"]
+                    }
+                },
+            },
+        )
+        missing_ip_response = client.post(
+            "/api/v1/workflows/approval-policies/simulate",
+            json={
+                "subject": {"id": "user-2", "tenant_id": "tenant-a"},
+                "action": "session.connect",
+                "resource": {"id": "asset-1", "type": "asset", "tenant_id": "tenant-a"},
+                "context": {},
+                "connector_trusted": True,
+            },
+        )
+        invalid_ip_response = client.post(
+            "/api/v1/workflows/approval-policies/simulate",
+            json={
+                "subject": {"id": "user-2", "tenant_id": "tenant-a"},
+                "action": "session.connect",
+                "resource": {"id": "asset-1", "type": "asset", "tenant_id": "tenant-a"},
+                "context": {"source_ip": "not-an-ip"},
+                "connector_trusted": True,
+            },
+        )
+        outside_cidr_response = client.post(
+            "/api/v1/workflows/approval-policies/simulate",
+            json={
+                "subject": {"id": "user-2", "tenant_id": "tenant-a"},
+                "action": "session.connect",
+                "resource": {"id": "asset-1", "type": "asset", "tenant_id": "tenant-a"},
+                "context": {"source_ip": "198.51.100.10"},
+                "connector_trusted": True,
+            },
+        )
+        matching_ipv4_response = client.post(
+            "/api/v1/workflows/approval-policies/simulate",
+            json={
+                "subject": {"id": "user-2", "tenant_id": "tenant-a"},
+                "action": "session.connect",
+                "resource": {"id": "asset-1", "type": "asset", "tenant_id": "tenant-a"},
+                "context": {"source_ip": "203.0.113.17"},
+                "connector_trusted": True,
+            },
+        )
+        matching_ipv6_response = client.post(
+            "/api/v1/workflows/approval-policies/simulate",
+            json={
+                "subject": {"id": "user-2", "tenant_id": "tenant-a"},
+                "action": "session.connect",
+                "resource": {"id": "asset-1", "type": "asset", "tenant_id": "tenant-a"},
+                "context": {"source_ip": "2001:db8:42::5"},
+                "connector_trusted": True,
+            },
+        )
+
+        invalid_cidr_create_response = client.post(
+            "/api/v1/workflows/approval-policies",
+            json={
+                "resource_selector": {"asset_id": "asset-2"},
+                "action_selector": "session.connect",
+                "approver_subject_ids": ["manager-1"],
+                "max_grant_ttl_seconds": 900,
+                "risk_level": "high",
+                "dsl_conditions": {"context_ip_in_cidr": {"source_ip": ["bad-cidr"]}},
+            },
+        )
+        invalid_cidr_response = client.post(
+            "/api/v1/workflows/approval-policies/simulate",
+            json={
+                "subject": {"id": "user-2", "tenant_id": "tenant-a"},
+                "action": "session.connect",
+                "resource": {"id": "asset-2", "type": "asset", "tenant_id": "tenant-a"},
+                "context": {"source_ip": "203.0.113.17"},
+                "connector_trusted": True,
+            },
+        )
+
+    assert create_response.status_code == 201
+    created = create_response.json()
+    for response in [missing_ip_response, invalid_ip_response, outside_cidr_response]:
+        assert response.status_code == 200
+        simulated = response.json()
+        assert simulated["reason_code"] == "NO_MATCHING_POLICY"
+        assert f"approval_policy:{created['id']}:dsl_excluded" in simulated["explain_trace"]
+    for response in [matching_ipv4_response, matching_ipv6_response]:
+        assert response.status_code == 200
+        simulated = response.json()
+        assert simulated["reason_code"] == "APPROVAL_REQUIRED"
+        assert simulated["obligations"]["approval_policy_id"] == created["id"]
+
+    assert invalid_cidr_create_response.status_code == 201
+    invalid_created = invalid_cidr_create_response.json()
+    assert invalid_cidr_response.status_code == 200
+    invalid_simulated = invalid_cidr_response.json()
+    assert invalid_simulated["reason_code"] == "NO_MATCHING_POLICY"
+    assert f"approval_policy:{invalid_created['id']}:dsl_excluded" in invalid_simulated[
+        "explain_trace"
+    ]
+
+
+@pytest.mark.asyncio
 async def test_approval_policy_dsl_any_all_composes_simulation_conditions(
     session_factory: async_sessionmaker[AsyncSession],
 ) -> None:

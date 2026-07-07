@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import ipaddress
 import json
 import math
 import re
@@ -160,6 +161,7 @@ class PolicyDecisionService:
                 "context_starts_with",
                 "context_ends_with",
                 "context_matches_regex",
+                "context_ip_in_cidr",
                 "all",
                 "any",
             }
@@ -287,9 +289,18 @@ class PolicyDecisionService:
         context_matches_regex = conditions.get("context_matches_regex", {})
         if not isinstance(context_matches_regex, dict):
             return False
-        return all(
+        if not all(
             self._context_string_matches_regex(request.context.get(key), expected)
             for key, expected in context_matches_regex.items()
+        ):
+            return False
+
+        context_ip_in_cidr = conditions.get("context_ip_in_cidr", {})
+        if not isinstance(context_ip_in_cidr, dict):
+            return False
+        return all(
+            self._context_ip_in_cidr(request.context.get(key), expected_networks)
+            for key, expected_networks in context_ip_in_cidr.items()
         )
 
     def _context_number_satisfies(self, actual: Any, expected: Any, *, operator: str) -> bool:
@@ -325,6 +336,24 @@ class PolicyDecisionService:
             return re.fullmatch(expected, actual) is not None
         except re.error:
             return False
+
+    def _context_ip_in_cidr(self, actual: Any, expected_networks: Any) -> bool:
+        if not isinstance(actual, str) or not isinstance(expected_networks, list):
+            return False
+        if not actual or not expected_networks:
+            return False
+        try:
+            ip_address = ipaddress.ip_address(actual)
+            networks = [
+                ipaddress.ip_network(network, strict=False)
+                for network in expected_networks
+                if isinstance(network, str) and network
+            ]
+        except ValueError:
+            return False
+        if len(networks) != len(expected_networks):
+            return False
+        return any(ip_address in network for network in networks)
 
     def _coerce_finite_number(self, value: Any) -> float | None:
         if isinstance(value, bool):
