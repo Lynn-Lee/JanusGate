@@ -114,9 +114,29 @@ class RedisConnectionTokenClient(Protocol):
         """Atomically read and delete a Redis key."""
 
 
+class ConnectorDispatchRequest(BaseModel):
+    """Identity a connector needs to open a real channel for one session.
+
+    Carries identity only (no credentials): the connector resolves the target and
+    credential on its own side. This mirrors the process boundary — in production
+    ``ConnectorScheduler.dispatch`` is an RPC to a remote connector.
+    """
+
+    session_id: str
+    connector_id: str
+    tenant_id: str
+    subject_id: str
+    asset_id: str
+    account_id: str
+    protocol: str
+
+
 class ConnectorScheduler(Protocol):
-    async def dispatch(self, session_id: str, connector_id: str) -> dict[str, str]:
-        """Dispatch the session to the selected connector."""
+    async def dispatch(self, request: ConnectorDispatchRequest) -> dict[str, str]:
+        """Dispatch the session to the selected connector and open its channel."""
+
+    async def release(self, connector_session_id: str) -> None:
+        """Release a connector-side session when the gateway session ends."""
 
 
 class AuditSink(Protocol):
@@ -304,11 +324,14 @@ class RedisConnectionTokenStore:
 
 
 class NoopConnectorScheduler:
-    async def dispatch(self, session_id: str, connector_id: str) -> dict[str, str]:
+    async def dispatch(self, request: ConnectorDispatchRequest) -> dict[str, str]:
         return {
             "connector_session_id": "",
             "connection_url": "",
         }
+
+    async def release(self, connector_session_id: str) -> None:
+        return None
 
 
 class NoopAuditSink:
@@ -539,8 +562,15 @@ class SessionGatewayService:
             self._transition(session, SessionStatus.CONNECTING)
             await self._publish("session.connecting", session)
             dispatch_result = await self.connector_scheduler.dispatch(
-                session.id,
-                token.connector_id,
+                ConnectorDispatchRequest(
+                    session_id=session.id,
+                    connector_id=token.connector_id,
+                    tenant_id=session.tenant_id,
+                    subject_id=session.subject_id,
+                    asset_id=session.asset_id,
+                    account_id=session.account_id,
+                    protocol=session.protocol,
+                )
             )
             session.connector_session_id = dispatch_result.get("connector_session_id", "")
             session.connection_url = dispatch_result.get("connection_url", "")
@@ -572,6 +602,7 @@ class SessionGatewayService:
         self._transition(session, SessionStatus.CLOSING)
         await self._publish("session.closing", session, reason_code=reason)
         self._transition(session, SessionStatus.CLOSED)
+        await self._release_connector(session)
         session.closed_at = self.now()
         await self.session_store.save(session)
         await self._publish("session.closed", session, reason_code=reason)
@@ -595,11 +626,28 @@ class SessionGatewayService:
             else:
                 self._transition(session, SessionStatus.CLOSING)
                 self._transition(session, SessionStatus.CLOSED)
+            await self._release_connector(session)
             session.closed_at = self.now()
             await self.session_store.save(session)
             await self._publish("session.revoked_by_jit_grant", session, reason_code=reason)
             revoked_session_ids.append(session.id)
         return revoked_session_ids
+
+    async def _release_connector(self, session: SessionRecord) -> None:
+        """尽力释放连接器侧会话；释放失败记审计事件但不阻断网关会话关闭。
+
+        连接器侧另有心跳租约超时兜底回收，故此处对释放失败采取降级处理，避免释放
+        异常反过来卡住网关状态机。
+        """
+
+        if not session.connector_session_id:
+            return
+        try:
+            await self.connector_scheduler.release(session.connector_session_id)
+        except Exception as exc:  # noqa: BLE001 - 释放失败降级为审计事件，不得阻断关闭
+            await self._publish(
+                "session.connector_release_failed", session, reason_code=str(exc)
+            )
 
     def _validate_token(self, token: ConnectionToken, session: SessionRecord, now: datetime) -> None:
         if token.expires_at <= now:

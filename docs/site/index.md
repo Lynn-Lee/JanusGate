@@ -9,6 +9,7 @@ Phase 5 #t59 文档站 foundation 面向安装、运维和 API 集成读者，�
 - [管理员截图证据](admin-screenshots.md)：管理控制台关键截图点、脱敏截图文件、脱敏要求、真实截图归档合约和回归测试来源，当前覆盖 License、审计报表、会话回放、Tenancy、账号轮换和 SSH CA。
 - [API 文档](api.md)：稳定 API 分组、OpenAPI 导出和前端/集成方消费方式。
 - [操作 Runbook](runbooks.md)：发布、多副本 smoke、回滚、密钥处理、License 运营和运行时告警演练清单；配套 `fixtures/operation-runbook-evidence.json`、`fixtures/license-operations-evidence.json` 与 `fixtures/runtime-alert-evidence.json` 固定操作证据归档字段。
+- [SSH 连接器预研通道](connectors-ssh.md)：#t69 预研切片真实 SSH 执行通道的安全约束（P0#7/15/16/17）、现代算法白名单要点和命令事件入库端点用法。
 
 ## 版本边界
 

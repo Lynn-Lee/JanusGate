@@ -94,13 +94,17 @@ class MultiTokenStore:
 class FakeConnectorScheduler:
     def __init__(self) -> None:
         self.dispatched: list[str] = []
+        self.released: list[str] = []
 
-    async def dispatch(self, session_id: str, connector_id: str) -> dict:
-        self.dispatched.append(session_id)
+    async def dispatch(self, request) -> dict:  # noqa: ANN001 - test double
+        self.dispatched.append(request.session_id)
         return {
-            "connector_session_id": f"connector-{session_id}",
-            "connection_url": f"wss://connector.example/sessions/{session_id}",
+            "connector_session_id": f"connector-{request.session_id}",
+            "connection_url": f"wss://connector.example/sessions/{request.session_id}",
         }
+
+    async def release(self, connector_session_id: str) -> None:
+        self.released.append(connector_session_id)
 
 
 class FakeAuditSink:
