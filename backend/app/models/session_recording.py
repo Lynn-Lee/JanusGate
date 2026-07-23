@@ -64,9 +64,11 @@ class SessionCommandEvent(Base):
             "occurred_at",
             "id",
         ),
+        # 用 `||` 拼接（IMMUTABLE）而非 func.concat（STABLE）：PostgreSQL 要求索引
+        # 表达式中的函数必须 IMMUTABLE，concat 会被拒绝（InvalidObjectDefinition）。
         Index(
             "ix_session_command_events_search_vector",
-            func.to_tsvector("simple", func.concat(command, " ", output_excerpt)),
+            func.to_tsvector("simple", command + " " + output_excerpt),
             postgresql_using="gin",
         ).ddl_if(dialect="postgresql"),
     )

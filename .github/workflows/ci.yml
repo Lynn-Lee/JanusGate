@@ -65,6 +65,9 @@ jobs:
       - name: Mypy typecheck
         run: mypy app
 
+      - name: Alembic migration consistency
+        run: cd .. && scripts/check-migrations.sh
+
       - name: Pytest
         env:
           SECRET_KEY: ci-secret-key-ci-secret-key-ci-secret-key-32
