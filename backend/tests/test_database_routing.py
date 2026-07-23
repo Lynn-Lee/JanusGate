@@ -52,16 +52,16 @@ DB_BACKED_GET_ROUTE_ROUTING_INVENTORY = {
     ("GET", "/workflows/requests/{request_id}"),
 }
 
-AUDIT_DB_FREE_GET_ROUTE_ROUTING_INVENTORY = {
+# #t61：审计已持久化，但 AuditService 自管读写会话（独立 append-only 账本），故审计
+# GET 路由不挂请求级 get_db/get_read_db 依赖——从依赖图看仍是「无请求级 DB 依赖」。
+AUDIT_SELF_MANAGED_GET_ROUTE_ROUTING_INVENTORY = {
     ("GET", "/api/v1/audits/events"),
     ("GET", "/api/v1/audits/reports/compliance"),
     ("GET", "/api/v1/audits/reports/summary"),
 }
 
-DB_FREE_GET_ROUTE_ROUTING_INVENTORY = {*AUDIT_DB_FREE_GET_ROUTE_ROUTING_INVENTORY}
-
 GET_ROUTE_ROUTING_INVENTORY = (
-    DB_BACKED_GET_ROUTE_ROUTING_INVENTORY | DB_FREE_GET_ROUTE_ROUTING_INVENTORY
+    DB_BACKED_GET_ROUTE_ROUTING_INVENTORY | AUDIT_SELF_MANAGED_GET_ROUTE_ROUTING_INVENTORY
 )
 
 ROUTERS_WITH_GET_ROUTES = [
@@ -88,8 +88,16 @@ def test_all_get_routes_are_classified_in_database_routing_inventory() -> None:
     assert _all_get_route_keys() == GET_ROUTE_ROUTING_INVENTORY
 
 
-def test_audit_read_routes_are_explicitly_db_free_until_audit_store_is_persisted() -> None:
-    for method, path in AUDIT_DB_FREE_GET_ROUTE_ROUTING_INVENTORY:
+def test_audit_routes_self_manage_sessions_without_request_db_dependency() -> None:
+    # #t61：审计已持久化，但 AuditService 自管读写会话（写走主库、读走只读副本），
+    # 故审计读/写路由都不挂请求级 get_db/get_read_db 依赖。
+    audit_routes = [
+        ("POST", "/api/v1/audits/events"),
+        ("GET", "/api/v1/audits/events"),
+        ("GET", "/api/v1/audits/reports/compliance"),
+        ("GET", "/api/v1/audits/reports/summary"),
+    ]
+    for method, path in audit_routes:
         dependencies = _route_dependency_calls(router=audits_router, method=method, path=path)
         assert get_db not in dependencies
         assert get_read_db not in dependencies

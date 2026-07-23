@@ -10,8 +10,11 @@ from typing import Any, Protocol
 from uuid import uuid4
 
 import httpx
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.api.audits.schemas import (
+    AuditCategory,
     AuditComplianceReport,
     AuditEvent,
     AuditEventCreate,
@@ -20,6 +23,8 @@ from app.api.audits.schemas import (
     SiemDeliveryStatus,
 )
 from app.core.config import Settings, settings
+from app.core.database import AsyncSessionLocal, ReadAsyncSessionLocal
+from app.models.audit import AuditEventModel
 
 SENSITIVE_KEYS = {
     "password",
@@ -180,9 +185,10 @@ def build_compliance_report_archive_store(
 
 
 class AuditEventRepository:
-    """进程内 append-only 审计事件仓库。
+    """基于数据库的 append-only 审计事件仓库（#t61）。
 
-    当前仓库用于第一版 API 和测试闭环；后续可替换为 SQLAlchemy/WORM 实现，路由层不变。
+    事件持久化到 `audit_events` 表；per-tenant 的 sequence_number + hash chain 保证
+    不可抵赖，重启不丢。签名器与 WORM 归档存储属仓库级配置、与事件数据解耦。
     """
 
     def __init__(
@@ -190,26 +196,36 @@ class AuditEventRepository:
         compliance_report_signer: ComplianceReportSigner | None = None,
         compliance_report_archive_store: ComplianceReportArchiveStore | None = None,
     ) -> None:
-        self._events: list[AuditEvent] = []
         self._compliance_report_signer = compliance_report_signer or build_compliance_report_signer()
         self._compliance_report_archive_store = (
             compliance_report_archive_store or build_compliance_report_archive_store()
         )
 
-    def append(self, event: AuditEvent) -> AuditEvent:
-        self._events.append(event)
-        return event
+    async def latest_for_update(
+        self, db: AsyncSession, *, tenant_id: str
+    ) -> AuditEventModel | None:
+        """取该租户序号最大的一条并加行锁，用于串行化 hash chain 追加。
 
-    def next_sequence(self) -> int:
-        return len(self._events) + 1
+        空表时 FOR UPDATE 无行可锁，靠 `UNIQUE(tenant_id, sequence_number)` 兜底防重。
+        """
+        result = await db.execute(
+            select(AuditEventModel)
+            .where(AuditEventModel.tenant_id == tenant_id)
+            .order_by(AuditEventModel.sequence_number.desc())
+            .limit(1)
+            .with_for_update()
+        )
+        return result.scalar_one_or_none()
 
-    def latest_hash(self) -> str | None:
-        if not self._events:
-            return None
-        return self._events[-1].event_hash
+    def add(self, db: AsyncSession, event: AuditEvent) -> AuditEventModel:
+        """将已算好 hash 的事件写入会话（不提交）。"""
+        model = _to_model(event)
+        db.add(model)
+        return model
 
-    def list(
+    async def list(
         self,
+        db: AsyncSession,
         *,
         tenant_id: str,
         event_type: str | None = None,
@@ -217,20 +233,35 @@ class AuditEventRepository:
         limit: int = 50,
         offset: int = 0,
     ) -> tuple[list[AuditEvent], int]:
-        matches = [
-            event
-            for event in self._events
-            if event.tenant_id == tenant_id
-            and (event_type is None or event.event_type == event_type)
-            and (severity is None or event.severity == severity)
-        ]
-        return matches[offset : offset + limit], len(matches)
+        conditions = [AuditEventModel.tenant_id == tenant_id]
+        if event_type is not None:
+            conditions.append(AuditEventModel.event_type == event_type)
+        if severity is not None:
+            conditions.append(AuditEventModel.severity == severity.value)
+        ordering = (AuditEventModel.sequence_number.asc(),)
+        total = len(
+            (
+                await db.execute(select(AuditEventModel.id).where(*conditions))
+            ).scalars().all()
+        )
+        result = await db.execute(
+            select(AuditEventModel)
+            .where(*conditions)
+            .order_by(*ordering)
+            .limit(limit)
+            .offset(offset)
+        )
+        items = [_to_audit_event(model) for model in result.scalars().all()]
+        return items, total
 
-    def summary(self, *, tenant_id: str) -> AuditReportSummary:
-        matches = [event for event in self._events if event.tenant_id == tenant_id]
-        severity_counts = Counter(event.severity.value for event in matches)
-        category_counts = Counter(event.category.value for event in matches)
-        siem_counts = Counter(event.siem_delivery_status.value for event in matches)
+    async def summary(self, db: AsyncSession, *, tenant_id: str) -> AuditReportSummary:
+        result = await db.execute(
+            select(AuditEventModel).where(AuditEventModel.tenant_id == tenant_id)
+        )
+        matches = result.scalars().all()
+        severity_counts = Counter(model.severity for model in matches)
+        category_counts = Counter(model.category for model in matches)
+        siem_counts = Counter(model.siem_delivery_status for model in matches)
         return AuditReportSummary(
             tenant_id=tenant_id,
             total=len(matches),
@@ -243,8 +274,15 @@ class AuditEventRepository:
             by_siem_delivery_status=dict(siem_counts),
         )
 
-    def compliance_report(self, *, tenant_id: str, template: str) -> AuditComplianceReport:
-        matches = [event for event in self._events if event.tenant_id == tenant_id]
+    async def compliance_report(
+        self, db: AsyncSession, *, tenant_id: str, template: str
+    ) -> AuditComplianceReport:
+        result = await db.execute(
+            select(AuditEventModel)
+            .where(AuditEventModel.tenant_id == tenant_id)
+            .order_by(AuditEventModel.sequence_number.asc())
+        )
+        matches = result.scalars().all()
         generated_at = datetime.now(UTC)
         report = AuditComplianceReport(
             download_filename=build_compliance_report_filename(
@@ -255,11 +293,11 @@ class AuditEventRepository:
             tenant_id=tenant_id,
             template=template,
             total=len(matches),
-            event_ids=[event.id for event in matches],
+            event_ids=[model.id for model in matches],
             hash_chain_start=matches[0].event_hash if matches else None,
             hash_chain_end=matches[-1].event_hash if matches else None,
-            period_start=matches[0].created_at if matches else None,
-            period_end=matches[-1].created_at if matches else None,
+            period_start=_as_utc(matches[0].created_at) if matches else None,
+            period_end=_as_utc(matches[-1].created_at) if matches else None,
             generated_at=generated_at,
             report_signature="",
             report_signature_algorithm=self._compliance_report_signer.algorithm,
@@ -286,7 +324,7 @@ class AuditEventRepository:
         )
 
     def clear(self) -> None:
-        self._events.clear()
+        """仅重置内存态的 WORM 归档存储（事件由数据库管理，不在此清理）。"""
         clear_archive = getattr(self._compliance_report_archive_store, "clear", None)
         if clear_archive is not None:
             clear_archive()
@@ -308,43 +346,63 @@ class SiemDeliveryClient:
 
 
 class AuditService:
-    def __init__(self, repository: AuditEventRepository, siem_client: SiemDeliveryClient) -> None:
+    def __init__(
+        self,
+        repository: AuditEventRepository,
+        siem_client: SiemDeliveryClient,
+        session_factory: async_sessionmaker[AsyncSession] = AsyncSessionLocal,
+        read_session_factory: async_sessionmaker[AsyncSession] = ReadAsyncSessionLocal,
+    ) -> None:
         self._repository = repository
         self._siem_client = siem_client
+        # 审计是独立 append-only 账本，读写都自管会话，不依赖调用方（横切 sink/路由）的会话。
+        # 写走主库，读走只读副本（若配置了 DATABASE_READ_REPLICA_URL），满足 #t53 读写分离。
+        self._session_factory = session_factory
+        self._read_session_factory = read_session_factory
 
     async def create_event(self, payload: AuditEventCreate, actor: dict[str, Any]) -> AuditEvent:
-        sequence_number = self._repository.next_sequence()
-        previous_hash = self._repository.latest_hash()
-        event = AuditEvent(
-            tenant_id=str(actor["tenant_id"]),
-            actor_id=str(actor["id"]),
-            actor_username=str(actor.get("username", "")),
-            event_type=payload.event_type,
-            category=payload.category,
-            action=payload.action,
-            resource_type=payload.resource_type,
-            resource_id=payload.resource_id,
-            session_id=payload.session_id,
-            severity=payload.severity,
-            message=payload.message,
-            metadata=redact_metadata(payload.metadata),
-            sequence_number=sequence_number,
-            previous_event_hash=previous_hash,
-            event_hash="",
-        )
-        event.event_hash = calculate_event_hash(event)
-        self._repository.append(event)
-        try:
-            event.siem_delivery_attempts += 1
-            await self._siem_client.deliver(event)
-            event.siem_delivery_status = SiemDeliveryStatus.delivered
-        except SiemDeliveryError as exc:
-            event.siem_delivery_status = SiemDeliveryStatus.failed
-            event.siem_delivery_error = str(exc)
-            event.siem_next_retry_at = datetime.now(UTC) + timedelta(minutes=5)
-        return event
+        async with self._session_factory() as db:
+            tenant_id = str(actor["tenant_id"])
+            # 锁住该租户链尾，串行化序号与 previous_event_hash 的计算，避免并发追加撕裂链。
+            last = await self._repository.latest_for_update(db, tenant_id=tenant_id)
+            sequence_number = last.sequence_number + 1 if last is not None else 1
+            previous_hash = last.event_hash if last is not None else None
+            event = AuditEvent(
+                tenant_id=tenant_id,
+                actor_id=str(actor["id"]),
+                actor_username=str(actor.get("username", "")),
+                event_type=payload.event_type,
+                category=payload.category,
+                action=payload.action,
+                resource_type=payload.resource_type,
+                resource_id=payload.resource_id,
+                session_id=payload.session_id,
+                severity=payload.severity,
+                message=payload.message,
+                metadata=redact_metadata(payload.metadata),
+                sequence_number=sequence_number,
+                previous_event_hash=previous_hash,
+                event_hash="",
+            )
+            event.event_hash = calculate_event_hash(event)
+            model = self._repository.add(db, event)
+            try:
+                event.siem_delivery_attempts += 1
+                await self._siem_client.deliver(event)
+                event.siem_delivery_status = SiemDeliveryStatus.delivered
+            except SiemDeliveryError as exc:
+                event.siem_delivery_status = SiemDeliveryStatus.failed
+                event.siem_delivery_error = str(exc)
+                event.siem_next_retry_at = datetime.now(UTC) + timedelta(minutes=5)
+            model.siem_delivery_status = event.siem_delivery_status.value
+            model.siem_delivery_error = event.siem_delivery_error
+            model.siem_delivery_attempts = event.siem_delivery_attempts
+            model.siem_next_retry_at = event.siem_next_retry_at
+            await db.commit()
+            await db.refresh(model)
+            return _to_audit_event(model)
 
-    def list_events(
+    async def list_events(
         self,
         *,
         tenant_id: str,
@@ -353,19 +411,25 @@ class AuditService:
         limit: int,
         offset: int,
     ) -> tuple[list[AuditEvent], int]:
-        return self._repository.list(
-            tenant_id=tenant_id,
-            event_type=event_type,
-            severity=severity,
-            limit=limit,
-            offset=offset,
-        )
+        async with self._read_session_factory() as db:
+            return await self._repository.list(
+                db,
+                tenant_id=tenant_id,
+                event_type=event_type,
+                severity=severity,
+                limit=limit,
+                offset=offset,
+            )
 
-    def report_summary(self, *, tenant_id: str) -> AuditReportSummary:
-        return self._repository.summary(tenant_id=tenant_id)
+    async def report_summary(self, *, tenant_id: str) -> AuditReportSummary:
+        async with self._read_session_factory() as db:
+            return await self._repository.summary(db, tenant_id=tenant_id)
 
-    def compliance_report(self, *, tenant_id: str, template: str) -> AuditComplianceReport:
-        return self._repository.compliance_report(tenant_id=tenant_id, template=template)
+    async def compliance_report(self, *, tenant_id: str, template: str) -> AuditComplianceReport:
+        async with self._read_session_factory() as db:
+            return await self._repository.compliance_report(
+                db, tenant_id=tenant_id, template=template
+            )
 
 
 def calculate_event_hash(event: AuditEvent) -> str:
@@ -381,6 +445,72 @@ def calculate_event_hash(event: AuditEvent) -> str:
     )
     encoded = json.dumps(canonical, sort_keys=True, separators=(",", ":")).encode("utf-8")
     return hashlib.sha256(encoded).hexdigest()
+
+
+def _to_model(event: AuditEvent) -> AuditEventModel:
+    """审计 Schema → ORM 模型（`metadata` 字段落到 `event_metadata` 列）。"""
+    return AuditEventModel(
+        id=event.id,
+        tenant_id=event.tenant_id,
+        actor_id=event.actor_id,
+        actor_username=event.actor_username,
+        event_type=event.event_type,
+        category=event.category.value,
+        action=event.action,
+        resource_type=event.resource_type,
+        resource_id=event.resource_id,
+        session_id=event.session_id,
+        severity=event.severity.value,
+        message=event.message,
+        event_metadata=event.metadata,
+        sequence_number=event.sequence_number,
+        previous_event_hash=event.previous_event_hash,
+        event_hash=event.event_hash,
+        siem_delivery_status=event.siem_delivery_status.value,
+        siem_delivery_error=event.siem_delivery_error,
+        siem_delivery_attempts=event.siem_delivery_attempts,
+        siem_next_retry_at=event.siem_next_retry_at,
+        created_at=event.created_at,
+    )
+
+
+def _to_audit_event(model: AuditEventModel) -> AuditEvent:
+    """ORM 模型 → 审计 Schema；DB 读回的时间统一补 UTC 时区。"""
+    return AuditEvent(
+        id=model.id,
+        tenant_id=model.tenant_id,
+        actor_id=model.actor_id,
+        actor_username=model.actor_username,
+        event_type=model.event_type,
+        category=AuditCategory(model.category),
+        action=model.action,
+        resource_type=model.resource_type,
+        resource_id=model.resource_id,
+        session_id=model.session_id,
+        severity=AuditSeverity(model.severity),
+        message=model.message,
+        metadata=model.event_metadata,
+        sequence_number=model.sequence_number,
+        previous_event_hash=model.previous_event_hash,
+        event_hash=model.event_hash,
+        siem_delivery_status=SiemDeliveryStatus(model.siem_delivery_status),
+        siem_delivery_error=model.siem_delivery_error,
+        siem_delivery_attempts=model.siem_delivery_attempts,
+        siem_next_retry_at=_as_utc(model.siem_next_retry_at),
+        created_at=_utc(model.created_at),
+    )
+
+
+def _utc(value: datetime) -> datetime:
+    """把 DB 读回的 naive datetime（sqlite 会丢时区）补成 UTC（用于必填时间字段）。"""
+    return value if value.tzinfo is not None else value.replace(tzinfo=UTC)
+
+
+def _as_utc(value: datetime | None) -> datetime | None:
+    """`_utc` 的可空版本，用于可选时间字段。"""
+    if value is None:
+        return value
+    return _utc(value)
 
 
 def sign_compliance_report(report: AuditComplianceReport) -> str:

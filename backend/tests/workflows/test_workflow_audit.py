@@ -4,7 +4,11 @@ from app.api.audits.schemas import AuditEvent
 from app.api.audits.service import audit_service
 from app.core.deps import current_user
 from app.main import app
-from app.workflows.audit import WORKFLOW_AUDIT_EVENTS, WorkflowAuditSink, emit_workflow_audit_event
+from app.workflows.audit import (
+    WORKFLOW_AUDIT_EVENTS,
+    WorkflowAuditSink,
+    emit_workflow_audit_event_async,
+)
 
 
 def _system_actor() -> dict[str, object]:
@@ -43,7 +47,7 @@ def test_workflow_audit_event_catalog_covers_phase2_state_changes():
     assert expected_events == WORKFLOW_AUDIT_EVENTS
 
 
-def test_emit_workflow_audit_event_redacts_metadata_and_reaches_siem_payload():
+async def test_emit_workflow_audit_event_redacts_metadata_and_reaches_siem_payload(audit_db):
     delivered_events: list[AuditEvent] = []
 
     class CaptureSiemClient:
@@ -53,7 +57,7 @@ def test_emit_workflow_audit_event_redacts_metadata_and_reaches_siem_payload():
     original_siem_client = audit_service._siem_client
     audit_service._siem_client = CaptureSiemClient()
     try:
-        event = emit_workflow_audit_event(
+        event = await emit_workflow_audit_event_async(
             audit_service,
             actor=_system_actor(),
             event_type="workflow.request.approved",
@@ -86,8 +90,8 @@ def test_emit_workflow_audit_event_redacts_metadata_and_reaches_siem_payload():
     assert "secret-credential" not in str(delivered_events[0].metadata)
 
 
-def test_workflow_audit_events_are_queryable_through_audit_api():
-    emit_workflow_audit_event(
+async def test_workflow_audit_events_are_queryable_through_audit_api(audit_db):
+    await emit_workflow_audit_event_async(
         audit_service,
         actor=_system_actor(),
         event_type="jit.grant.revoked",
@@ -110,7 +114,7 @@ def test_workflow_audit_events_are_queryable_through_audit_api():
     assert items[0]["metadata"]["jit_grant_id"] == "jg_2"
 
 
-def test_session_revoked_by_jit_grant_event_reaches_siem_payload():
+async def test_session_revoked_by_jit_grant_event_reaches_siem_payload(audit_db):
     delivered_events: list[AuditEvent] = []
 
     class CaptureSiemClient:
@@ -120,7 +124,7 @@ def test_session_revoked_by_jit_grant_event_reaches_siem_payload():
     original_siem_client = audit_service._siem_client
     audit_service._siem_client = CaptureSiemClient()
     try:
-        event = emit_workflow_audit_event(
+        event = await emit_workflow_audit_event_async(
             audit_service,
             actor=_system_actor(),
             event_type="session.revoked_by_jit_grant",
@@ -143,7 +147,7 @@ def test_session_revoked_by_jit_grant_event_reaches_siem_payload():
     assert "plain-cookie" not in str(delivered_events[0].metadata)
 
 
-async def test_workflow_audit_sink_bridges_service_events_to_audit_service():
+async def test_workflow_audit_sink_bridges_service_events_to_audit_service(audit_db):
     delivered_events: list[AuditEvent] = []
 
     class CaptureSiemClient:
@@ -179,7 +183,7 @@ async def test_workflow_audit_sink_bridges_service_events_to_audit_service():
     assert delivered_events[-1].metadata["jit_grant_id"] == "grant_sink"
 
 
-async def test_connection_token_issued_event_reaches_audit_without_plain_token():
+async def test_connection_token_issued_event_reaches_audit_without_plain_token(audit_db):
     delivered_events: list[AuditEvent] = []
 
     class CaptureSiemClient:

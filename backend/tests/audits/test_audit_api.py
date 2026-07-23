@@ -58,7 +58,7 @@ class RecordingComplianceReportArchiveStore:
         )
 
 
-def test_create_audit_event_persists_and_masks_sensitive_fields():
+async def test_create_audit_event_persists_and_masks_sensitive_fields(audit_db):
     app.dependency_overrides[current_user] = _audit_user
     client = TestClient(app)
 
@@ -90,7 +90,7 @@ def test_create_audit_event_persists_and_masks_sensitive_fields():
     assert any(item["id"] == body["id"] for item in items)
 
 
-def test_siem_delivery_failure_does_not_block_audit_event_creation():
+async def test_siem_delivery_failure_does_not_block_audit_event_creation(audit_db):
     app.dependency_overrides[current_user] = _audit_user
     client = TestClient(app)
 
@@ -115,7 +115,7 @@ def test_siem_delivery_failure_does_not_block_audit_event_creation():
     assert body["siem_next_retry_at"]
 
 
-def test_write_permission_required_for_audit_event_creation():
+async def test_write_permission_required_for_audit_event_creation(audit_db):
     app.dependency_overrides[current_user] = _read_only_user
     client = TestClient(app)
 
@@ -132,7 +132,7 @@ def test_write_permission_required_for_audit_event_creation():
     assert response.status_code == 403
 
 
-def test_audit_events_are_append_only_with_hash_chain_and_supported_categories():
+async def test_audit_events_are_append_only_with_hash_chain_and_supported_categories(audit_db):
     app.dependency_overrides[current_user] = _audit_user
     client = TestClient(app)
 
@@ -169,7 +169,7 @@ def test_audit_events_are_append_only_with_hash_chain_and_supported_categories()
     assert second["event_hash"] != first["event_hash"]
 
 
-def test_unknown_audit_category_is_rejected():
+async def test_unknown_audit_category_is_rejected(audit_db):
     app.dependency_overrides[current_user] = _audit_user
     client = TestClient(app)
 
@@ -187,7 +187,7 @@ def test_unknown_audit_category_is_rejected():
     assert response.status_code == 422
 
 
-def test_sensitive_metadata_redaction_covers_headers_credentials_and_siem_payload():
+async def test_sensitive_metadata_redaction_covers_headers_credentials_and_siem_payload(audit_db):
     delivered_events: list[AuditEvent] = []
 
     class CaptureSiemClient:
@@ -244,7 +244,7 @@ def test_sensitive_metadata_redaction_covers_headers_credentials_and_siem_payloa
     assert "plain-key" not in serialized
 
 
-def test_audit_report_summary_counts_current_tenant_without_metadata_leak():
+async def test_audit_report_summary_counts_current_tenant_without_metadata_leak(audit_db):
     app.dependency_overrides[current_user] = _audit_user
     client = TestClient(app)
 
@@ -306,7 +306,9 @@ def test_audit_report_summary_counts_current_tenant_without_metadata_leak():
     assert "raw-password" not in str(body)
 
 
-def test_compliance_report_export_returns_signed_tenant_scoped_event_hashes_without_details():
+async def test_compliance_report_export_returns_signed_tenant_scoped_event_hashes_without_details(
+    audit_db,
+):
     app.dependency_overrides[current_user] = _audit_user
     client = TestClient(app)
 
@@ -376,7 +378,7 @@ def test_compliance_report_export_returns_signed_tenant_scoped_event_hashes_with
     assert "raw-password" not in serialized
 
 
-def test_compliance_report_export_records_append_only_worm_archive_metadata():
+async def test_compliance_report_export_records_append_only_worm_archive_metadata(audit_db):
     app.dependency_overrides[current_user] = _audit_user
     client = TestClient(app)
 
@@ -413,7 +415,7 @@ def test_compliance_report_export_records_append_only_worm_archive_metadata():
     assert "resource_id" not in first
 
 
-def test_compliance_report_export_includes_formal_file_metadata():
+async def test_compliance_report_export_includes_formal_file_metadata(audit_db):
     app.dependency_overrides[current_user] = _audit_user
     client = TestClient(app)
 
@@ -441,7 +443,9 @@ def test_compliance_report_export_includes_formal_file_metadata():
     assert "raw-session-token" not in str(body)
 
 
-def test_compliance_report_export_uses_injected_signer_metadata_for_external_signing_boundary():
+async def test_compliance_report_export_uses_injected_signer_metadata_for_external_signing_boundary(
+    audit_db,
+):
     repository = AuditEventRepository(compliance_report_signer=RecordingComplianceReportSigner())
     event = AuditEvent(
         tenant_id="tenant-a",
@@ -457,9 +461,10 @@ def test_compliance_report_export_uses_injected_signer_metadata_for_external_sig
         sequence_number=1,
         event_hash="event-hash-1",
     )
-    repository.append(event)
-
-    report = repository.compliance_report(tenant_id="tenant-a", template="soc2-access")
+    async with audit_db() as db:
+        repository.add(db, event)
+        await db.commit()
+        report = await repository.compliance_report(db, tenant_id="tenant-a", template="soc2-access")
 
     assert report.report_signature == "external-signed-report"
     assert report.report_signature_algorithm == "external-test-signature"
@@ -468,7 +473,7 @@ def test_compliance_report_export_uses_injected_signer_metadata_for_external_sig
     assert report.worm_content_hash
 
 
-def test_compliance_report_export_can_use_injected_external_worm_archive_store():
+async def test_compliance_report_export_can_use_injected_external_worm_archive_store(audit_db):
     archive_store = RecordingComplianceReportArchiveStore()
     repository = AuditEventRepository(
         compliance_report_signer=RecordingComplianceReportSigner(),
@@ -488,9 +493,10 @@ def test_compliance_report_export_can_use_injected_external_worm_archive_store()
         sequence_number=1,
         event_hash="event-hash-1",
     )
-    repository.append(event)
-
-    report = repository.compliance_report(tenant_id="tenant-a", template="soc2-access")
+    async with audit_db() as db:
+        repository.add(db, event)
+        await db.commit()
+        report = await repository.compliance_report(db, tenant_id="tenant-a", template="soc2-access")
 
     assert report.worm_storage_status == "recorded"
     assert report.worm_record_id == "external-worm-record-1"
@@ -503,7 +509,7 @@ def test_compliance_report_export_can_use_injected_external_worm_archive_store()
     assert "raw-session-token" not in serialized_payload
 
 
-def test_compliance_report_signer_can_use_configured_external_hmac_adapter():
+async def test_compliance_report_signer_can_use_configured_external_hmac_adapter(audit_db):
     signer = build_compliance_report_signer(
         Settings(
             SECRET_KEY="local-signing-secret-with-enough-length",
@@ -527,9 +533,10 @@ def test_compliance_report_signer_can_use_configured_external_hmac_adapter():
         sequence_number=1,
         event_hash="event-hash-1",
     )
-    repository.append(event)
-
-    report = repository.compliance_report(tenant_id="tenant-a", template="soc2-access")
+    async with audit_db() as db:
+        repository.add(db, event)
+        await db.commit()
+        report = await repository.compliance_report(db, tenant_id="tenant-a", template="soc2-access")
 
     assert report.report_signature
     assert report.report_signature_algorithm == "external-hmac-sha256"

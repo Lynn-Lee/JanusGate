@@ -32,7 +32,7 @@ async def create_audit_event(
 
 
 @router.get("/events", response_model=AuditEventList)
-def list_audit_events(
+async def list_audit_events(
     user: Annotated[dict[str, Any], Depends(current_user)],
     event_type: Annotated[str | None, Query(min_length=3, max_length=120)] = None,
     severity: AuditSeverity | None = None,
@@ -40,7 +40,7 @@ def list_audit_events(
     offset: Annotated[int, Query(ge=0)] = 0,
 ) -> AuditEventList:
     require_audit_permission("audit:read", user)
-    items, total = audit_service.list_events(
+    items, total = await audit_service.list_events(
         tenant_id=str(user["tenant_id"]),
         event_type=event_type,
         severity=severity,
@@ -51,17 +51,19 @@ def list_audit_events(
 
 
 @router.get("/reports/summary", response_model=AuditReportSummary)
-def get_audit_report_summary(
+async def get_audit_report_summary(
     user: Annotated[dict[str, Any], Depends(current_user)],
 ) -> AuditReportSummary:
     require_audit_permission("audit:read", user)
-    return audit_service.report_summary(tenant_id=str(user["tenant_id"]))
+    return await audit_service.report_summary(tenant_id=str(user["tenant_id"]))
 
 
 @router.get("/reports/compliance", response_model=AuditComplianceReport)
-def get_audit_compliance_report(
+async def get_audit_compliance_report(
     user: Annotated[dict[str, Any], Depends(current_user)],
     template: Annotated[str, Query(min_length=3, max_length=80)] = "soc2-access",
 ) -> AuditComplianceReport:
     require_audit_permission("audit:read", user)
-    return audit_service.compliance_report(tenant_id=str(user["tenant_id"]), template=template)
+    return await audit_service.compliance_report(
+        tenant_id=str(user["tenant_id"]), template=template
+    )

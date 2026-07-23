@@ -1,5 +1,6 @@
 from app.models.account import Account, CredentialRotation
 from app.models.admin import LicenseConfigurationModel
+from app.models.audit import AuditEventModel
 from app.models.automation import AutomationJobRun
 from app.models.connector import Connector
 from app.models.session_recording import SessionCommandEvent, SessionRecording
@@ -14,6 +15,7 @@ __all__ = [
     "ApiKey",
     "ApprovalPolicyModel",
     "Account",
+    "AuditEventModel",
     "AutomationJobRun",
     "Connector",
     "CredentialRotation",
