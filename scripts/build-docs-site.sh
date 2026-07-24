@@ -19,6 +19,8 @@ cp "$repo_root/docs/site/admin.md" "$output_abs/admin.md"
 cp "$repo_root/docs/site/admin-screenshots.md" "$output_abs/admin-screenshots.md"
 cp "$repo_root/docs/site/api.md" "$output_abs/api.md"
 cp "$repo_root/docs/site/runbooks.md" "$output_abs/runbooks.md"
+cp "$repo_root/docs/site/connectors-ssh.md" "$output_abs/connectors-ssh.md"
+cp "$repo_root/docs/site/connectors-k8s.md" "$output_abs/connectors-k8s.md"
 mkdir -p "$output_abs/assets"
 cp -R "$repo_root/docs/site/assets/screenshots" "$output_abs/assets/screenshots"
 mkdir -p "$output_abs/fixtures"
@@ -88,7 +90,9 @@ cat > "$output_abs/manifest.json" <<'JSON'
     "admin.md",
     "admin-screenshots.md",
     "api.md",
-    "runbooks.md"
+    "runbooks.md",
+    "connectors-ssh.md",
+    "connectors-k8s.md"
   ]
 }
 JSON

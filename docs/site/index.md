@@ -10,6 +10,7 @@ Phase 5 #t59 文档站 foundation 面向安装、运维和 API 集成读者，�
 - [API 文档](api.md)：稳定 API 分组、OpenAPI 导出和前端/集成方消费方式。
 - [操作 Runbook](runbooks.md)：发布、多副本 smoke、回滚、密钥处理、License 运营和运行时告警演练清单；配套 `fixtures/operation-runbook-evidence.json`、`fixtures/license-operations-evidence.json` 与 `fixtures/runtime-alert-evidence.json` 固定操作证据归档字段。
 - [SSH 连接器预研通道](connectors-ssh.md)：#t69 预研切片真实 SSH 执行通道的安全约束（P0#7/15/16/17）、现代算法白名单要点和命令事件入库端点用法。
+- [K8s exec 连接器通道](connectors-k8s.md)：#t72 真实 `kubectl exec` 语义通道（WebSocket `v4.channel.k8s.io`）的 namespace 作用域强制、TLS 强校验、凭据仅内存约束和命令事件管线复用。
 
 ## 版本边界
 
