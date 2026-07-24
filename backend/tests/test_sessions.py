@@ -6,6 +6,8 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 from fastapi.testclient import TestClient
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy.pool import StaticPool
 
 from app.api.sessions.routes import (
     build_connection_token_store,
@@ -22,6 +24,7 @@ from app.api.sessions.service import (
     SessionGatewayService,
     SessionRecord,
     SessionStatus,
+    SqlAlchemySessionStore,
 )
 from app.api.workflows.service import (
     InMemoryWorkflowStore,
@@ -29,6 +32,7 @@ from app.api.workflows.service import (
     WorkflowRequestStatus,
     WorkflowService,
 )
+from app.core.database import Base
 from app.core.deps import current_user
 from app.main import app
 from app.policy.decision import PolicyDecisionService
@@ -1114,3 +1118,61 @@ async def test_default_jit_session_policy_allows_valid_approved_grant_context() 
 
     assert decision["decision"] == "allow"
     assert decision["reason_code"] == "POLICY_ALLOWED"
+
+
+async def test_sqlalchemy_session_store_persists_upserts_and_scopes_listing() -> None:
+    engine = create_async_engine(
+        "sqlite+aiosqlite:///:memory:",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+    factory: async_sessionmaker[AsyncSession] = async_sessionmaker(engine, expire_on_commit=False)
+    store = SqlAlchemySessionStore(session_factory=factory, read_session_factory=factory)
+
+    now = datetime.now(UTC)
+    record = SessionRecord(
+        id="sess-1",
+        subject_id="user-1",
+        tenant_id="tenant-a",
+        asset_id="asset-1",
+        account_id="root",
+        protocol="ssh",
+        connection_token_id="tok-digest",
+        jit_grant_id="grant-1",
+        status=SessionStatus.ACTIVE,
+        connector_session_id="cs-1",
+        created_at=now,
+        updated_at=now,
+        audit_event_ids=["e1", "e2"],
+    )
+    await store.save(record)
+
+    fetched = await store.get("sess-1")
+    assert fetched is not None
+    assert fetched.status is SessionStatus.ACTIVE
+    assert fetched.jit_grant_id == "grant-1"
+    assert fetched.audit_event_ids == ["e1", "e2"]
+    assert fetched.created_at.tzinfo is not None
+
+    # 跨租户但同一 grant/subject 的另一会话
+    other = record.model_copy(update={"id": "sess-2", "tenant_id": "tenant-b"})
+    await store.save(other)
+
+    mine = await store.list_by_subject(subject_id="user-1", tenant_id="tenant-a")
+    assert [session.id for session in mine] == ["sess-1"]
+    by_grant = await store.list_by_jit_grant("grant-1")
+    assert {session.id for session in by_grant} == {"sess-1", "sess-2"}
+
+    # upsert：关闭会话更新同一行而非新增
+    record.status = SessionStatus.CLOSED
+    record.closed_at = now
+    await store.save(record)
+    closed = await store.get("sess-1")
+    assert closed is not None
+    assert closed.status is SessionStatus.CLOSED
+    assert closed.closed_at is not None
+    assert len(await store.list_by_jit_grant("grant-1")) == 2
+
+    await engine.dispose()

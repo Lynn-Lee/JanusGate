@@ -15,7 +15,11 @@ from enum import StrEnum
 from typing import Any, Protocol
 
 from pydantic import BaseModel, Field
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from app.core.database import AsyncSessionLocal, ReadAsyncSessionLocal
+from app.models.session import SessionModel
 from app.policy.decision import PolicyDecisionService
 from app.policy.schemas import ApprovalState, PolicyDecisionRequest, ResourceRef, SubjectRef
 
@@ -142,6 +146,20 @@ class ConnectorScheduler(Protocol):
 class AuditSink(Protocol):
     async def publish(self, event: dict[str, Any]) -> None:
         """Publish session lifecycle events for the audit module."""
+
+
+class SessionStore(Protocol):
+    async def save(self, session: SessionRecord) -> SessionRecord:
+        """Upsert a session record by id."""
+
+    async def get(self, session_id: str) -> SessionRecord | None:
+        """Return a session by id, or None."""
+
+    async def list_by_jit_grant(self, jit_grant_id: str) -> list[SessionRecord]:
+        """Return all sessions bound to a JIT grant."""
+
+    async def list_by_subject(self, *, subject_id: str, tenant_id: str) -> list[SessionRecord]:
+        """Return a subject's sessions, newest first."""
 
 
 class JitGrantSessionBinding(BaseModel):
@@ -388,6 +406,113 @@ class InMemorySessionStore:
         return sorted(sessions, key=lambda session: session.created_at, reverse=True)
 
 
+class SqlAlchemySessionStore:
+    """数据库支撑的会话存储（#t62），使会话可持久化并跨副本共享。
+
+    与 #t61 审计一致，自管读写会话（写走主库、只读列表走只读副本），与调用方解耦——
+    会话既被有请求 db 的路由使用，也被无请求 db 的 JIT 撤销路径（`session_revoker`
+    单例）使用。参与写流程的读（关闭前 `get`、撤销前按 grant 列举）走主库以避免只读
+    副本延迟漏掉刚变更的会话；仅面向用户的列表 `list_by_subject` 走只读副本。
+    """
+
+    def __init__(
+        self,
+        *,
+        session_factory: async_sessionmaker[AsyncSession] = AsyncSessionLocal,
+        read_session_factory: async_sessionmaker[AsyncSession] = ReadAsyncSessionLocal,
+    ) -> None:
+        self._session_factory = session_factory
+        self._read_session_factory = read_session_factory
+
+    async def save(self, session: SessionRecord) -> SessionRecord:
+        async with self._session_factory() as db:
+            await db.merge(_session_to_model(session))
+            await db.commit()
+        return session
+
+    async def get(self, session_id: str) -> SessionRecord | None:
+        async with self._session_factory() as db:
+            model = await db.get(SessionModel, session_id)
+            return _session_to_record(model) if model is not None else None
+
+    async def list_by_jit_grant(self, jit_grant_id: str) -> list[SessionRecord]:
+        async with self._session_factory() as db:
+            result = await db.execute(
+                select(SessionModel).where(SessionModel.jit_grant_id == jit_grant_id)
+            )
+            return [_session_to_record(model) for model in result.scalars().all()]
+
+    async def list_by_subject(self, *, subject_id: str, tenant_id: str) -> list[SessionRecord]:
+        async with self._read_session_factory() as db:
+            result = await db.execute(
+                select(SessionModel)
+                .where(SessionModel.subject_id == subject_id)
+                .where(SessionModel.tenant_id == tenant_id)
+                .order_by(SessionModel.created_at.desc())
+            )
+            return [_session_to_record(model) for model in result.scalars().all()]
+
+
+def _session_to_model(record: SessionRecord) -> SessionModel:
+    return SessionModel(
+        id=record.id,
+        subject_id=record.subject_id,
+        tenant_id=record.tenant_id,
+        asset_id=record.asset_id,
+        account_id=record.account_id,
+        connector_id=record.connector_id,
+        protocol=record.protocol,
+        status=record.status.value,
+        connection_token_id=record.connection_token_id,
+        connector_session_id=record.connector_session_id,
+        connection_url=record.connection_url,
+        client_ip=record.client_ip,
+        client_ip_source=record.client_ip_source,
+        workflow_request_id=record.workflow_request_id,
+        jit_grant_id=record.jit_grant_id,
+        created_at=record.created_at,
+        updated_at=record.updated_at,
+        closed_at=record.closed_at,
+        failure_reason=record.failure_reason,
+        audit_event_ids=list(record.audit_event_ids),
+    )
+
+
+def _session_to_record(model: SessionModel) -> SessionRecord:
+    return SessionRecord(
+        id=model.id,
+        subject_id=model.subject_id,
+        tenant_id=model.tenant_id,
+        asset_id=model.asset_id,
+        account_id=model.account_id,
+        connector_id=model.connector_id,
+        protocol=model.protocol,
+        status=SessionStatus(model.status),
+        connection_token_id=model.connection_token_id,
+        connector_session_id=model.connector_session_id,
+        connection_url=model.connection_url,
+        client_ip=model.client_ip,
+        client_ip_source=model.client_ip_source,
+        workflow_request_id=model.workflow_request_id,
+        jit_grant_id=model.jit_grant_id,
+        created_at=_session_utc(model.created_at),
+        updated_at=_session_utc(model.updated_at),
+        closed_at=_session_as_utc(model.closed_at),
+        failure_reason=model.failure_reason,
+        audit_event_ids=list(model.audit_event_ids or []),
+    )
+
+
+def _session_utc(value: datetime) -> datetime:
+    """DB 读回的 naive datetime（sqlite 丢时区）补成 UTC（必填时间字段）。"""
+    return value if value.tzinfo is not None else value.replace(tzinfo=UTC)
+
+
+def _session_as_utc(value: datetime | None) -> datetime | None:
+    """`_session_utc` 的可空版本，用于 `closed_at` 等可选时间字段。"""
+    return None if value is None else _session_utc(value)
+
+
 class SessionGatewayService:
     def __init__(
         self,
@@ -395,7 +520,7 @@ class SessionGatewayService:
         policy_client: PolicyDecisionClient | None = None,
         token_store: ConnectionTokenStore | None = None,
         connector_scheduler: ConnectorScheduler | None = None,
-        session_store: InMemorySessionStore | None = None,
+        session_store: SessionStore | None = None,
         audit_sink: AuditSink | None = None,
         jit_grant_client: JitGrantClient | None = None,
         now: Callable[[], datetime] | None = None,

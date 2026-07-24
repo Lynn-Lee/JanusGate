@@ -3,6 +3,7 @@ from app.models.admin import LicenseConfigurationModel
 from app.models.audit import AuditEventModel
 from app.models.automation import AutomationJobRun
 from app.models.connector import Connector
+from app.models.session import SessionModel
 from app.models.session_recording import SessionCommandEvent, SessionRecording
 from app.models.ssh_ca import SshCertificate, SshCertificateAuthority
 from app.models.tenancy import Organization, Project, Team
@@ -26,6 +27,7 @@ __all__ = [
     "Organization",
     "Project",
     "SessionCommandEvent",
+    "SessionModel",
     "SessionRecording",
     "SecretRecordModel",
     "SshCertificate",

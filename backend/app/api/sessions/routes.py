@@ -23,6 +23,7 @@ from app.api.sessions.service import (
     RedisConnectionTokenClient,
     RedisConnectionTokenStore,
     SessionGatewayService,
+    SqlAlchemySessionStore,
 )
 from app.core.config import settings
 from app.core.database import get_db, get_read_db
@@ -53,7 +54,10 @@ def build_connection_token_store(
     raise ValueError("UNSUPPORTED_SESSION_CONNECTION_TOKEN_STORE")
 
 
-_session_gateway_service = SessionGatewayService(token_store=build_connection_token_store())
+_session_gateway_service = SessionGatewayService(
+    token_store=build_connection_token_store(),
+    session_store=SqlAlchemySessionStore(),
+)
 _workflow_audit_sink = WorkflowAuditSink(audit_service)
 _session_policy_client = PolicyDecisionServiceClient(
     PolicyDecisionService(
