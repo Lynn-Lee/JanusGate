@@ -40,8 +40,14 @@
 - 输入 `CommandDecisionRequest`：`subject`、`resource`（资产）、`account_id`、`command`、`context`。
 - 输出 `CommandDecisionResponse`：`effect`（`allow`/`deny`/`review`）、`action`（命中 ACL 原始动作，无命中为 `accept`）、`reason_code`、`matched_acl_id`、`matched_command_group_id`、`reviewer_subject_ids`、`obligations`、`explain_trace`、`audit_event_id`。
 
+## 持久化加载（租户 scope）
+
+`backend/app/policy/repository.py` 的 `AclRepository` 把命令过滤 ACL、命令组、数据脱敏规则从数据库按租户加载，`build_tenant_policy_service(session, actor_scope)` 装配出一个已加载对应租户规则、可直接 `evaluate_command` / `mask` 的 `PolicyDecisionService`。
+
+- **强制走 scope helper**：所有加载查询经 `app/tenancy/scope.py` 的 `scoped_select`（落实 #t64「授权查询强制走 scope helper」、关闭 P2#9）。ACL 模型只带 `tenant_id`、不带 org/team/project 列，故 `scoped_select` 对其只施加租户过滤——正是「装载某租户全量 ACL 供判定」所需，不会被调用者的 org/team 子范围误缩小。
+- 仅加载 `is_active` 记录；失活 ACL / 命令组不参与判定。
+
 ## 已知边界
 
-- 本切片交付模型 + 判定服务 + 迁移，尚未提供管理 CRUD 路由与连接器接线；连接器（#t69 SSH / #t72 K8s exec）在命令事件管线上调用 `evaluate_command` 的接线为下一步，与 SSH/K8s 通道当前「先做通道层、后接会话网关」的推进节奏一致。
-- ACL 集当前由调用方装载进 `PolicyDecisionService`（构造器 `command_filter_acls` / `command_groups`），持久化仓库与租户 scope helper 装载留待与 #t64 授权查询一并落地。
+- 本切片交付模型 + 判定服务 + 迁移 + 租户 scope 加载器；尚未提供管理 CRUD 路由与连接器接线。连接器（#t69 SSH / #t72 K8s exec）在命令事件管线上调用 `evaluate_command` 的接线为下一步，与 SSH/K8s 通道当前「先做通道层、后接会话网关」的推进节奏一致。
 - 命令过滤只作用于**语句/命令**粒度；数据库 SQL 语句级过滤与脱敏（#t65 数据脱敏规则、#t71 联动）为后续切片。

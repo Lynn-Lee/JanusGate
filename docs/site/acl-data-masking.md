@@ -33,8 +33,11 @@
 - 输入 `MaskingRequest`：`subject`、`resource`（资产）、`account_id`、`text`。
 - 输出 `MaskingResponse`：`masked_text`、`redaction_count`（替换总次数，0 表示原样）、`applied_rule_ids`（实际产生替换的规则 ID，按应用顺序）、`explain_trace`、`audit_event_id`。
 
+## 持久化加载（租户 scope）
+
+脱敏规则与命令过滤 ACL 共用 `backend/app/policy/repository.py` 的加载路径：`AclRepository.list_data_masking_rules` 经 `scoped_select` 按租户加载活跃规则，`build_tenant_policy_service` 把它们接入 `PolicyDecisionService.mask`。详见[命令过滤 ACL](acl-command-filter.md)的「持久化加载」一节（同一 scope helper、同一租户过滤特性）。
+
 ## 已知边界
 
-- 本切片交付模型 + 应用服务 + 迁移，尚未提供管理 CRUD 路由与连接器接线；连接器（#t69 SSH / #t72 K8s exec）在命令事件入库前对 `output_excerpt` 调 `mask`、以及 #t71 DB 代理对查询结果调 `mask`，为后续接线步骤。
-- 规则集当前由调用方装载进 `PolicyDecisionService`（构造器 `data_masking_rules`）；持久化仓库与租户 scope helper 装载与 #t64 授权查询一并落地。
+- 本切片交付模型 + 应用服务 + 迁移 + 租户 scope 加载器；尚未提供管理 CRUD 路由与连接器接线。连接器（#t69 SSH / #t72 K8s exec）在命令事件入库前对 `output_excerpt` 调 `mask`、以及 #t71 DB 代理对查询结果调 `mask`，为后续接线步骤。
 - 打码为**幂等文本替换**，不解析结构化列语义（如「仅脱敏某数据库某列」）；列级脱敏留待与 #t71 SQL 语句解析联动的后续切片。
