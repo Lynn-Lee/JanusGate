@@ -1,4 +1,5 @@
 from app.models.account import Account, CredentialRotation
+from app.models.acl import CommandFilterAclModel, CommandGroupModel
 from app.models.admin import LicenseConfigurationModel
 from app.models.audit import AuditEventModel
 from app.models.automation import AutomationJobRun
@@ -18,6 +19,8 @@ __all__ = [
     "Account",
     "AuditEventModel",
     "AutomationJobRun",
+    "CommandFilterAclModel",
+    "CommandGroupModel",
     "Connector",
     "CredentialRotation",
     "JitGrantModel",

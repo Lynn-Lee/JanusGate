@@ -124,3 +124,46 @@ class PolicyDecisionResponse(BaseModel):
     obligations: dict[str, Any] = Field(default_factory=dict)
     ttl_seconds: int = 0
     audit_event_id: str
+
+
+class CommandFilterEffect(StrEnum):
+    """命令过滤判定归一化后的三态效果。
+
+    区别于会话级 :class:`PolicyDecision` 的二态：命令过滤在**已授权会话**之上叠加，
+    故除放行/拒绝外还有「需复核」（review）这一挂起态。
+    """
+
+    ALLOW = "allow"
+    DENY = "deny"
+    REVIEW = "review"
+
+
+class CommandDecisionRequest(BaseModel):
+    """命令过滤判定的输入契约（会话内逐条命令评估）。"""
+
+    subject: SubjectRef
+    resource: ResourceRef
+    account_id: str
+    command: str
+    context: dict[str, Any] = Field(default_factory=dict)
+
+
+class CommandDecisionResponse(BaseModel):
+    """命令过滤判定的响应，返回给连接器与审计管线。
+
+    :ivar effect: 归一化三态效果（放行 / 拒绝 / 需复核）。
+    :ivar action: 命中 ACL 的原始动作（如 ``notify_and_warn``）；无命中时为 ``accept``。
+    :ivar matched_acl_id: 命中的命令过滤 ACL ID；无命中为空串。
+    :ivar matched_command_group_id: 命中的命令组 ID；无命中为空串。
+    :ivar reviewer_subject_ids: ``review`` 动作的复核人主体 ID。
+    """
+
+    effect: CommandFilterEffect
+    action: str
+    reason_code: str
+    matched_acl_id: str = ""
+    matched_command_group_id: str = ""
+    reviewer_subject_ids: list[str] = Field(default_factory=list)
+    explain_trace: list[str]
+    obligations: dict[str, Any] = Field(default_factory=dict)
+    audit_event_id: str

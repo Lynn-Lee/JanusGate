@@ -11,6 +11,7 @@ Phase 5 #t59 文档站 foundation 面向安装、运维和 API 集成读者，�
 - [操作 Runbook](runbooks.md)：发布、多副本 smoke、回滚、密钥处理、License 运营和运行时告警演练清单；配套 `fixtures/operation-runbook-evidence.json`、`fixtures/license-operations-evidence.json` 与 `fixtures/runtime-alert-evidence.json` 固定操作证据归档字段。
 - [SSH 连接器预研通道](connectors-ssh.md)：#t69 预研切片真实 SSH 执行通道的安全约束（P0#7/15/16/17）、现代算法白名单要点和命令事件入库端点用法。
 - [K8s exec 连接器通道](connectors-k8s.md)：#t72 真实 `kubectl exec` 语义通道（WebSocket `v4.channel.k8s.io`）的 namespace 作用域强制、TLS 强校验、凭据仅内存约束和命令事件管线复用。
+- [命令过滤 ACL](acl-command-filter.md)：#t65 ACL 体系首个派生类型——命令过滤 ACL + 命令组的数据模型、优先级/动作/复核人语义，以及统一进 `PolicyDecisionService.evaluate_command` 的 deny-overlay 判定。
 
 ## 版本边界
 

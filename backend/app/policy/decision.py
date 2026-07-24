@@ -11,13 +11,32 @@ from datetime import UTC, datetime, time
 from typing import Any
 from uuid import uuid4
 
+from app.models.acl import (
+    CommandFilterAclModel,
+    CommandFilterAction,
+    CommandGroupMatchType,
+    CommandGroupModel,
+)
 from app.models.workflow import ApprovalPolicyModel
 from app.policy.schemas import (
+    CommandDecisionRequest,
+    CommandDecisionResponse,
+    CommandFilterEffect,
     PolicyDecision,
     PolicyDecisionRequest,
     PolicyDecisionResponse,
     PolicyRule,
 )
+
+# 命中命令过滤 ACL 后，动作到归一化效果的映射；未列出的动作按放行处理。
+_COMMAND_ACTION_EFFECTS: dict[str, CommandFilterEffect] = {
+    CommandFilterAction.REJECT: CommandFilterEffect.DENY,
+    CommandFilterAction.REVIEW: CommandFilterEffect.REVIEW,
+    CommandFilterAction.ACCEPT: CommandFilterEffect.ALLOW,
+    CommandFilterAction.WARNING: CommandFilterEffect.ALLOW,
+    CommandFilterAction.NOTICE: CommandFilterEffect.ALLOW,
+    CommandFilterAction.NOTIFY_AND_WARN: CommandFilterEffect.ALLOW,
+}
 
 
 class PolicyDecisionService:
@@ -32,9 +51,13 @@ class PolicyDecisionService:
         self,
         rules: list[PolicyRule] | None = None,
         approval_policies: list[ApprovalPolicyModel] | None = None,
+        command_filter_acls: list[CommandFilterAclModel] | None = None,
+        command_groups: list[CommandGroupModel] | None = None,
     ) -> None:
         self._rules = rules or []
         self._approval_policies = approval_policies or []
+        self._command_filter_acls = command_filter_acls or []
+        self._command_groups = command_groups or []
 
     def evaluate(self, request: PolicyDecisionRequest) -> PolicyDecisionResponse:
         trace: list[str] = [
@@ -94,6 +117,161 @@ class PolicyDecisionService:
 
         trace.append("no_matching_policy")
         return self._deny("NO_MATCHING_POLICY", trace)
+
+    def evaluate_command(self, request: CommandDecisionRequest) -> CommandDecisionResponse:
+        """评估会话内单条命令是否被命令过滤 ACL 拦截 / 需复核。
+
+        语义要点：命令过滤是叠加在**已授权会话**之上的精炼层（会话本身已由
+        :meth:`evaluate` 走 deny-by-default 授权），因此与会话级判定相反——**无任何 ACL 命中
+        时默认放行**（``accept``），否则每个 ACL 都要显式放行才可用，不可运维。
+
+        判定：按 ``priority`` 升序（小者优先）取**首个**「选择器匹配且命令命中其任一命令组」
+        的 ACL，其动作决定归一化效果（reject→deny / review→review / 其余→allow 并带告警/通知
+        obligation）。不匹配的 ACL 让位给下一优先级。租户不一致直接拒绝。
+        """
+
+        trace: list[str] = [
+            f"subject={request.subject.type}:{request.subject.id}",
+            f"account={request.account_id}",
+            f"resource={request.resource.type}:{request.resource.id}",
+            f"command={request.command}",
+        ]
+
+        if request.subject.tenant_id != request.resource.tenant_id:
+            trace.append("tenant_mismatch")
+            return self._command_response(
+                effect=CommandFilterEffect.DENY,
+                action=CommandFilterAction.REJECT,
+                reason_code="TENANT_MISMATCH",
+                trace=trace,
+            )
+
+        groups_by_id = {
+            group.id: group
+            for group in self._command_groups
+            if group.is_active and group.tenant_id == request.subject.tenant_id
+        }
+
+        candidates = sorted(
+            (
+                acl
+                for acl in self._command_filter_acls
+                if acl.is_active and acl.tenant_id == request.subject.tenant_id
+            ),
+            key=lambda acl: (acl.priority, acl.id),
+        )
+
+        for acl in candidates:
+            if not self._command_acl_selectors_match(acl, request):
+                trace.append(f"command_acl:{acl.id}:selector_not_matched")
+                continue
+            matched_group_id = self._command_matched_group(acl, request.command, groups_by_id)
+            if matched_group_id is None:
+                trace.append(f"command_acl:{acl.id}:command_not_in_groups")
+                continue
+
+            trace.append(f"command_acl:{acl.id}:matched:group={matched_group_id}")
+            action = str(acl.action)
+            effect = _COMMAND_ACTION_EFFECTS.get(action, CommandFilterEffect.ALLOW)
+            reviewers = (
+                self._load_json_list(acl.reviewer_subject_ids_json)
+                if effect is CommandFilterEffect.REVIEW
+                else []
+            )
+            return self._command_response(
+                effect=effect,
+                action=action,
+                reason_code=f"COMMAND_{action.upper()}",
+                trace=trace,
+                matched_acl_id=acl.id,
+                matched_command_group_id=matched_group_id,
+                reviewer_subject_ids=reviewers,
+                obligations=self._command_obligations(action, reviewers),
+            )
+
+        trace.append("no_matching_command_acl")
+        return self._command_response(
+            effect=CommandFilterEffect.ALLOW,
+            action=CommandFilterAction.ACCEPT,
+            reason_code="COMMAND_ACCEPTED_BY_DEFAULT",
+            trace=trace,
+        )
+
+    def _command_acl_selectors_match(
+        self, acl: CommandFilterAclModel, request: CommandDecisionRequest
+    ) -> bool:
+        return (
+            self._id_in_selector(self._load_json_list(acl.subject_ids_json), request.subject.id)
+            and self._id_in_selector(self._load_json_list(acl.asset_ids_json), request.resource.id)
+            and self._id_in_selector(
+                self._load_json_list(acl.account_ids_json), request.account_id
+            )
+        )
+
+    def _command_matched_group(
+        self,
+        acl: CommandFilterAclModel,
+        command: str,
+        groups_by_id: dict[str, CommandGroupModel],
+    ) -> str | None:
+        for group_id in self._load_json_list(acl.command_group_ids_json):
+            group = groups_by_id.get(group_id)
+            if group is not None and self._command_matches_group(command, group):
+                return group_id
+        return None
+
+    def _command_matches_group(self, command: str, group: CommandGroupModel) -> bool:
+        patterns = self._load_json_list(group.patterns_json)
+        is_regex = group.match_type == CommandGroupMatchType.REGEX
+        for pattern in patterns:
+            if not pattern:
+                continue
+            # 字面命令按词边界匹配（``rm`` 命中 ``sudo rm -rf`` 但不误伤 ``charmander``）；
+            # 正则按 search 部分匹配。非法正则安全跳过，绝不让配置错误抛异常打断会话。
+            expression = pattern if is_regex else rf"\b{re.escape(pattern)}\b"
+            try:
+                if re.search(expression, command):
+                    return True
+            except re.error:
+                continue
+        return False
+
+    def _command_obligations(self, action: str, reviewers: list[str]) -> dict[str, object]:
+        obligations: dict[str, object] = {}
+        if action == CommandFilterAction.REVIEW:
+            obligations["reviewer_subject_ids"] = reviewers
+        if action in (CommandFilterAction.WARNING, CommandFilterAction.NOTIFY_AND_WARN):
+            obligations["warn"] = True
+        if action in (CommandFilterAction.NOTICE, CommandFilterAction.NOTIFY_AND_WARN):
+            obligations["notify"] = True
+        return obligations
+
+    def _id_in_selector(self, selector_ids: list[str], value: str) -> bool:
+        return "*" in selector_ids or value in selector_ids
+
+    def _command_response(
+        self,
+        *,
+        effect: CommandFilterEffect,
+        action: str,
+        reason_code: str,
+        trace: list[str],
+        matched_acl_id: str = "",
+        matched_command_group_id: str = "",
+        reviewer_subject_ids: list[str] | None = None,
+        obligations: dict[str, object] | None = None,
+    ) -> CommandDecisionResponse:
+        return CommandDecisionResponse(
+            effect=effect,
+            action=str(action),
+            reason_code=reason_code,
+            matched_acl_id=matched_acl_id,
+            matched_command_group_id=matched_command_group_id,
+            reviewer_subject_ids=reviewer_subject_ids or [],
+            explain_trace=trace,
+            obligations=obligations or {},
+            audit_event_id=f"pde_{uuid4().hex}",
+        )
 
     def _approval_policy_matches(
         self, policy: ApprovalPolicyModel, request: PolicyDecisionRequest
