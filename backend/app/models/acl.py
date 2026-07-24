@@ -42,6 +42,20 @@ class CommandFilterAction(StrEnum):
     NOTIFY_AND_WARN = "notify_and_warn"
 
 
+class DataMaskingMatchType(StrEnum):
+    """数据脱敏规则的匹配方式：正则或字面关键字（子串）。"""
+
+    REGEX = "regex"
+    KEYWORD = "keyword"
+
+
+class DataMaskingMethod(StrEnum):
+    """脱敏方式：整体替换为占位符，或保留前后缀、中间打码。"""
+
+    FULL = "full"
+    PARTIAL = "partial"
+
+
 class CommandGroupModel(Base):
     """命令组：一组字面命令或正则，供命令过滤 ACL 引用。
 
@@ -92,6 +106,50 @@ class CommandFilterAclModel(Base):
     asset_ids_json: Mapped[str] = mapped_column(Text, nullable=False, default='["*"]')
     account_ids_json: Mapped[str] = mapped_column(Text, nullable=False, default='["*"]')
     command_group_ids_json: Mapped[str] = mapped_column(Text, nullable=False, default="[]")
+    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+
+class DataMaskingRuleModel(Base):
+    """数据脱敏规则：对会话命令输出 / 数据库结果中的敏感数据打码。
+
+    与命令过滤 ACL 不同，脱敏是**转换**而非放行/拒绝决策，且**累计应用**所有命中选择器的
+    规则（非首个命中即止），以确保多类敏感数据都被覆盖；``priority`` 仅用于确定应用顺序的
+    确定性。判定/装载统一走 :class:`~app.policy.decision.PolicyDecisionService`（#t65 约束）。
+
+    :ivar priority: 应用顺序，小者先应用（同 BaseACL 惯例）。
+    :ivar match_type: ``regex`` 按正则、``keyword`` 按字面子串匹配。
+    :ivar patterns_json: JSON 字符串数组，存正则或关键字。
+    :ivar mask_method: ``full`` 整体替换为 ``placeholder``；``partial`` 保留前后缀、中间打码。
+    :ivar keep_prefix / keep_suffix: ``partial`` 保留的前 / 后字符数。
+    :ivar placeholder: ``full`` 的替换占位符。
+    :ivar subject_ids_json / asset_ids_json / account_ids_json: 作用对象选择器，``"*"`` 通配。
+    """
+
+    __tablename__ = "data_masking_rules"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    tenant_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    name: Mapped[str] = mapped_column(String(128), nullable=False)
+    priority: Mapped[int] = mapped_column(Integer, nullable=False, default=50)
+    match_type: Mapped[DataMaskingMatchType] = mapped_column(
+        String(16), nullable=False, default=DataMaskingMatchType.REGEX
+    )
+    patterns_json: Mapped[str] = mapped_column(Text, nullable=False, default="[]")
+    mask_method: Mapped[DataMaskingMethod] = mapped_column(
+        String(16), nullable=False, default=DataMaskingMethod.FULL
+    )
+    keep_prefix: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    keep_suffix: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    placeholder: Mapped[str] = mapped_column(String(32), nullable=False, default="***")
+    subject_ids_json: Mapped[str] = mapped_column(Text, nullable=False, default='["*"]')
+    asset_ids_json: Mapped[str] = mapped_column(Text, nullable=False, default='["*"]')
+    account_ids_json: Mapped[str] = mapped_column(Text, nullable=False, default='["*"]')
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()

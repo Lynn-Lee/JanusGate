@@ -167,3 +167,27 @@ class CommandDecisionResponse(BaseModel):
     explain_trace: list[str]
     obligations: dict[str, Any] = Field(default_factory=dict)
     audit_event_id: str
+
+
+class MaskingRequest(BaseModel):
+    """数据脱敏的输入契约：对某会话上下文的一段文本打码。"""
+
+    subject: SubjectRef
+    resource: ResourceRef
+    account_id: str
+    text: str
+
+
+class MaskingResponse(BaseModel):
+    """数据脱敏的响应。
+
+    :ivar masked_text: 已按全部命中规则累计打码后的文本。
+    :ivar redaction_count: 打码替换发生的总次数（0 表示原样未改）。
+    :ivar applied_rule_ids: 实际产生过替换的规则 ID，按应用顺序。
+    """
+
+    masked_text: str
+    redaction_count: int
+    applied_rule_ids: list[str] = Field(default_factory=list)
+    explain_trace: list[str]
+    audit_event_id: str

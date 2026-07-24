@@ -16,12 +16,17 @@ from app.models.acl import (
     CommandFilterAction,
     CommandGroupMatchType,
     CommandGroupModel,
+    DataMaskingMatchType,
+    DataMaskingMethod,
+    DataMaskingRuleModel,
 )
 from app.models.workflow import ApprovalPolicyModel
 from app.policy.schemas import (
     CommandDecisionRequest,
     CommandDecisionResponse,
     CommandFilterEffect,
+    MaskingRequest,
+    MaskingResponse,
     PolicyDecision,
     PolicyDecisionRequest,
     PolicyDecisionResponse,
@@ -53,11 +58,13 @@ class PolicyDecisionService:
         approval_policies: list[ApprovalPolicyModel] | None = None,
         command_filter_acls: list[CommandFilterAclModel] | None = None,
         command_groups: list[CommandGroupModel] | None = None,
+        data_masking_rules: list[DataMaskingRuleModel] | None = None,
     ) -> None:
         self._rules = rules or []
         self._approval_policies = approval_policies or []
         self._command_filter_acls = command_filter_acls or []
         self._command_groups = command_groups or []
+        self._data_masking_rules = data_masking_rules or []
 
     def evaluate(self, request: PolicyDecisionRequest) -> PolicyDecisionResponse:
         trace: list[str] = [
@@ -272,6 +279,113 @@ class PolicyDecisionService:
             obligations=obligations or {},
             audit_event_id=f"pde_{uuid4().hex}",
         )
+
+    def mask(self, request: MaskingRequest) -> MaskingResponse:
+        """对一段会话文本按数据脱敏规则打码（命令输出 / 数据库结果）。
+
+        与命令过滤的首个命中即止不同，脱敏**累计应用**所有命中选择器的活跃规则（按
+        ``priority`` 升序，保证确定性），以覆盖多类敏感数据；每条规则对文本做全局替换。
+        租户不一致时不应用任何规则（返回原文，trace 记 ``tenant_mismatch``），避免跨租户
+        规则误伤。非法正则安全跳过，绝不因配置错误抛异常。
+        """
+
+        trace: list[str] = [
+            f"subject={request.subject.type}:{request.subject.id}",
+            f"account={request.account_id}",
+            f"resource={request.resource.type}:{request.resource.id}",
+        ]
+
+        if request.subject.tenant_id != request.resource.tenant_id:
+            trace.append("tenant_mismatch")
+            return MaskingResponse(
+                masked_text=request.text,
+                redaction_count=0,
+                applied_rule_ids=[],
+                explain_trace=trace,
+                audit_event_id=f"pde_{uuid4().hex}",
+            )
+
+        rules = sorted(
+            (
+                rule
+                for rule in self._data_masking_rules
+                if rule.is_active and rule.tenant_id == request.subject.tenant_id
+            ),
+            key=lambda rule: (rule.priority, rule.id),
+        )
+
+        text = request.text
+        total_redactions = 0
+        applied_rule_ids: list[str] = []
+        for rule in rules:
+            if not self._masking_selectors_match(rule, request):
+                trace.append(f"masking_rule:{rule.id}:selector_not_matched")
+                continue
+            text, count = self._apply_masking_rule(text, rule)
+            if count:
+                total_redactions += count
+                applied_rule_ids.append(rule.id)
+                trace.append(f"masking_rule:{rule.id}:redacted:{count}")
+            else:
+                trace.append(f"masking_rule:{rule.id}:no_hit")
+
+        return MaskingResponse(
+            masked_text=text,
+            redaction_count=total_redactions,
+            applied_rule_ids=applied_rule_ids,
+            explain_trace=trace,
+            audit_event_id=f"pde_{uuid4().hex}",
+        )
+
+    def _masking_selectors_match(
+        self, rule: DataMaskingRuleModel, request: MaskingRequest
+    ) -> bool:
+        return (
+            self._id_in_selector(self._load_json_list(rule.subject_ids_json), request.subject.id)
+            and self._id_in_selector(
+                self._load_json_list(rule.asset_ids_json), request.resource.id
+            )
+            and self._id_in_selector(
+                self._load_json_list(rule.account_ids_json), request.account_id
+            )
+        )
+
+    def _apply_masking_rule(self, text: str, rule: DataMaskingRuleModel) -> tuple[str, int]:
+        """对文本应用单条脱敏规则，返回 ``(新文本, 替换次数)``。
+
+        ``keyword`` 类型对字面子串做转义后全局替换；``regex`` 直接用模式。两类都以每个匹配
+        整体作为待打码值，交给 :meth:`_mask_value` 按 ``full`` / ``partial`` 打码。
+        """
+
+        is_regex = rule.match_type == DataMaskingMatchType.REGEX
+        result = text
+        count = 0
+        for pattern in self._load_json_list(rule.patterns_json):
+            if not pattern:
+                continue
+            expression = pattern if is_regex else re.escape(pattern)
+            try:
+                result, hits = re.subn(
+                    expression, lambda match: self._mask_value(match.group(0), rule), result
+                )
+            except re.error:
+                continue
+            count += hits
+        return result, count
+
+    def _mask_value(self, value: str, rule: DataMaskingRuleModel) -> str:
+        """按脱敏方式打码单个匹配值。"""
+
+        if rule.mask_method == DataMaskingMethod.PARTIAL:
+            keep_prefix = max(rule.keep_prefix, 0)
+            keep_suffix = max(rule.keep_suffix, 0)
+            if len(value) <= keep_prefix + keep_suffix:
+                # 太短无法保留可见前后缀时整体打码，避免泄露原值。
+                return "*" * len(value)
+            middle = len(value) - keep_prefix - keep_suffix
+            suffix = value[len(value) - keep_suffix :] if keep_suffix else ""
+            return value[:keep_prefix] + "*" * middle + suffix
+        return rule.placeholder
 
     def _approval_policy_matches(
         self, policy: ApprovalPolicyModel, request: PolicyDecisionRequest
