@@ -95,4 +95,30 @@ Phase 4 #t52 已启动 Automation Worker 队列、消费循环与调度 API 基�
 
 ## Phase 5 高可用与水平扩展
 
-Phase 5 #t53 已启动无状态 Core 的前置切片：Session connection token store 现在可通过 `SESSION_CONNECTION_TOKEN_STORE=redis` 切换到 Redis-backed 单次消费存储，使用 `REDIS_URL` 与 `SESSION_CONNECTION_TOKEN_REDIS_KEY_PREFIX` 装配。Redis 模式只保存 token digest key 和 JSON 元数据，签发时使用 TTL，消费时通过 Redis `GETDEL` 原子删除，避免多副本下 token 签发和消费必须落在同一后端进程。默认仍为 `memory`，本地开发和单副本部署无需额外 Redis 配置。后端 Redis client 已支持 `REDIS_MODE=single|sentinel|cluster`，可通过 `REDIS_SENTINEL_URLS` / `REDIS_SENTINEL_MASTER_NAME` 或 `REDIS_CLUSTER_URLS` 装配 Sentinel/Cluster。Helm chart 已提供可选 HPA 模板；启用 `autoscaling.enabled=true` 时必须同时设置 `config.sessionConnectionTokenStore=redis`，否则模板渲染 fail-closed。数据库读副本 foundation 已提供可选 `DATABASE_READ_REPLICA_URL`，默认空值时读 session factory 复用写库 engine；资产列表、资产详情、平台列表、账号列表、账号轮换列表、会话列表、会话录制命令时间线、命令检索、Tenancy Organization/Team/Project 列表、WebHook endpoint 列表、通知规则列表、通知投递列表、Connector 列表、SSH CA 列表、SSH CA trust bundle、SSH certificate 列表、Automation job run 列表、approval policy 列表、认证态用户详情 `/api/v1/auth/me`、Workflow request 列表/详情以及 active JIT grant 列表 GET 路由已接入 read session dependency；audit events/summary/compliance GET 当前仍是进程内 audit service 的显式 DB-free 读取面，并已由数据库路由清单测试覆盖；Helm 通过 Secret 注入该连接串。
+Phase 5 #t53 已启动无状态 Core 的前置切片：Session connection token store 现在可通过 `SESSION_CONNECTION_TOKEN_STORE=redis` 切换到 Redis-backed 单次消费存储，使用 `REDIS_URL` 与 `SESSION_CONNECTION_TOKEN_REDIS_KEY_PREFIX` 装配。Redis 模式只保存 token digest key 和 JSON 元数据，签发时使用 TTL，消费时通过 Redis `GETDEL` 原子删除，避免多副本下 token 签发和消费必须落在同一后端进程。默认仍为 `memory`，本地开发和单副本部署无需额外 Redis 配置。后端 Redis client 已支持 `REDIS_MODE=single|sentinel|cluster`，可通过 `REDIS_SENTINEL_URLS` / `REDIS_SENTINEL_MASTER_NAME` 或 `REDIS_CLUSTER_URLS` 装配 Sentinel/Cluster。Helm chart 已提供可选 HPA 模板；启用 `autoscaling.enabled=true` 时必须同时设置 `config.sessionConnectionTokenStore=redis`，否则模板渲染 fail-closed。数据库读副本 foundation 已提供可选 `DATABASE_READ_REPLICA_URL`，默认空值时读 session factory 复用写库 engine；资产列表、资产详情、平台列表、账号列表、账号轮换列表、会话列表、会话录制命令时间线、命令检索、Tenancy Organization/Team/Project 列表、WebHook endpoint 列表、通知规则列表、通知投递列表、Connector 列表、SSH CA 列表、SSH CA trust bundle、SSH certificate 列表、Automation job run 列表、approval policy 列表、认证态用户详情 `/api/v1/auth/me`、Workflow request 列表/详情以及 active JIT grant 列表 GET 路由已接入 read session dependency；audit events/summary/compliance GET 已随 Phase 6 #t61 改为数据库读取，但 `AuditService` **自管读写会话**（写走主库、读走只读副本），因此不挂请求级 DB 依赖，在数据库路由清单测试中归类为「自管会话」而非早期的「DB-free 例外」；Helm 通过 Secret 注入该连接串。
+
+## Phase 6 JumpServer 核心功能对标
+
+Phase 6 的任务分解、验收标准与完成度矩阵以 [`docs/architecture/10-master-evaluation-and-roadmap.md`](docs/architecture/10-master-evaluation-and-roadmap.md)（v2.4）为唯一权威来源。以下为已落地切片的入口索引。
+
+### M0 前置阻塞项（已全部关闭）
+
+Phase 6 #t60 已建立 Alembic 迁移基线：`backend/alembic/` 下的基线 revision 覆盖全部 ORM 模型，`scripts/check-migrations.sh` 提供无外部数据库依赖的一致性门禁（临时 aiosqlite 库执行 `upgrade head` → `alembic check` → `downgrade base`），并已接入 CI backend-quality。对真实 PostgreSQL 执行 `alembic check` / autogenerate 会因表达式索引的 REGCONFIG 渲染失败，故一致性门禁只走 sqlite，生产 PostgreSQL 只执行 `upgrade`。
+
+Phase 6 #t61 已把审计事件从进程内列表改为数据库 append-only：`AuditEventModel` 以 `UNIQUE(tenant_id, sequence_number)` 在库层强制有序，per-tenant hash chain 通过 `SELECT … FOR UPDATE` 串行化序号与 previous_event_hash。审计 sink 会被存储无关的 workflow / session service 调用，因此 `AuditService` 自管读写会话，不透传调用方的请求级 db。
+
+Phase 6 #t62 已把会话网关状态落库：`SessionModel` 与 `SqlAlchemySessionStore` 沿用 #t61 的自管会话约定，写流程内的读走主库，仅按 subject 的列表查询走只读副本，与 #t46 `SessionRecording` 经 session_id 逻辑关联。
+
+### M3 真实连接通道（SSH / K8s 已走通）
+
+Phase 6 #t69 已在 `backend/app/connectors/` 落地连接器侧真实 SSH 通道，基于纯 Python `asyncssh`，不 fork 任何 `ssh` / `sshpass` 子进程：SSH exec 通道、会话编排、命令事件投递 sink、PTY 交互式会话（从键盘输入流重建命令并带读超时）、SFTP 传输与带 sha256 的传输审计事件、主机密钥采集（scan → 审批 → 固定），以及到会话网关的接线。四条安全约束逐条由 `backend/tests/connectors/test_ssh_channel.py` 断言：强制现代算法白名单、私钥仅内存加载、凭据不经命令行且关闭 agent 与默认密钥扫描、主机密钥严格校验且绝不 trust-on-first-use。详见 [`docs/site/connectors-ssh.md`](docs/site/connectors-ssh.md)。
+
+Phase 6 #t72 已落地 K8s exec 通道 `backend/app/connectors/k8s_exec.py`，走 WebSocket `v4.channel.k8s.io` 子协议做 stdin/stdout/stderr/error 多路复用，复用同一条命令事件管线；namespace 作用域在建连前强制、API Server 证书由预置 CA 严格校验且拒绝 trust-on-first-use、bearer token 仅经 `Authorization` 头传递不进 URL 或命令行。端到端测试使用进程内 wss server 与自签证书，无外部集群依赖。详见 [`docs/site/connectors-k8s.md`](docs/site/connectors-k8s.md)。
+
+> 连接器路由默认仍为 `NoopConnectorScheduler`；生产启用需要先落地桥接资产注册表与凭据保险库的真实 `SessionConnectionResolver`。
+
+### M1 ACL 访问控制（#t65 部分完成）
+
+Phase 6 #t65 已落地命令过滤 ACL 与数据脱敏规则，判定统一进 `PolicyDecisionService`，不在路由或连接器旁路。命令过滤按优先级 1-100（小者优先）取首个命中者，语义是**已授权会话之上的 deny-overlay**——无 ACL 命中时默认放行；数据脱敏则是转换而非决策，**累计应用**全部命中规则。两者的规则集通过 `backend/app/policy/repository.py` 的 `AclRepository` 经租户 scope helper `scoped_select` 从数据库加载。详见 [`docs/site/acl-command-filter.md`](docs/site/acl-command-filter.md) 与 [`docs/site/acl-data-masking.md`](docs/site/acl-data-masking.md)。
+
+> 当前仍缺管理 CRUD 路由与连接器接线：判定能力已建成且可按租户加载，但尚无连接器在命令事件入库前调用 `evaluate_command` 或对输出摘要调用 `mask`，因此命令过滤与脱敏尚未在真实会话中生效。

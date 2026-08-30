@@ -6,15 +6,19 @@
 > 后续所有架构决策、任务拆分、验收标准均以本文档为依据。
 >
 > - 评估基线：jumpserver `dev` 分支提交 `77eb299`（2026-07-18 复核；v2.0 原基线为 `87f3b2b`）
-> - JanusGate 基线：`dev` 分支，提交 `abe3e9a6c`（2026-07-18）
-> - 文档版本：v2.3
-> - 日期：2026-07-18
-> - 编制：opencode-glm-5.2（v1.0-v2.0）、Claude Code（v2.1-v2.3）
+> - JanusGate 基线：`dev` 分支，提交 `ecc9edcff`（2026-07-25）
+> - 文档版本：v2.4
+> - 日期：2026-08-31（v2.4 修订；v2.3 为 2026-07-18）
+> - 编制：opencode-glm-5.2（v1.0-v2.0）、Claude Code（v2.1-v2.4）
 >
 > **产品定位边界（必读）**：JanusGate 是 **JumpServer 核心 PAM 能力的安全重构版**，
 > **不是 JumpServer 的全量替代**。明确排除图形应用发布（Applet / RemoteApp / VirtualApp）
 > 与商业插件体系（xpack），排除依据与代价见 §3.6.2。
 > 当前功能替代进度见 §14——**纳入目标的 19 个功能域中，0 个达到等价**。
+>
+> **v2.4 修订说明**：v2.3 之后 Phase 6 已落地 M0 全部三项（#t60/#t61/#t62）、M3 的 #t69 与 #t72，
+> 以及 M1 #t65 的命令过滤 ACL、数据脱敏规则与租户 scope 持久化加载。本次修订按实际代码状态回写
+> §2 阶段表、§11.4 任务表、§11.4.4 里程碑表与 §14 完成度矩阵。**#t69 作为全局单点关键路径已解除**（见 §14.4）。
 
 ---
 
@@ -65,7 +69,7 @@ JanusGate 定位为**面向企业和云原生环境的策略驱动 PAM / 零信�
 | **Phase 3：产品化 MVP** | **✅ MVP Go** | 前端控制台 + E2E 主链路 + 部署收口 + QA Go/No-Go |
 | Phase 4：企业级能力增强 | 进行中 | 多租户 + 凭据轮换 + SSH CA + 会话录制 |
 | Phase 5：生产化与商业化 | 进行中 | 高可用 + 合规报表 + 性能压测 + License/Edition 边界 + 文档站 |
-| **Phase 6：JumpServer 核心功能对标** | **待启动** | RBAC + 资产树授权 + ACL + 多协议通道 + 账号自动化 + 工单流（范围见 §3.6，任务见 §11.4） |
+| **Phase 6：JumpServer 核心功能对标** | **进行中** | RBAC + 资产树授权 + ACL + 多协议通道 + 账号自动化 + 工单流（范围见 §3.6，任务见 §11.4） |
 
 > **范围修订说明（v2.1）**：v2.0 将 JumpServer 主要作为负面基线处理，未做功能清单对标，导致 Phase 3-5 的任务计划
 > 只覆盖 JumpServer 约 15% 的功能面。v2.1 新增 §3.6 功能基线清单与 §11.4 Phase 6 任务分解，
@@ -812,11 +816,11 @@ User ──┬── WorkflowRequest ──── JitGrant
 
 > 以下三项不是新功能，而是 Phase 4/5 遗留的**运行时空洞**。在它们关闭前，Phase 6 的任何模型工作都无法真正落地或回滚。
 
-| 任务 ID | 任务 | Owner | 范围 | 阻塞原因 |
+| 任务 ID | 任务 | Owner | 范围 | 状态 |
 |---------|------|-------|------|----------|
-| **#t60** | Alembic 迁移基线 | architect + backend | 建立 `backend/alembic/` 与首个基线 revision，覆盖现有 26 个 ORM 模型；CI 增加「模型与迁移一致性」检查（`alembic check` 或 autogenerate diff 为空） | 当前仓库**无任何迁移文件**，13+ 模型无升级与回滚路径。`scripts/phase5-release-readiness-smoke.sh:82` 仅 grep README 中的 `alembic` 字样，#t57 的回滚验收前提不成立 |
-| **#t61** | 审计事件持久化 | backend + security | 新增 `AuditEventModel` 与仓储层，`app/api/audits/service.py` 由进程内 `list` 改为数据库 append-only；hash chain、WORM 归档、合规报表（#t54）改为基于持久化数据；补 #t53 中登记为「DB-free 例外」的 audit GET 路由读路由 | 审计当前存于 `service.py:193` 的内存列表，**重启即丢**。核心原则 5「审计不可抵赖」目前不成立，#t54 全部构建在易失数据上 |
-| **#t62** | 会话持久化 | backend | `SessionRecord` 落库，`app/api/sessions/service.py:343` 内存 `dict` 改为仓储层；与 #t46 `SessionRecording` 关联 | 会话状态在内存中，多副本部署下 #t53 的水平扩展只解决了 connection token，会话本身仍不可扩展 |
+| **#t60** | Alembic 迁移基线 | architect + backend | 建立 `backend/alembic/` 与首个基线 revision，覆盖现有 26 个 ORM 模型；CI 增加「模型与迁移一致性」检查（`alembic check` 或 autogenerate diff 为空） | ✅ **已完成**。`backend/alembic/` 与基线 revision `08d70a149300` 覆盖全部 23 张表（元数据实际 23 而非 26）；`scripts/check-migrations.sh` 提供 DB-less 一致性门禁（临时 aiosqlite 库 `upgrade head` → `alembic check` → `downgrade base`）并已接入 CI backend-quality。真 PG16 升降级实测通过，并借此修复了 `session_recording` FTS 索引使用非 IMMUTABLE 函数、在真实 PG 上从来建不起来的模型 bug。**已知限制**：对真 PG 执行 `alembic check`/autogenerate 会因 REGCONFIG 渲染崩溃，故一致性门禁只走 sqlite，生产 PG 只跑 `upgrade`。`phase5-release-readiness-smoke.sh:82` 的弱验收未在本任务内加固 |
+| **#t61** | 审计事件持久化 | backend + security | 新增 `AuditEventModel` 与仓储层，`app/api/audits/service.py` 由进程内 `list` 改为数据库 append-only；hash chain、WORM 归档、合规报表（#t54）改为基于持久化数据；补 #t53 中登记为「DB-free 例外」的 audit GET 路由读路由 | ✅ **已完成**。`AuditEventModel` + 迁移 `db1145a807fc` 落库 append-only，`UNIQUE(tenant_id, sequence_number)` 在库层强制有序；per-tenant hash chain 用 `SELECT…FOR UPDATE` 串行化序号与 previous_event_hash。`AuditService` **自管读写会话**（审计 sink 被存储无关的 workflow/session service 调用，不能透传调用方 db）。核心原则 5「审计不可抵赖」现已成立，#t54 不再构建在易失数据上 |
+| **#t62** | 会话持久化 | backend | `SessionRecord` 落库，`app/api/sessions/service.py:343` 内存 `dict` 改为仓储层；与 #t46 `SessionRecording` 关联 | ✅ **已完成**。`SessionModel` + 迁移 `4b6380add4e5` 落库，`SqlAlchemySessionStore` 与 #t61 一致自管读写会话（`save` 用 `merge` upsert）；写流程内的读走主库，仅 `list_by_subject` 走只读副本。与 #t46 `SessionRecording` 经 session_id 逻辑关联。会话本身现已可水平扩展 |
 
 #### 11.4.2 M1-M6：功能对标任务分解
 
@@ -826,7 +830,7 @@ User ──┬── WorkflowRequest ──── JitGrant
 |---------|------|-------|------|--------|
 | **#t63** | RBAC 角色与权限体系 | architect + backend | `Role` / `RoleBinding` 模型，system / org 双 scope；对象级 `Permission`；内置角色（系统管理员 / 组织管理员 / 审计员 / 普通用户）；菜单权限；与 §4 现有 `admin` / `workflow:admin` 字符串判断的迁移路径。**约束**：单一角色模型，禁止 edition 条件分支（对应关闭 P1#11） | 高 |
 | **#t64** | 资产树与资产授权 | backend | `Node` 树模型（含祖先链与全量资产映射）；`AssetPermission`：用户/用户组 × 资产/节点 × 账号 × 协议 × 动作 × 生效期 × 来源工单；授权结果并入 PolicyDecisionService 的 explain_trace。**约束**：所有授权查询强制走租户 scope helper（对应关闭 P2#9） | 高 |
-| **#t65** | ACL 访问控制体系 | architect + backend + security | ACL 基类：优先级 1-100（小者优先）+ 动作 + 复核人；派生登录 ACL、资产登录 ACL（IP 段 / 时间段规则）、连接方式 ACL、命令过滤 ACL + 命令组（命令 / 正则两类）、数据脱敏规则。动作覆盖 `reject` / `accept` / `review` / `warning` / `notice` / `notify_and_warn` / `change_secret`；`face_verify` / `face_online` 不做。**命令复核触发工单需与 #t74 联调**。**约束**：ACL 判定统一进 PolicyDecisionService，不得旁路 | 高 |
+| **#t65** | ACL 访问控制体系 | architect + backend + security | ACL 基类：优先级 1-100（小者优先）+ 动作 + 复核人；派生登录 ACL、资产登录 ACL（IP 段 / 时间段规则）、连接方式 ACL、命令过滤 ACL + 命令组（命令 / 正则两类）、数据脱敏规则。动作覆盖 `reject` / `accept` / `review` / `warning` / `notice` / `notify_and_warn` / `change_secret`；`face_verify` / `face_online` 不做。**命令复核触发工单需与 #t74 联调**。**约束**：ACL 判定统一进 PolicyDecisionService，不得旁路。**当前进度（部分完成）**：命令过滤 ACL + 命令组已完成——`CommandGroupModel`（字面命令按词边界 / 正则两类）与 `CommandFilterAclModel`（BaseACL：优先级 1-100 小者优先 + 动作 + 复核人 + subject/asset/account/命令组 JSON 选择器），迁移 `b75f09654bda`；`PolicyDecisionService.evaluate_command` 已落地，语义为**已授权会话之上的 deny-overlay**——与会话级 deny-by-default 相反，无 ACL 命中时默认放行（否则每条命令都需显式 accept，不可运维），按优先级升序取首个命中者，动作映射 reject=deny / review=review（带复核人）/ warning|notice|notify_and_warn=allow（带 obligation），非法正则安全跳过不打断会话。数据脱敏规则已完成——`DataMaskingRuleModel`（regex/keyword 匹配、full/partial 打码、前后缀保留），迁移 `4eb764da4aab`；`PolicyDecisionService.mask` 语义为**转换而非决策**，故**累计应用**全部命中规则而非首个即止，partial 在值过短时整体打码不泄露原值。`app/policy/repository.py` 的 `AclRepository` + `build_tenant_policy_service` 已提供经 `scoped_select` 的租户 scope 持久化加载（同时提前落实 #t64 的 scope helper 约束）。**仍待后续切片**：登录 ACL、资产登录 ACL（IP 段 / 时间段规则，可复用 #t48 DSL 已有的 `context_ip_in_cidr` / `context_time_between`）、连接方式 ACL、管理 CRUD 路由，以及**连接器接线**（#t69/#t72 在命令事件入库前调用 `evaluate_command`、对输出摘要调用 `mask`） | 高 |
 
 **M2：资产与协议广度**
 
@@ -843,10 +847,10 @@ User ──┬── WorkflowRequest ──── JitGrant
 
 | 任务 ID | 任务 | Owner | 范围 | 优先级 |
 |---------|------|-------|------|--------|
-| **#t69** | SSH / SFTP 通道 | backend + security | Connector 侧真实 SSH 通道（建议 `asyncssh`）；PTY 交互、命令流解析并接入 #t46 命令事件；SFTP 文件传输并接入 #t78 文件传输审计。**约束**：强制现代算法套件、主机密钥强校验、私钥仅内存传递不落盘、凭据不经命令行（对应关闭 P0#7 / P0#15 / P0#16 / P0#17） | 高 |
-| **#t70** | RDP / VNC 图形通道与录像 | backend + devops | 图形协议网关；会话录像采集、转码与回放；录像存储后端抽象（本地 / S3 / OSS）。**注**：本任务是 Windows 资产直连的前提，与 §3.6.2 不做的 Applet 发布层无关 | 高 |
-| **#t71** | 数据库协议代理 | backend | 数据库协议代理通道，SQL 语句级审计并接入命令事件；与 #t65 数据脱敏规则联动 | 中 |
-| **#t72** | K8s exec 通道 | backend | `kubectl exec` 语义通道（SPDY / WebSocket），命令审计复用统一管线；namespace 作用域强制生效 | 中 |
+| **#t69** | SSH / SFTP 通道 | backend + security | Connector 侧真实 SSH 通道（建议 `asyncssh`）；PTY 交互、命令流解析并接入 #t46 命令事件；SFTP 文件传输并接入 #t78 文件传输审计。**约束**：强制现代算法套件、主机密钥强校验、私钥仅内存传递不落盘、凭据不经命令行（对应关闭 P0#7 / P0#15 / P0#16 / P0#17）。**✅ 连接器层已收口**：7 个模块全部落地并有进程内端到端测试（asyncssh 进程内 server，无外部依赖）——`ssh_channel`（exec 通道，四条安全约束逐条有断言）、`ssh_session`（会话编排）、`command_event_sink`（命令事件投递 #t46 端点）、`ssh_interactive`（PTY + 从键盘输入流重建命令 + 读超时）、`ssh_sftp`（传输 + 带 sha256 的 `FileTransferEvent`，失败也发事件）、`ssh_hostkey`（scan → 审批 → 固定，闭环补齐 P0#17 前提）、`session_runtime`（接线到会话网关，`ConnectorScheduler` 即连接器进程边界，网关只传身份、凭据在 resolver 侧）。**仍待**：路由默认仍为 `NoopConnectorScheduler`，生产启用需先落地桥接资产注册表 + 凭据保险库的真实 `SessionConnectionResolver`；#t78 文件传输日志入库端点未建（属 M6），现以 sink 协议解耦 | 高 |
+| **#t70** | RDP / VNC 图形通道与录像 | backend + devops | 图形协议网关；会话录像采集、转码与回放；录像存储后端抽象（本地 / S3 / OSS）。**注**：本任务是 Windows 资产直连的前提，与 §3.6.2 不做的 Applet 发布层无关。**排期说明（v2.4）**：本任务需 FreeRDP / guacd 等外部二进制与录像转码存储后端，无法沿用 #t69/#t72 已验证的「进程内、无外部依赖端到端」模式，成本结构与 M3 其余任务不同量级，建议独立立项而非排入常规切片队列 | 高 |
+| **#t71** | 数据库协议代理 | backend | 数据库协议代理通道，SQL 语句级审计并接入命令事件；与 #t65 数据脱敏规则联动。**依赖状态（v2.4）**：所依赖的 #t65 数据脱敏规则已就绪（`PolicyDecisionService.mask`），阻塞已解除；剩余难点是 MySQL / PostgreSQL wire protocol 代理需从零实现，端到端验证需自建协议 server | 中 |
+| **#t72** | K8s exec 通道 | backend | `kubectl exec` 语义通道（SPDY / WebSocket），命令审计复用统一管线；namespace 作用域强制生效。**✅ 已完成**：`app/connectors/k8s_exec.py` 走 WebSocket `v4.channel.k8s.io` 子协议（stdin/stdout/stderr/error 单字节通道帧多路复用），每条 exec 命令复用 #t69 已建的 `CommandEvent` 管线；退出码从 error 通道 `metav1.Status` 解析。三条安全约束逐条有测试：**namespace 作用域在建连前强制**（越权抛 `K8S_NAMESPACE_FORBIDDEN`，服务端收不到请求）、**API Server TLS 强校验**（预置 CA + check_hostname，缺 CA 拒绝 TOFU，https-only）、**token 仅内存经 Authorization 头**（绝不进 URL/argv，repr 屏蔽）。端到端测试用 `websockets` 进程内 wss server + 自签证书，无外部集群依赖。**仍待**：交互式 PTY exec（stdin+tty+resize）与 attach；短期 token 签发属 #t68 增强项，归凭据保险库侧 | 中 |
 
 **M4：账号自动化**
 
@@ -885,18 +889,22 @@ User ──┬── WorkflowRequest ──── JitGrant
 
 #### 11.4.4 Phase 6 里程碑建议
 
-| 里程碑 | 周期 | 交付 | 说明 |
-|--------|------|------|------|
-| M0：前置阻塞项 | 1-2 周 | #t60 + #t61 + #t62 | 必须最先完成，否则后续无迁移与回滚路径 |
-| M3-预研：单协议通道验证 | 1-2 周 | #t69 技术切片 | **与 M1 并行启动**，尽早暴露最高技术风险 |
-| M1：授权与访问控制内核 | 4-6 周 | #t63 + #t64 + #t65 | 差距最大，优先级最高 |
-| M2：资产与协议广度 | 3-4 周 | #t66 + #t67 + #t68 | 依赖 M1 授权模型 |
-| M3：真实连接通道 | 6-8 周 | #t69 + #t70 + #t71 + #t72 | 风险最高，#t70 图形通道为其中最重 |
-| M4：账号自动化 | 3-4 周 | #t73 | 依赖 #t69 SSH 通道 |
-| M5：工单、通知、认证源 | 4-5 周 | #t74 + #t75 + #t76 | 可与 M3 并行 |
-| M6：运维与平台治理 | 3-4 周 | #t77 + #t78 + #t79 | 收口阶段 |
+| 里程碑 | 周期 | 交付 | 状态（v2.4） | 说明 |
+|--------|------|------|--------------|------|
+| M0：前置阻塞项 | 1-2 周 | #t60 + #t61 + #t62 | ✅ **3/3 完成** | 必须最先完成，否则后续无迁移与回滚路径 |
+| M3-预研：单协议通道验证 | 1-2 周 | #t69 技术切片 | ✅ **完成** | **与 M1 并行启动**，尽早暴露最高技术风险 |
+| M1：授权与访问控制内核 | 4-6 周 | #t63 + #t64 + #t65 | 🟡 #t65 部分；#t63/#t64 未开始 | 差距最大，优先级最高 |
+| M2：资产与协议广度 | 3-4 周 | #t66 + #t67 + #t68 | ⬜ 未开始 | 依赖 M1 授权模型 |
+| M3：真实连接通道 | 6-8 周 | #t69 + #t70 + #t71 + #t72 | 🟡 #t69/#t72 完成；#t70/#t71 未开始 | 风险最高，#t70 图形通道为其中最重 |
+| M4：账号自动化 | 3-4 周 | #t73 | ⬜ 未开始 | 依赖 #t69 SSH 通道（前置已满足） |
+| M5：工单、通知、认证源 | 4-5 周 | #t74 + #t75 + #t76 | ⬜ 未开始 | 可与 M3 并行 |
+| M6：运维与平台治理 | 3-4 周 | #t77 + #t78 + #t79 | ⬜ 未开始 | 收口阶段 |
 
 > **周期为规模估算而非承诺**，未考虑团队规模与并行度。M3 的估算不确定性最大，建议在预研切片完成后重估。
+
+> **v2.4 排期修订**：M3 预研切片（#t69）已完成并解除全局单点关键路径，M0 三项前置阻塞项全部关闭。
+> M3 剩余两项性质已分化——#t71 的 #t65 脱敏依赖已解除，剩协议实现难度；#t70 需外部图形基建，建议独立立项（见其任务行）。
+> 因此后续排序建议为：**#t65 连接器接线（跨切片端到端闭环）→ #t64 资产授权 → #t63 RBAC**，而非按里程碑编号顺序推进。
 
 #### 11.4.5 Phase 6 验收标准
 
@@ -1030,15 +1038,21 @@ P0 级 20 项逐项状态（评估口径：已有代码与测试可证明为关�
 
 | 状态 | 数量 | 条目 |
 |------|------|------|
-| ✅ 已关闭 | 13 | P0#1,2,3,4,5,6,8,9,10,11,18,19,20 |
+| ✅ 已关闭 | 17 | P0#1,2,3,4,5,6,8,9,10,11,18,19,20 + **P0#7,15,16,17（v2.4 新增，由 #t69 关闭）** |
 | 🟡 部分关闭 | 1 | P0#13（架构上无 SuperConnectionToken，但对象级授权待 #t63/#t74 补齐） |
-| ⬜ 未关闭 | 6 | P0#7,15,16,17（依赖真实连接通道 #t69）、P0#12,14（依赖 SSO 接入 #t76） |
+| ⬜ 未关闭 | 2 | P0#12,14（依赖 SSO 接入 #t76） |
 
-**P0 完成度：13/20 ≈ 65%。**
+**P0 完成度：17/20 ≈ 85%。**
 
-关键观察：**未关闭的 6 项高度聚集，不是分散欠账**——4 项集中在真实 SSH 连接通道（弱算法、私钥落盘、明文密码、主机密钥不校验），2 项集中在 SSO 接入（OAuth2 state、OIDC 关 SSL 校验）。这两块恰好是 Phase 6 的 #t69 与 #t76。换言之，**安全重构的最后 35% 与功能对标的起步是同一批工作**，不存在「先做完安全再做功能」的可能。
+**v2.4 变更依据**：#t69 交付的 `app/connectors/ssh_channel.py` 基于纯 Python `asyncssh`，不 fork 任何 `ssh`/`sshpass` 子进程，四条约束逐条由 `tests/connectors/test_ssh_channel.py` 断言——
+P0#7 仅协商现代算法白名单（服务端只提供 SHA-1 MAC / CBC 时协商即失败）、P0#15 私钥仅经 `import_private_key` 从内存加载且 `repr` 屏蔽、
+P0#16 凭据作为库调用参数传入且显式关闭 agent / 默认密钥扫描 / 用户 ssh_config、P0#17 `known_hosts` 由预置可信公钥严格构造，未知主机一律拒绝且绝不 TOFU。
+判定为关闭的口径是**代码中不存在不安全路径**（无 sshpass、无 AutoAddPolicy 等价物），而非「已在生产启用」；生产启用另需 #t69 行中记录的真实 `SessionConnectionResolver`。
 
-P1（15 项）/ P2（18 项）：架构性问题（xpack 侵入、common 大杂烩、4 种并发模型、多 DB 驱动、Django ORM 反模式）已由技术选型天然规避；工程实践问题（测试覆盖、CI 门禁、except:pass、类型注解）已由 §12.1 门禁与 §11.4.3 DoD 持续约束。剩余未关闭项集中在弱密码策略（#t65）、开放重定向（#t76）、命令过滤缺失（#t65）。
+关键观察（v2.4 修订）：剩余未关闭项已从 6 项收敛到 2 项，且**全部集中在 SSO 接入**（OAuth2 state、OIDC 关 SSL 校验），对应 Phase 6 的 #t76。
+v2.3 所述「安全重构的最后 35% 与功能对标的起步是同一批工作」的判断已由 #t69 兑现——该批工作的连接通道部分已完成，剩余仅 SSO 一块。
+
+P1（15 项）/ P2（18 项）：架构性问题（xpack 侵入、common 大杂烩、4 种并发模型、多 DB 驱动、Django ORM 反模式）已由技术选型天然规避；工程实践问题（测试覆盖、CI 门禁、except:pass、类型注解）已由 §12.1 门禁与 §11.4.3 DoD 持续约束。剩余未关闭项集中在弱密码策略（#t65）与开放重定向（#t76）；其中**命令过滤缺失已由 #t65 的命令过滤 ACL + 命令组关闭**（判定进 PolicyDecisionService，见 §11.4 #t65 行），但仍待连接器接线后才在真实会话中生效。
 
 ### 14.2 功能等价矩阵
 
@@ -1050,19 +1064,19 @@ P1（15 项）/ P2（18 项）：架构性问题（xpack 侵入、common 大杂�
 | 4 | 组织 / 多租户 | 🟡 `Organization`/`Team`/`Project` + `scoped_select()` 租户过滤 + 只读页 | 组织级角色绑定、组织切换、跨组织数据边界回归 | 是 | P4 #t42 → **P6 #t63** |
 | 5 | 资产管理 | 🟡 `Asset` + `Platform` 基础模型 + SSRF 防护 | 资产类型分化、协议模型、资产树、网域网关、收藏、标签 | 是 | P1 已有 → **P6 #t66、#t67** |
 | 6 | 资产授权 | ⬜ `PolicyRule` 覆盖部分场景 | 资产授权模型（用户/组 × 资产/节点 × 账号 × 协议 × 动作 × 有效期） | 是 | **P6 #t64** |
-| 7 | ACL 访问控制 | ⬜ 无 | 登录 ACL、资产登录 ACL、连接方式 ACL、命令过滤 + 命令组、数据脱敏规则 | 是 | **P6 #t65** |
+| 7 | ACL 访问控制 | 🟡 命令过滤 ACL + 命令组 + 数据脱敏规则 + 租户 scope 持久化加载，判定统一进 PolicyDecisionService | 登录 ACL、资产登录 ACL、连接方式 ACL、管理 CRUD 路由、连接器接线 | 是 | **P6 #t65** |
 | 8 | 账号与凭据 | 🟡 `Account` + `CredentialRotation` + envelope 加密 + 审批后 unwrap | 8 类账号自动化、账号模板、账号风险、真实云 KMS/HSM | 是 | P4 #t43/#t50 → **P6 #t73** |
-| 9 | 会话网关 | 🟡 会话生命周期 + 策略校验 + 短期 connection token + grant 绑定 | **会话未持久化（内存）**、真实通道、会话共享与监控、端点路由 | 是 | P1 已有 → **P6 #t62、#t69-72、#t78** |
+| 9 | 会话网关 | 🟡 会话生命周期 + 策略校验 + 短期 connection token + grant 绑定 + **会话已持久化** + SSH/K8s 真实通道 | RDP/VNC/DB 通道、会话共享与监控、端点路由；路由默认仍为 `NoopConnectorScheduler`，缺生产 resolver | 是 | P1 已有 → **P6 #t62、#t69-72、#t78** |
 | 10 | 会话录制与命令检索 | 🟡 录制元数据 + 命令事件 + 全文检索 + 只读回放时间线 | 录像本体采集与回放、多存储后端（S3/OSS/ES） | 是 | P4 #t46 → **P6 #t70、#t78** |
-| 11 | 连接组件 / 终端 | 🟡 Connector Registry + 心跳租约 + mTLS 指纹 + attestation + key rotation + SDK | **真实协议实现全缺**（SSH/RDP/VNC/DB/K8s） | 是 | P4 #t45 → **P6 #t69-72** |
+| 11 | 连接组件 / 终端 | 🟡 Connector Registry + 心跳租约 + mTLS 指纹 + attestation + key rotation + SDK + **SSH/SFTP/PTY 与 K8s exec 真实通道** | RDP / VNC / 数据库协议实现；连接器与 #t65 ACL 判定的接线 | 是 | P4 #t45 → **P6 #t69-72** |
 | 12 | 工单与审批 | 🟡 JIT 申请/审批/Grant 状态机 + 审批策略 DSL + 灰度 + 版本回滚 | 多级审批流程、审批规则分级、工单类型（命令复核 / 资产登录复核等） | 是 | P2 已有 / P4 #t48 → **P6 #t74** |
-| 13 | 审计 | 🟡 统一审计事件 + hash chain + SIEM + 合规报表 + WORM 归档 | **审计未持久化（内存）**、分类日志（操作/活动/文件传输/改密/在线会话/作业） | 是 | P1 已有 → **P6 #t61、#t78** |
+| 13 | 审计 | 🟡 统一审计事件 + **已持久化 append-only** + 库层强制有序 hash chain + SIEM + 合规报表 + WORM 归档 | 分类日志（操作/活动/文件传输/改密/在线会话/作业）；#t78 文件传输日志端点未建 | 是 | P1 已有 → **P6 #t61、#t78** |
 | 14 | 通知 | 🟡 WebHook endpoint + 通知规则 + 投递队列 + 重试/死信 + HTTPS sender | IM 渠道（钉钉/飞书/Lark/企微/Slack）、SMS、邮件、站内信、消息订阅 | 是 | P4 #t47 → **P6 #t75** |
 | 15 | 作业中心 | 🟡 JSON-only 队列 + worker + Ansible runner + 执行记录 | 作业/Playbook 管理模型、临时命令、周期任务、参数化、执行身份策略 | 是 | P4 #t52 → **P6 #t77** |
 | 16 | 标签体系 | ⬜ 无 | 标签模型与资源标注 | 是 | **P6 #t79** |
 | 17 | 报表中心 | 🟡 审计汇总 API + SOC2 合规报表导出 | 通用报表模型与自定义报表 | 是 | P4 #t49 / P5 #t54 → **P6 #t79** |
 | 18 | 系统配置 | 🟡 环境变量 + License 配置持久化 | 数据库驱动的动态系统配置、配置变更审计 | 是 | P5 #t58 → **P6 #t79** |
-| 19 | K8s 容器纳管 | ⬜ 无 | 云资产 + k8s 协议 + namespace 作用域 + exec 通道（含短期 token 增强） | 是 | **P6 #t68、#t72** |
+| 19 | K8s 容器纳管 | 🟡 exec 通道（WebSocket v4.channel）+ namespace 作用域强制 + API Server TLS 强校验 | 云资产与 k8s 协议模型、短期 token 签发（TokenRequest API）、交互式 PTY exec | 是 | **P6 #t68、#t72** |
 | 20 | Applet / RemoteApp | ➖ | — | **否**（见 3.6.2） | — |
 | 21 | VirtualApp 容器应用发布 | ➖ | — | **否**（见 3.6.2） | — |
 | 22 | xpack 商业插件 | ➖ | — | **否**（由 P5 #t58 License/Edition 边界替代） | — |
@@ -1074,27 +1088,35 @@ P1（15 项）/ P2（18 项）：架构性问题（xpack 侵入、common 大杂�
 | 状态 | 数量 | 占比 |
 |------|------|------|
 | ✅ 等价或超越 | 0 | 0% |
-| 🟡 部分实现 | 13 | 68% |
-| ⬜ 未开始 | 6 | 32% |
+| 🟡 部分实现 | 16 | 84% |
+| ⬜ 未开始 | 3 | 16% |
 
 **功能替代完成度：0/19 达到等价。**
+
+> **v2.4 计数订正**：v2.3 表内记为 13 🟡 / 6 ⬜，与矩阵逐行实际符号（14 🟡 / 5 ⬜）不符，属统计错误，本次一并订正。
+> v2.4 的 16 🟡 / 3 ⬜ 中，#7 ACL 与 #19 K8s 容器纳管由 ⬜ 转 🟡；剩余 3 个 ⬜ 为 #3 RBAC 角色权限、#6 资产授权、#16 标签体系。
 
 这个数字需要正确解读，否则容易误判两个方向：
 
 - **不要低估**：13 个域已有可运行的模型层、API 与测试，不是空白。JanusGate 在策略决策、JIT、审计链、连接器零信任、凭据加密五处**超越** JumpServer（见 3.5），这些是 JumpServer 没有的能力，不体现在本矩阵的分母里。
-- **不要高估**：「部分实现」多数停在模型与 API 契约层，**尚无一个功能域走通真实运行时**。最集中的证据是 #9/#11——会话与连接器的模型、心跳、信任链都齐了，但没有任何真实协议实现，`asyncssh`/`paramiko` 在仓库中零引用。
+- **不要高估**：「部分实现」多数仍停在模型与 API 契约层。但 v2.3 时「**尚无一个功能域走通真实运行时**」的判断**已不再成立**——#t69 / #t72 之后，SSH / SFTP / PTY 与 K8s exec 已是可运行的真实协议通道，并有无外部依赖的进程内端到端测试。
+- **当前真正的瓶颈已从「有没有实现」转为「有没有接线」**：#t65 的命令过滤与脱敏判定已建成且可从库按租户加载，但**没有任何连接器调用它**；连接器路由默认仍是 `NoopConnectorScheduler`。能力已存在但未在真实会话中生效，这是 v2.4 之后最高价值的收口动作。
 
 ### 14.4 两条完成度的关系
 
 | | 安全重构完成度 | 功能替代完成度 |
 |---|---|---|
-| 当前 | P0 13/20 ≈ 65% | 0/19 等价，13/19 部分 |
-| 剩余工作的性质 | 6 项 P0 全部依赖 #t69 连接通道与 #t76 SSO | 19 个域全部需要 Phase 6 推进 |
-| 交汇点 | **#t69 真实连接通道**——同时是 4 项 P0 的关闭前提和 4 个功能域的运行时前提 | |
+| 当前（v2.4） | P0 17/20 ≈ 85% | 0/19 等价，16/19 部分 |
+| v2.3 时 | P0 13/20 ≈ 65% | 0/19 等价，14/19 部分（原记 13，属统计错误） |
+| 剩余工作的性质 | 2 项 P0 全部依赖 #t76 SSO | 19 个域全部需要 Phase 6 推进 |
+| 原交汇点 | ~~**#t69 真实连接通道**~~——**已于 v2.4 解除**，4 项 P0 已关闭，SSH / K8s 运行时已走通 | |
 
-**结论**：两条路线在 #t69 上强耦合，它是全局单点关键路径。§11.4.4 已把 M3 预研切片安排为与 M1 并行的最早启动项，正是基于这一点。
+**结论（v2.4 修订）**：v2.3 判定的全局单点关键路径 #t69 **已解除**。两条路线不再强耦合于同一任务——
+安全侧剩余 2 项 P0 全部收敛到 #t76 SSO，功能侧的瓶颈则转移到**接线而非实现**（#t65 判定已建成但无连接器调用，路由默认仍为 `NoopConnectorScheduler`）。
 
-在 #t69 走通前，任何「安全重构已基本完成」或「功能替代进度过半」的表述都不成立。
+**表述边界仍然有效**：#t69 的走通只解除了运行时前提，功能替代完成度仍为 **0/19 等价**。
+在 §14.2 矩阵出现第一个 ✅ 之前，「功能替代进度过半」的表述依然不成立；
+「安全重构已基本完成」现在可以在 **P0 口径下**成立（17/20），但不得引申为功能层面的完成度。
 
 ---
 
