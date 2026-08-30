@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from collections.abc import AsyncGenerator
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 import httpx
 import pytest
@@ -21,6 +21,18 @@ from app.core.license import (
     get_license_summary_from_external_verifier,
 )
 from app.main import app
+
+
+def _future_expires_at() -> str:
+    """构造相对当前时间的未来到期时间，供走真实时钟的用例使用。
+
+    经 API 断言 ``license_status == "active"`` 的用例无法像单元用例那样注入 ``now``，
+    只能使用真实时钟。写死绝对日期会在该日期过后变成时间炸弹——本文件原先的
+    ``2026-08-01`` 即在该日之后使两条用例长期失败。返回值格式与 license payload
+    中其它到期时间保持一致（UTC、秒精度、``Z`` 后缀）。
+    """
+
+    return (datetime.now(UTC) + timedelta(days=365)).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
 @pytest.fixture
@@ -286,7 +298,7 @@ def test_admin_can_persist_license_config_without_secret_echo(
         payload={
             "edition": "enterprise",
             "features": ["license_management"],
-            "expires_at": "2026-08-01T00:00:00Z",
+            "expires_at": _future_expires_at(),
         },
         signing_secret="test-signing-secret",
     )
@@ -341,7 +353,7 @@ def test_license_config_update_writes_redacted_audit_event(
         payload={
             "edition": "enterprise",
             "features": ["license_management"],
-            "expires_at": "2026-08-01T00:00:00Z",
+            "expires_at": _future_expires_at(),
         },
         signing_secret="test-signing-secret",
     )
