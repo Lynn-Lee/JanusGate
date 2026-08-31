@@ -20,11 +20,12 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from dataclasses import dataclass, field
-from typing import Protocol
-
-from app.connectors.command_policy import CommandPolicyGuard, default_command_policy_guard
+from typing import Any, Protocol
 
 import asyncssh
+
+from app.connectors.command_policy import CommandPolicyGuard, default_command_policy_guard
+from app.policy.schemas import ResourceRef, SubjectRef
 
 PROTOCOL = "ssh"
 
@@ -241,12 +242,12 @@ class SshChannel:
         *,
         connect_timeout: float = 10.0,
         policy: CommandPolicyGuard | None = None,
-        subject=None,
-        resource=None,
+        subject: SubjectRef | None = None,
+        resource: ResourceRef | None = None,
         account_id: str = "",
         session_id: str | None = None,
-        session_factory=None,
-        db=None,
+        session_factory: Any = None,
+        db: Any = None,
     ) -> SshChannel:
         """在强安全约束下建立 SSH 连接。
 

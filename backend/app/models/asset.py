@@ -31,6 +31,7 @@ class Asset(Base):
     name: Mapped[str] = mapped_column(String(100), nullable=False)
     address: Mapped[str] = mapped_column(String(200), nullable=False)
     tenant_id: Mapped[str] = mapped_column(String(64), nullable=False, default="default", index=True)
+    node_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
     platform_id: Mapped[int] = mapped_column(Integer, nullable=False)
     trusted_ssh_ca_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
     port: Mapped[int] = mapped_column(Integer, default=22)

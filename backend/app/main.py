@@ -14,6 +14,7 @@ from app.api import (
     accounts,
     acl,
     admin,
+    asset_tree,
     assets,
     auth,
     automation,
@@ -69,6 +70,7 @@ app.include_router(acl.router, prefix="/api/v1")
 app.include_router(admin.router, prefix="/api/v1")
 app.include_router(automation.router, prefix="/api/v1")
 app.include_router(assets.router, prefix="/api/v1")
+app.include_router(asset_tree.router, prefix="/api/v1")
 app.include_router(connectors.router, prefix="/api/v1")
 app.include_router(notification_deliveries.router, prefix="/api/v1")
 app.include_router(notification_rules.router, prefix="/api/v1")

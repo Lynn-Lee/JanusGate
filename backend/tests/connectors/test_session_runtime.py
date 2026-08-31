@@ -1,3 +1,4 @@
+# ruff: noqa: E402, I001
 """#t69：连接器会话运行时与网关接线测试。
 
 - 运行时/调度器用例基于进程内 asyncssh 服务器，验证 dispatch 打开真实通道、release 关闭。
@@ -262,6 +263,7 @@ async def test_gateway_create_session_opens_and_close_releases_connector(
 
 
 from app.connectors.command_policy import CommandPolicyGuard, InMemoryCommandAuditSink
+from app.connectors.ssh_channel import SshChannelError
 from app.models.acl import CommandFilterAction
 from app.policy.schemas import (
     CommandDecisionResponse,
@@ -270,7 +272,6 @@ from app.policy.schemas import (
     ResourceRef,
     SubjectRef,
 )
-from app.connectors.ssh_channel import SshChannelError
 
 
 class _DenyPolicy:
@@ -324,10 +325,9 @@ async def test_runtime_injected_guard_deny_does_not_reach_remote(
     await runtime.close("cs-deny")
 
 
-from collections.abc import AsyncIterator
 
 from fastapi.testclient import TestClient
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy.ext.asyncio import create_async_engine
 from sqlalchemy.pool import StaticPool
 
 from app.core.database import Base, get_db, get_read_db

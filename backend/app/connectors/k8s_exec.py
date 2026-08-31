@@ -27,6 +27,7 @@ import json
 import ssl
 from collections.abc import Sequence
 from dataclasses import dataclass, field
+from typing import Any
 from urllib.parse import quote, urlencode
 
 from websockets import Subprotocol
@@ -36,6 +37,7 @@ from websockets.exceptions import ConnectionClosedOK, InvalidHandshake
 
 from app.connectors.command_policy import CommandPolicyGuard, default_command_policy_guard
 from app.connectors.ssh_channel import CommandEvent, CommandEventSink
+from app.policy.schemas import ResourceRef, SubjectRef
 
 PROTOCOL = "k8s"
 
@@ -241,12 +243,12 @@ class K8sExecChannel:
         connect_timeout: float = 10.0,
         exec_shell: str = _DEFAULT_EXEC_SHELL,
         policy: CommandPolicyGuard | None = None,
-        subject=None,
-        resource=None,
+        subject: SubjectRef | None = None,
+        resource: ResourceRef | None = None,
         account_id: str = "",
         session_id: str | None = None,
-        session_factory=None,
-        db=None,
+        session_factory: Any = None,
+        db: Any = None,
     ) -> K8sExecChannel:
         """在 namespace 作用域与 TLS 强校验约束下准备 exec 通道。
 

@@ -209,28 +209,37 @@ class PolicyDecisionServiceClient:
         self.service = service
 
     async def evaluate(self, request: dict[str, Any]) -> dict[str, Any]:
-        subject = request.get("subject", {})
-        resource = request.get("resource", {})
-        approval = request.get("approval")
-        response = self.service.evaluate(
-            PolicyDecisionRequest(
-                subject=SubjectRef(
-                    id=str(subject.get("id", "")),
-                    type=str(subject.get("type", "user")),
-                    tenant_id=str(subject.get("tenant_id", "default")),
-                ),
-                action=str(request.get("action", "")),
-                resource=ResourceRef(
-                    id=str(resource.get("id") or resource.get("asset_id", "")),
-                    type=str(resource.get("type", "asset")),
-                    tenant_id=str(resource.get("tenant_id", "default")),
-                ),
-                context=dict(request.get("context", {})),
-                approval=ApprovalState(**approval) if isinstance(approval, dict) else None,
-                connector_trusted=bool(request.get("connector_trusted", False)),
+        try:
+            subject = request.get("subject", {})
+            resource = request.get("resource", {})
+            approval = request.get("approval")
+            response = self.service.evaluate(
+                PolicyDecisionRequest(
+                    subject=SubjectRef(
+                        id=str(subject.get("id", "")),
+                        type=str(subject.get("type", "user")),
+                        tenant_id=str(subject.get("tenant_id", "default")),
+                    ),
+                    action=str(request.get("action", "")),
+                    resource=ResourceRef(
+                        id=str(resource.get("id") or resource.get("asset_id", "")),
+                        type=str(resource.get("type", "asset")),
+                        tenant_id=str(resource.get("tenant_id", "default")),
+                    ),
+                    context=dict(request.get("context", {})),
+                    approval=ApprovalState(**approval) if isinstance(approval, dict) else None,
+                    connector_trusted=bool(request.get("connector_trusted", False)),
+                )
             )
-        )
-        return response.model_dump(mode="json")
+            return response.model_dump(mode="json")
+        except Exception:
+            return {
+                "decision": "deny",
+                "reason_code": "POLICY_EVALUATE_FAILED",
+                "explain": ["policy_evaluate_failed"],
+                "ttl_seconds": 0,
+                "obligations": [],
+            }
 
 
 class EmptyConnectionTokenStore:
@@ -583,6 +592,7 @@ class SessionGatewayService:
         self,
         *,
         subject_id: str,
+        subject_group_ids: tuple[str, ...] = (),
         tenant_id: str = "default",
         asset_id: str,
         account_id: str,
@@ -660,6 +670,7 @@ class SessionGatewayService:
                     "jit_grant_id": jit_grant_id,
                     "workflow_request_id": session.workflow_request_id,
                     "jit_grant_constraints": grant_binding.constraints if grant_binding else {},
+                    "group_ids": list(subject_group_ids),
                 },
                 "approval": approval,
                 "connector_trusted": True,

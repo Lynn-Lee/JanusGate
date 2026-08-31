@@ -128,6 +128,12 @@ function installFetch() {
     if (url.endsWith('/api/v1/auth/me')) return Response.json(user);
     if (url.endsWith('/api/v1/assets/') && method === 'GET') return Response.json([asset]);
     if (url.endsWith('/api/v1/assets/platforms')) return Response.json([platform]);
+    if (url.endsWith('/api/v1/asset-nodes/') && method === 'GET') {
+      return Response.json({
+        items: [{ id: 'node-root', tenant_id: 'default', parent_id: null, name: '根', is_root: true, ancestor_ids: [] }]
+      });
+    }
+    if (url.endsWith('/api/v1/asset-nodes/ungrouped-assets')) return Response.json({ items: [] });
     if (url.endsWith('/api/v1/workflows/requests') && method === 'GET') return Response.json({ items: [request], total: 1 });
     if (url.endsWith('/api/v1/workflows/grants/active')) return Response.json({ items: [grant], total: 1 });
     if (url.endsWith('/api/v1/sessions/') && method === 'GET') return Response.json({ items: [session], total: 1 });
@@ -185,8 +191,39 @@ describe('MVP pages', () => {
     render(<App />);
 
     expect(await screen.findByRole('heading', { name: '资产列表' })).toBeInTheDocument();
-    expect(screen.getByText('生产 SSH 主机')).toBeInTheDocument();
+    expect(await screen.findByText('根节点只用于组织树，不能挂资产或授权。')).toBeInTheDocument();
+    expect(screen.queryByText('没有权限')).not.toBeInTheDocument();
+    await userEvent.click(await screen.findByText('连接'));
+    expect(await screen.findByText('生产 SSH 主机')).toBeInTheDocument();
     expect(screen.getAllByRole('link', { name: '发起 JIT 申请' })[0]).toHaveAttribute('href', '/workflow');
+    expect(screen.getByRole('link', { name: '连接' })).toHaveAttribute('href', '/workflow');
+  });
+
+  it('hides manage/connect switch from non-admin users', async () => {
+    const fetchMock = installFetch();
+    vi.stubGlobal('fetch', async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.endsWith('/api/v1/auth/me')) {
+        return Response.json({
+          id: 2,
+          username: 'bob',
+          display_name: '普通用户',
+          email: 'bob@example.com',
+          is_superuser: false,
+          totp_enabled: false
+        });
+      }
+      return fetchMock(input, init);
+    });
+    history.pushState(null, '', '/assets');
+    render(<App />);
+
+    expect(await screen.findByRole('heading', { name: '资产列表' })).toBeInTheDocument();
+    expect(await screen.findByText('生产 SSH 主机')).toBeInTheDocument();
+    expect(screen.queryByText('根节点只用于组织树，不能挂资产或授权。')).not.toBeInTheDocument();
+    expect(screen.queryByRole('radio', { name: '管理' })).not.toBeInTheDocument();
+    expect(screen.queryByText('没有权限')).not.toBeInTheDocument();
+    expect(screen.getByRole('link', { name: '连接' })).toHaveAttribute('href', '/workflow');
   });
 
   it('shows Workflow request and active grant panels and creates a server-backed session', async () => {

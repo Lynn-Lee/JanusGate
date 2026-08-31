@@ -1,3 +1,4 @@
+# ruff: noqa: E402, I001
 """#t72 M3：真实 K8s ``exec`` 通道端到端与安全回归测试。
 
 全部用例基于 ``websockets`` 进程内 wss 服务器（自签证书 + ``v4.channel.k8s.io`` 帧），
@@ -441,7 +442,6 @@ async def test_policy_reject_does_not_exec_k8s(k8s_server: _RunningServer) -> No
     assert len(k8s_server.captured) == before
 
 
-from collections.abc import AsyncIterator
 
 from fastapi.testclient import TestClient
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine

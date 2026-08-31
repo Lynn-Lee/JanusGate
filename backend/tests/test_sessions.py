@@ -1064,8 +1064,12 @@ def test_session_api_uses_request_client_ip_not_spoofed_body_ip() -> None:
         app.dependency_overrides.clear()
 
 
-def test_default_session_gateway_dependency_binds_real_policy_client() -> None:
-    service = get_session_gateway_service(object())  # type: ignore[arg-type]
+@pytest.mark.asyncio
+async def test_default_session_gateway_dependency_binds_real_policy_client() -> None:
+    service = await get_session_gateway_service(
+        object(),  # type: ignore[arg-type]
+        {"id": "user-1", "tenant_id": "default", "permissions": []},
+    )
 
     assert isinstance(service.policy_client, PolicyDecisionServiceClient)
 

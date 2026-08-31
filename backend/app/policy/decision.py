@@ -20,7 +20,13 @@ from app.models.acl import (
     DataMaskingMethod,
     DataMaskingRuleModel,
 )
+from app.models.asset_tree import AssetPermissionModel, NodeModel
 from app.models.workflow import ApprovalPolicyModel
+from app.policy.asset_permission import (
+    CONNECT_ACTIONS,
+    find_effective_connect_permission,
+    request_account_protocol,
+)
 from app.policy.schemas import (
     CommandDecisionRequest,
     CommandDecisionResponse,
@@ -59,12 +65,19 @@ class PolicyDecisionService:
         command_filter_acls: list[CommandFilterAclModel] | None = None,
         command_groups: list[CommandGroupModel] | None = None,
         data_masking_rules: list[DataMaskingRuleModel] | None = None,
+        asset_permissions: list[AssetPermissionModel] | None = None,
+        nodes: list[NodeModel] | None = None,
+        asset_node_ids: dict[str, str | None] | None = None,
     ) -> None:
         self._rules = rules or []
         self._approval_policies = approval_policies or []
         self._command_filter_acls = command_filter_acls or []
         self._command_groups = command_groups or []
         self._data_masking_rules = data_masking_rules or []
+        # None = 未接线（沿用 PolicyRule）；list（含空）= #t64 已接线，connect 只走 AssetPermission。
+        self._asset_permissions = asset_permissions
+        self._nodes = nodes or []
+        self._asset_node_ids = asset_node_ids or {}
 
     def evaluate(self, request: PolicyDecisionRequest) -> PolicyDecisionResponse:
         trace: list[str] = [
@@ -76,6 +89,12 @@ class PolicyDecisionService:
         preflight = self._preflight_deny(request, trace)
         if preflight is not None:
             return preflight
+
+        if (
+            self._asset_permissions is not None
+            and request.action in CONNECT_ACTIONS
+        ):
+            return self._evaluate_asset_connect(request, trace)
 
         for policy in self._approval_policies:
             if not self._approval_policy_matches(policy, request):
@@ -859,6 +878,52 @@ class PolicyDecisionService:
             )
 
         return self._rule_deny(rule, request, trace)
+
+
+    def _evaluate_asset_connect(
+        self,
+        request: PolicyDecisionRequest,
+        trace: list[str],
+    ) -> PolicyDecisionResponse:
+        """#t64：connect 只由 AssetPermission 判定，admin 不绕过。"""
+
+        account_id, protocol = request_account_protocol(request)
+        nodes_by_id = {node.id: node for node in self._nodes}
+        permission, path = find_effective_connect_permission(
+            subject_id=request.subject.id,
+            subject_group_ids=self._request_group_ids(request),
+            tenant_id=request.subject.tenant_id,
+            asset_id=request.resource.id,
+            asset_node_id=self._asset_node_ids.get(request.resource.id),
+            account_id=account_id,
+            protocol=protocol,
+            permissions=self._asset_permissions or [],
+            nodes_by_id=nodes_by_id,
+        )
+        if permission is None:
+            trace.append("no_matching_asset_permission")
+            return self._deny("ASSET_PERMISSION_DENIED", trace)
+        if path == "direct":
+            trace.append(f"permission:{permission.id}:direct")
+        else:
+            trace.append(f"permission:{permission.id}:inherited:{path}")
+        return self._response(
+            decision=PolicyDecision.ALLOW,
+            reason_code="ASSET_PERMISSION_ALLOWED",
+            trace=trace,
+            obligations={
+                "permission_id": permission.id,
+                "inheritance": path,
+            },
+            ttl_seconds=0,
+        )
+
+    @staticmethod
+    def _request_group_ids(request: PolicyDecisionRequest) -> tuple[str, ...]:
+        raw_group_ids = request.context.get("group_ids", ())
+        if not isinstance(raw_group_ids, (list, tuple, set)):
+            return ()
+        return tuple(str(group_id) for group_id in raw_group_ids if group_id)
 
     def _preflight_deny(
         self,
