@@ -10,6 +10,7 @@ from app.models.asset_tree import AssetPermissionModel, NodeModel
 from app.models.audit import AuditEventModel
 from app.models.automation import AutomationJobRun
 from app.models.connector import Connector
+from app.models.rbac import Role, RoleBinding
 from app.models.session import SessionModel
 from app.models.session_recording import SessionCommandEvent, SessionRecording
 from app.models.ssh_ca import SshCertificate, SshCertificateAuthority
@@ -40,6 +41,8 @@ __all__ = [
     "Organization",
     "Platform",
     "Project",
+    "Role",
+    "RoleBinding",
     "SessionCommandEvent",
     "SessionModel",
     "SessionRecording",

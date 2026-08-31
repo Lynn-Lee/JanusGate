@@ -133,7 +133,8 @@ def async_raise(error: Exception) -> Any:
 
 
 def test_login_returns_access_and_refresh_tokens(monkeypatch: pytest.MonkeyPatch) -> None:
-    install_db(FakeDB())
+    # 额外的空 ScalarResult 对应 #t63 token 签发时的角色绑定查询（无绑定 → 回退基线）。
+    install_db(FakeDB(ScalarResult(values=[])))
     monkeypatch.setattr(AuthService, "authenticate", async_value(user()))
     monkeypatch.setattr(auth_api, "create_access_token", lambda payload: f"access:{payload['sub']}")
     monkeypatch.setattr(auth_api, "create_refresh_token", lambda payload: f"refresh:{payload['sub']}")
@@ -182,7 +183,8 @@ def test_login_rejects_bad_credentials(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def test_login_2fa_exchanges_valid_challenge_for_session_tokens(monkeypatch: pytest.MonkeyPatch) -> None:
-    install_db(FakeDB(ScalarResult(user(totp_enabled=True))))
+    # 第一条 ScalarResult 是用户查询，第二条对应 #t63 token 签发时的角色绑定查询。
+    install_db(FakeDB(ScalarResult(user(totp_enabled=True)), ScalarResult(values=[])))
     redis = install_redis()
     issued_access_payloads: list[dict[str, Any]] = []
     monkeypatch.setattr(auth_api, "decode_token", lambda _token: {"sub": "1", "type": "mfa", "jti": "mfa-jti", "requires_2fa": True})
@@ -259,7 +261,8 @@ def test_refresh_token_endpoint_rejects_access_token_and_disabled_user(monkeypat
 
 
 def test_refresh_token_endpoint_issues_new_token_pair(monkeypatch: pytest.MonkeyPatch) -> None:
-    install_db(FakeDB(ScalarResult(user())))
+    # 第一条 ScalarResult 是用户查询，第二条对应 #t63 token 签发时的角色绑定查询。
+    install_db(FakeDB(ScalarResult(user()), ScalarResult(values=[])))
     install_redis()
     monkeypatch.setattr(auth_api, "decode_token", lambda _token: {"type": "refresh", "sub": "1", "jti": "refresh-jti", "iat": datetime.now(UTC)})
     monkeypatch.setattr(auth_api, "create_access_token", lambda payload: f"new-access:{payload['username']}")

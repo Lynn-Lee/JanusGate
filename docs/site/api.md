@@ -37,6 +37,7 @@ scripts/build-docs-site.sh dist/docs-site
 - Admin：`/api/v1/admin/license-summary` 与 admin-only `POST /api/v1/admin/license-config`。
 - ACL：`/api/v1/command-filter-acls/` 与 `/api/v1/data-masking-rules/`（租户隔离 CRUD，仅这两类；SSH/K8s/PTY 执行前与命令事件入库均走 PolicyDecisionService）。
 - Asset tree / AssetPermission：`/api/v1/asset-nodes/`、`/api/v1/asset-nodes/{node_id}/assets`、`/api/v1/asset-nodes/{node_id}/permissions`、`/api/v1/asset-permissions/by-asset/{asset_id}` 和 `/api/v1/asset-permissions/{permission_id}`；详见[资产树与 AssetPermission](asset-tree-authorization.md)。
+- RBAC：`/api/v1/rbac/roles` 与 `/api/v1/rbac/role-bindings`（内置/自定义角色、角色绑定，读要求 `rbac:read`、写要求 `rbac:admin`，租户隔离）；详见[RBAC 角色与权限体系](rbac-authorization.md)。
 
 ## 错误响应
 

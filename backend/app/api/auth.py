@@ -27,22 +27,14 @@ from app.schemas.auth import (
     UserMeResponse,
 )
 from app.services.auth import AuthService
+from app.services.rbac import RbacService, legacy_fallback_permissions
 
 router = APIRouter(prefix="/auth", tags=["认证"])
 
-MVP_CONSOLE_PERMISSIONS = ("assets:read",)
-ADMIN_CONSOLE_PERMISSIONS = (
-    "admin",
-    "assets:read",
-    "assets:write",
-    "assets:test",
-    "audit:read",
-    "audit:write",
-    "sessions:connect",
-    "workflow:approve",
-    "workflow:audit",
-    "workflow:admin",
-)
+# 历史权限常量保留为对外兼容别名；权威定义在 app.services.rbac 的内置角色中。
+# 无显式角色绑定时，token 权限由 legacy_fallback_permissions 提供，与历史行为一致。
+MVP_CONSOLE_PERMISSIONS = legacy_fallback_permissions(is_superuser=False)
+ADMIN_CONSOLE_PERMISSIONS = legacy_fallback_permissions(is_superuser=True)
 
 
 @router.post("/login", response_model=TokenResponse)
@@ -57,7 +49,8 @@ async def login(data: LoginRequest, db: AsyncSession = Depends(get_db)) -> Token
             two_fa_token=create_mfa_token({"sub": str(user.id), "username": user.username}),
         )
 
-    token_data = _token_data_for_user(user)
+    permissions = await _resolve_permissions(db, user)
+    token_data = _token_data_for_user(user, permissions)
     return TokenResponse(
         access_token=create_access_token(token_data),
         refresh_token=create_refresh_token(token_data),
@@ -89,7 +82,8 @@ async def login_2fa(
         raise HTTPException(status_code=401, detail="用户不存在或已被禁用")
     if not await AuthService.verify_totp(db, user.id, data.totp_code):
         raise HTTPException(status_code=400, detail="TOTP 验证码错误")
-    token_data = _token_data_for_user(user, extra={"2fa_verified": True})
+    permissions = await _resolve_permissions(db, user)
+    token_data = _token_data_for_user(user, permissions, extra={"2fa_verified": True})
     return TokenResponse(
         access_token=create_access_token(token_data),
         refresh_token=create_refresh_token(token_data),
@@ -122,7 +116,8 @@ async def refresh_token_endpoint(
     password_changed_at = _coerce_datetime(user.password_changed_at)
     if not issued_at or (password_changed_at and issued_at < password_changed_at):
         raise HTTPException(status_code=401, detail="refresh_token 无效或已过期")
-    token_data = _token_data_for_user(user)
+    permissions = await _resolve_permissions(db, user)
+    token_data = _token_data_for_user(user, permissions)
     return TokenResponse(
         access_token=create_access_token(token_data),
         refresh_token=create_refresh_token(token_data),
@@ -222,12 +217,20 @@ def _coerce_datetime(value: Any) -> datetime | None:
     return value.astimezone(UTC)
 
 
-def _token_data_for_user(user: User, *, extra: dict[str, Any] | None = None) -> dict[str, Any]:
-    permissions = (
-        list(ADMIN_CONSOLE_PERMISSIONS)
-        if user.is_superuser
-        else list(MVP_CONSOLE_PERMISSIONS)
+async def _resolve_permissions(db: AsyncSession, user: User) -> list[str]:
+    """解析用户有效权限：显式角色绑定并入 ``is_superuser`` 回退基线（#t63）。"""
+    tenant_id = getattr(user, "tenant_id", None) or "default"
+    return await RbacService.resolve_effective_permissions(
+        db,
+        user_id=str(user.id),
+        tenant_id=str(tenant_id),
+        is_superuser=bool(user.is_superuser),
     )
+
+
+def _token_data_for_user(
+    user: User, permissions: list[str], *, extra: dict[str, Any] | None = None
+) -> dict[str, Any]:
     token_data: dict[str, Any] = {
         "sub": str(user.id),
         "username": user.username,
