@@ -19,10 +19,12 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import dataclass
 from enum import StrEnum
-from typing import Protocol
+from typing import Any, Protocol
 from uuid import uuid4
 
 from app.api.sessions.service import ConnectorDispatchRequest
+from app.connectors.command_policy import CommandPolicyGuard, default_command_policy_guard
+from app.policy.schemas import ResourceRef, SubjectRef
 from app.connectors.ssh_channel import (
     CommandEventSink,
     SshChannel,
@@ -131,11 +133,15 @@ class ConnectorSessionRuntime:
         *,
         command_sink: CommandEventSink | None = None,
         transfer_sink: FileTransferEventSink | None = None,
+        command_policy: CommandPolicyGuard | None = None,
+        session_factory: Callable[..., Any] | None = None,
         id_factory: Callable[[], str] | None = None,
     ) -> None:
         self._resolver = resolver
         self._command_sink = command_sink
         self._transfer_sink = transfer_sink
+        self._command_policy = command_policy
+        self._session_factory = session_factory
         self._id_factory = id_factory or (lambda: f"cs_{uuid4().hex}")
         self._sessions: dict[str, ConnectorSessionRecord] = {}
 
@@ -146,7 +152,7 @@ class ConnectorSessionRuntime:
         """
 
         spec = await self._resolver.resolve(request)
-        channel = await self._open_channel(spec)
+        channel = await self._open_channel(spec, request)
         connector_session_id = self._id_factory()
         record = ConnectorSessionRecord(
             connector_session_id=connector_session_id,
@@ -175,9 +181,30 @@ class ConnectorSessionRuntime:
 
         return list(self._sessions)
 
-    async def _open_channel(self, spec: SessionConnectionSpec) -> OpenChannel:
+    async def _policy_for(self, request: ConnectorDispatchRequest) -> CommandPolicyGuard:
+        if self._command_policy is not None:
+            return self._command_policy
+        factory = self._session_factory
+        if factory is None:
+            from app.core.database import AsyncSessionLocal
+
+            factory = AsyncSessionLocal
+        return await default_command_policy_guard(
+            subject=SubjectRef(id=request.subject_id, tenant_id=request.tenant_id),
+            resource=ResourceRef(
+                id=request.asset_id, type=request.protocol or "asset", tenant_id=request.tenant_id
+            ),
+            account_id=request.account_id,
+            session_id=request.session_id,
+            session_factory=factory,
+        )
+
+    async def _open_channel(
+        self, spec: SessionConnectionSpec, request: ConnectorDispatchRequest
+    ) -> OpenChannel:
+        policy = await self._policy_for(request)
         if spec.mode is ConnectorSessionMode.EXEC:
-            return await SshChannel.open(spec.target, spec.credential)
+            return await SshChannel.open(spec.target, spec.credential, policy=policy)
         if spec.mode is ConnectorSessionMode.INTERACTIVE:
             if self._command_sink is None:
                 raise SshChannelError(
@@ -185,7 +212,7 @@ class ConnectorSessionRuntime:
                     "interactive mode requires a command_sink",
                 )
             return await SshInteractiveSession.open(
-                spec.target, spec.credential, self._command_sink
+                spec.target, spec.credential, self._command_sink, policy=policy
             )
         if spec.mode is ConnectorSessionMode.SFTP:
             if self._transfer_sink is None:

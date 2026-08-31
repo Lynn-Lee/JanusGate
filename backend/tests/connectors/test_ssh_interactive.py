@@ -256,3 +256,165 @@ async def test_run_command_times_out_when_prompt_never_arrives() -> None:
 
     assert exc_info.value.code == "SSH_INTERACTIVE_READ_TIMEOUT"
     assert sink.events == []
+
+# --- #t65 执行前策略守卫 -------------------------------------------------------
+
+from app.connectors.command_policy import CommandPolicyGuard, InMemoryCommandAuditSink
+from app.models.acl import CommandFilterAction
+from app.policy.schemas import (
+    CommandDecisionResponse,
+    CommandFilterEffect,
+    MaskingResponse,
+    ResourceRef,
+    SubjectRef,
+)
+
+
+class _T65FakePolicy:
+    def __init__(self, *, effect=CommandFilterEffect.ALLOW, reason="COMMAND_ACCEPTED_BY_DEFAULT"):
+        self.effect = effect
+        self.reason = reason
+        self.seen: list[str] = []
+
+    def evaluate_command(self, request):
+        self.seen.append(request.command)
+        return CommandDecisionResponse(
+            effect=self.effect,
+            action=(
+                CommandFilterAction.REJECT
+                if self.effect is CommandFilterEffect.DENY
+                else CommandFilterAction.ACCEPT
+            ),
+            reason_code=self.reason,
+            explain_trace=["test"],
+            audit_event_id="pde_test",
+        )
+
+    def mask(self, request):
+        return MaskingResponse(
+            masked_text=request.text,
+            redaction_count=0,
+            explain_trace=[],
+            audit_event_id="pde_mask",
+        )
+
+
+def _t65_guard(policy: _T65FakePolicy, sink: InMemoryCommandAuditSink) -> CommandPolicyGuard:
+    return CommandPolicyGuard(
+        policy,
+        subject=SubjectRef(id="u1", tenant_id="t1"),
+        resource=ResourceRef(id="a1", type="asset", tenant_id="t1"),
+        account_id="acct",
+        audit_sink=sink,
+    )
+
+async def test_interactive_reject_after_rebuild_before_remote(server: _RunningServer) -> None:
+    credential = SshCredential(private_key=server.client_private_key)
+    sink = _RecordingSink()
+    audit = InMemoryCommandAuditSink()
+    policy = _T65FakePolicy(effect=CommandFilterEffect.DENY, reason="COMMAND_REJECT")
+    session = await SshInteractiveSession.open(
+        _target(server), credential, sink, policy=_t65_guard(policy, audit)
+    )
+    try:
+        with pytest.raises(SshChannelError) as excinfo:
+            await session.run_command("rm -rf /")
+        assert excinfo.value.code == "SSH_COMMAND_DENIED"
+        assert excinfo.value.audit_event_id == audit.events[0]["id"]
+        assert sink.events == []
+        assert policy.seen == ["rm -rf /"]
+    finally:
+        await session.close()
+
+
+from collections.abc import AsyncIterator
+
+from fastapi.testclient import TestClient
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy.pool import StaticPool
+
+from app.core.database import Base, get_db, get_read_db
+from app.core.deps import current_user
+from app.main import app
+
+
+@pytest.fixture
+async def acl_session_factory() -> AsyncIterator[async_sessionmaker[AsyncSession]]:
+    engine = create_async_engine(
+        "sqlite+aiosqlite:///:memory:",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+    factory = async_sessionmaker(engine, expire_on_commit=False)
+    try:
+        yield factory
+    finally:
+        await engine.dispose()
+
+
+def _install_acl_db(session_factory: async_sessionmaker[AsyncSession]) -> None:
+    async def override_db() -> AsyncIterator[AsyncSession]:
+        async with session_factory() as session:
+            try:
+                yield session
+            except Exception:
+                await session.rollback()
+                raise
+            finally:
+                await session.close()
+
+    app.dependency_overrides[get_db] = override_db
+    app.dependency_overrides[get_read_db] = override_db
+
+
+def _seed_reject_rm_via_crud(*, tenant_id: str = "tenant-a") -> None:
+    app.dependency_overrides[current_user] = lambda: {
+        "id": "user-1",
+        "username": "alice",
+        "tenant_id": tenant_id,
+        "organization_id": None,
+        "team_id": None,
+        "project_id": None,
+        "permissions": ["admin"],
+    }
+    with TestClient(app) as client:
+        created = client.post(
+            "/api/v1/command-filter-acls/",
+            json={
+                "name": "deny-rm",
+                "priority": 10,
+                "action": "reject",
+                "command_groups": [
+                    {"name": "danger", "match_type": "command", "patterns": ["rm"]}
+                ],
+            },
+        )
+    assert created.status_code == 201, created.text
+
+
+async def test_default_assembly_tenant_acl_interactive_does_not_reach_remote(
+    server: _RunningServer,
+    acl_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    _install_acl_db(acl_session_factory)
+    _seed_reject_rm_via_crud(tenant_id="tenant-a")
+    credential = SshCredential(private_key=server.client_private_key)
+    sink = _RecordingSink()
+    session = await SshInteractiveSession.open(
+        _target(server),
+        credential,
+        sink,
+        subject=SubjectRef(id="user-1", tenant_id="tenant-a"),
+        resource=ResourceRef(id="asset-1", type="ssh", tenant_id="tenant-a"),
+        account_id="root",
+        session_factory=acl_session_factory,
+    )
+    try:
+        with pytest.raises(SshChannelError) as excinfo:
+            await session.run_command("rm -rf /")
+        assert excinfo.value.code == "SSH_COMMAND_DENIED"
+        assert sink.events == []
+    finally:
+        await session.close()

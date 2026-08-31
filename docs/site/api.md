@@ -35,6 +35,7 @@ scripts/build-docs-site.sh dist/docs-site
 - Audit：`/api/v1/audits/events`、`/api/v1/audits/reports/summary`、`/api/v1/audits/reports/compliance`。
 - Automation：`/api/v1/automation/jobs/asset-scans`、credential rotations、playbooks 和 job runs。
 - Admin：`/api/v1/admin/license-summary` 与 admin-only `POST /api/v1/admin/license-config`。
+- ACL：`/api/v1/command-filter-acls/` 与 `/api/v1/data-masking-rules/`（租户隔离 CRUD，仅这两类；SSH/K8s/PTY 执行前与命令事件入库均走 PolicyDecisionService）。
 
 ## 错误响应
 

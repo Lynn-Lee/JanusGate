@@ -6,6 +6,7 @@ from typing import Any
 from fastapi.routing import APIRoute
 
 from app.api.accounts import router as accounts_router
+from app.api.acl import router as acl_router
 from app.api.admin import router as admin_router
 from app.api.assets import router as assets_router
 from app.api.audits.routes import router as audits_router
@@ -26,6 +27,10 @@ from app.core.database import create_database_engines, get_db, get_read_db
 
 DB_BACKED_GET_ROUTE_ROUTING_INVENTORY = {
     ("GET", "/accounts/"),
+    ("GET", "/command-filter-acls/"),
+    ("GET", "/command-filter-acls/{acl_id}"),
+    ("GET", "/data-masking-rules/"),
+    ("GET", "/data-masking-rules/{rule_id}"),
     ("GET", "/admin/license-summary"),
     ("GET", "/accounts/{account_id}/rotations"),
     ("GET", "/assets/"),
@@ -66,6 +71,7 @@ GET_ROUTE_ROUTING_INVENTORY = (
 
 ROUTERS_WITH_GET_ROUTES = [
     accounts_router,
+    acl_router,
     admin_router,
     assets_router,
     audits_router,
@@ -288,6 +294,38 @@ def test_webhook_endpoint_write_routes_keep_writer_database_dependency() -> None
         dependencies = _route_dependency_calls(
             router=webhook_endpoints_router, method=method, path=path
         )
+        assert get_db in dependencies
+        assert get_read_db not in dependencies
+
+
+
+
+def test_acl_read_routes_use_read_database_dependency() -> None:
+    read_routes = [
+        ("GET", "/command-filter-acls/"),
+        ("GET", "/command-filter-acls/{acl_id}"),
+        ("GET", "/data-masking-rules/"),
+        ("GET", "/data-masking-rules/{rule_id}"),
+    ]
+
+    for method, path in read_routes:
+        dependencies = _route_dependency_calls(router=acl_router, method=method, path=path)
+        assert get_read_db in dependencies
+        assert get_db not in dependencies
+
+
+def test_acl_write_routes_keep_writer_database_dependency() -> None:
+    write_routes = [
+        ("POST", "/command-filter-acls/"),
+        ("PATCH", "/command-filter-acls/{acl_id}"),
+        ("DELETE", "/command-filter-acls/{acl_id}"),
+        ("POST", "/data-masking-rules/"),
+        ("PATCH", "/data-masking-rules/{rule_id}"),
+        ("DELETE", "/data-masking-rules/{rule_id}"),
+    ]
+
+    for method, path in write_routes:
+        dependencies = _route_dependency_calls(router=acl_router, method=method, path=path)
         assert get_db in dependencies
         assert get_read_db not in dependencies
 

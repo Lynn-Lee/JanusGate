@@ -2,7 +2,7 @@
 
 本模块把 :class:`~app.connectors.ssh_channel.CommandEvent` 逐条 POST 到 JanusGate
 会话录制入库端点，实现 :class:`~app.connectors.ssh_channel.CommandEventSink` 协议，
-从而把连接器侧真实 SSH 通道产生的命令事件接进后端管线。风格对齐
+从而把连接器侧真实 SSH 通道产生的命令事件接进后端管线。入库端点在落库前会调用 PolicyDecisionService.evaluate_command / mask（#t65 接线）：拒绝则阻断并审计、不落明文命令。风格对齐
 ``app/connectors/sdk.py``：构造时可注入 ``httpx.AsyncClient``，非 2xx 响应映射为
 不承载任何密钥/token 上下文的类型化异常。
 """

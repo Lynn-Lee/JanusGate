@@ -13,6 +13,7 @@ from datetime import UTC, datetime, timedelta
 
 import asyncssh
 import pytest
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.api.sessions.service import (
     ConnectorDispatchRequest,
@@ -79,10 +80,15 @@ async def server() -> AsyncIterator[_RunningServer]:
         await running.acceptor.wait_closed()
 
 
-def _resolver_for(server: _RunningServer, *, mode: ConnectorSessionMode) -> InMemorySessionConnectionResolver:
+def _resolver_for(
+    server: _RunningServer,
+    *,
+    mode: ConnectorSessionMode,
+    tenant_id: str = "default",
+) -> InMemorySessionConnectionResolver:
     resolver = InMemorySessionConnectionResolver()
     resolver.register(
-        tenant_id="default",
+        tenant_id=tenant_id,
         asset_id="asset-1",
         account_id="root",
         protocol="ssh",
@@ -100,11 +106,13 @@ def _resolver_for(server: _RunningServer, *, mode: ConnectorSessionMode) -> InMe
     return resolver
 
 
-def _dispatch_request(session_id: str = "sess-1") -> ConnectorDispatchRequest:
+def _dispatch_request(
+    session_id: str = "sess-1", *, tenant_id: str = "default"
+) -> ConnectorDispatchRequest:
     return ConnectorDispatchRequest(
         session_id=session_id,
         connector_id="conn-1",
-        tenant_id="default",
+        tenant_id=tenant_id,
         subject_id="user-1",
         asset_id="asset-1",
         account_id="root",
@@ -115,9 +123,13 @@ def _dispatch_request(session_id: str = "sess-1") -> ConnectorDispatchRequest:
 # --- 运行时 / 调度器：dispatch 打开真实通道，release 关闭 -------------------------
 
 
-async def test_runtime_opens_real_exec_channel_and_closes(server: _RunningServer) -> None:
+async def test_runtime_opens_real_exec_channel_and_closes(
+    server: _RunningServer,
+    acl_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
     runtime = ConnectorSessionRuntime(
         _resolver_for(server, mode=ConnectorSessionMode.EXEC),
+        session_factory=acl_session_factory,
         id_factory=lambda: "cs-fixed",
     )
 
@@ -247,3 +259,174 @@ async def test_gateway_create_session_opens_and_close_releases_connector(
     assert closed.status is SessionStatus.CLOSED
     # 网关关闭连带释放连接器侧会话。
     assert runtime.active_ids() == []
+
+
+from app.connectors.command_policy import CommandPolicyGuard, InMemoryCommandAuditSink
+from app.models.acl import CommandFilterAction
+from app.policy.schemas import (
+    CommandDecisionResponse,
+    CommandFilterEffect,
+    MaskingResponse,
+    ResourceRef,
+    SubjectRef,
+)
+from app.connectors.ssh_channel import SshChannelError
+
+
+class _DenyPolicy:
+    def __init__(self) -> None:
+        self.seen: list[str] = []
+
+    def evaluate_command(self, request):
+        self.seen.append(request.command)
+        return CommandDecisionResponse(
+            effect=CommandFilterEffect.DENY,
+            action=CommandFilterAction.REJECT,
+            reason_code="COMMAND_REJECT",
+            explain_trace=["test"],
+            audit_event_id="pde_test",
+        )
+
+    def mask(self, request):
+        return MaskingResponse(
+            masked_text=request.text,
+            redaction_count=0,
+            explain_trace=[],
+            audit_event_id="pde_mask",
+        )
+
+
+async def test_runtime_injected_guard_deny_does_not_reach_remote(
+    server: _RunningServer,
+) -> None:
+    audit = InMemoryCommandAuditSink()
+    policy = _DenyPolicy()
+    guard = CommandPolicyGuard(
+        policy,
+        subject=SubjectRef(id="user-1", tenant_id="default"),
+        resource=ResourceRef(id="asset-1", type="ssh", tenant_id="default"),
+        account_id="root",
+        audit_sink=audit,
+    )
+    runtime = ConnectorSessionRuntime(
+        _resolver_for(server, mode=ConnectorSessionMode.EXEC),
+        command_policy=guard,
+        id_factory=lambda: "cs-deny",
+    )
+    record = await runtime.open(_dispatch_request())
+    sink = _RecordingSink()
+    with pytest.raises(SshChannelError) as excinfo:
+        await record.channel.run_command("rm -rf /", sink, sequence=0)
+    assert excinfo.value.code == "SSH_COMMAND_DENIED"
+    assert excinfo.value.audit_event_id == audit.events[0]["id"]
+    assert sink.events == []
+    assert policy.seen == ["rm -rf /"]
+    await runtime.close("cs-deny")
+
+
+from collections.abc import AsyncIterator
+
+from fastapi.testclient import TestClient
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy.pool import StaticPool
+
+from app.core.database import Base, get_db, get_read_db
+from app.core.deps import current_user
+from app.main import app
+
+
+@pytest.fixture
+async def acl_session_factory() -> AsyncIterator[async_sessionmaker[AsyncSession]]:
+    engine = create_async_engine(
+        "sqlite+aiosqlite:///:memory:",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+    factory = async_sessionmaker(engine, expire_on_commit=False)
+    try:
+        yield factory
+    finally:
+        await engine.dispose()
+
+
+def _install_acl_db(session_factory: async_sessionmaker[AsyncSession]) -> None:
+    async def override_db() -> AsyncIterator[AsyncSession]:
+        async with session_factory() as session:
+            try:
+                yield session
+            except Exception:
+                await session.rollback()
+                raise
+            finally:
+                await session.close()
+
+    app.dependency_overrides[get_db] = override_db
+    app.dependency_overrides[get_read_db] = override_db
+
+
+def _seed_reject_rm_via_crud(*, tenant_id: str = "tenant-a") -> None:
+    app.dependency_overrides[current_user] = lambda: {
+        "id": "user-1",
+        "username": "alice",
+        "tenant_id": tenant_id,
+        "organization_id": None,
+        "team_id": None,
+        "project_id": None,
+        "permissions": ["admin"],
+    }
+    with TestClient(app) as client:
+        created = client.post(
+            "/api/v1/command-filter-acls/",
+            json={
+                "name": "deny-rm",
+                "priority": 10,
+                "action": "reject",
+                "command_groups": [
+                    {"name": "danger", "match_type": "command", "patterns": ["rm"]}
+                ],
+            },
+        )
+    assert created.status_code == 201, created.text
+
+
+async def test_runtime_default_assembly_tenant_acl_does_not_reach_remote(
+    server: _RunningServer,
+    acl_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    _install_acl_db(acl_session_factory)
+    _seed_reject_rm_via_crud(tenant_id="tenant-a")
+    runtime = ConnectorSessionRuntime(
+        _resolver_for(server, mode=ConnectorSessionMode.EXEC, tenant_id="tenant-a"),
+        session_factory=acl_session_factory,
+        id_factory=lambda: "cs-acl",
+    )
+    record = await runtime.open(_dispatch_request(tenant_id="tenant-a"))
+    sink = _RecordingSink()
+    with pytest.raises(SshChannelError) as excinfo:
+        await record.channel.run_command("rm -rf /", sink, sequence=0)
+    assert excinfo.value.code == "SSH_COMMAND_DENIED"
+    assert sink.events == []
+    allowed = await record.channel.run_command("whoami", sink, sequence=1)
+    assert allowed.output_excerpt == "executed:whoami"
+    await runtime.close("cs-acl")
+
+
+async def test_runtime_unavailable_store_does_not_reach_remote(server: _RunningServer) -> None:
+    def boom(*_args, **_kwargs):  # noqa: ANN001
+        raise TimeoutError("db timed out")
+
+    runtime = ConnectorSessionRuntime(
+        _resolver_for(server, mode=ConnectorSessionMode.EXEC),
+        session_factory=boom,
+        id_factory=lambda: "cs-down",
+    )
+    record = await runtime.open(_dispatch_request())
+    sink = _RecordingSink()
+    with pytest.raises(SshChannelError) as excinfo:
+        await record.channel.run_command("whoami", sink, sequence=0)
+    assert excinfo.value.code == "SSH_COMMAND_DENIED"
+    assert excinfo.value.detail == "COMMAND_POLICY_STORE_UNAVAILABLE"
+    assert sink.events == []
+    await runtime.close("cs-down")

@@ -1,6 +1,8 @@
 """Phase 4 session recording and command search API routes."""
 from __future__ import annotations
 
+import hashlib
+from uuid import uuid4
 import re
 from datetime import UTC, datetime
 from typing import Any
@@ -10,6 +12,8 @@ from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.sql.elements import ColumnElement
 
+from app.api.audits.schemas import AuditCategory, AuditEventCreate, AuditSeverity
+from app.api.audits.service import audit_service
 from app.api.session_recording_schemas import (
     SessionCommandEventCreate,
     SessionCommandEventListResponse,
@@ -21,6 +25,16 @@ from app.core.database import get_db, get_read_db
 from app.core.deps import current_user
 from app.models.connector import Connector
 from app.models.session_recording import SessionCommandEvent, SessionRecording
+from app.policy.repository import build_tenant_policy_service
+from app.policy.schemas import (
+    CommandDecisionRequest,
+    CommandDecisionResponse,
+    CommandFilterEffect,
+    MaskingRequest,
+    ResourceRef,
+    SubjectRef,
+)
+from app.tenancy.scope import actor_scope_from_user
 
 router = APIRouter(tags=["会话录制"])
 
@@ -71,18 +85,7 @@ async def append_session_command_event(
     _require_recording_permission(user, "session-recordings:write")
     recording = await _get_scoped_recording(db=db, user=user, recording_id=recording_id)
     _ensure_recording_is_open(recording)
-    event = SessionCommandEvent(
-        tenant_id=recording.tenant_id,
-        recording_id=recording.id,
-        session_id=recording.session_id,
-        sequence=data.sequence,
-        command=data.command,
-        exit_code=data.exit_code,
-        output_excerpt=_redact_command_excerpt(data.output_excerpt),
-    )
-    db.add(event)
-    await db.commit()
-    await db.refresh(event)
+    event = await _persist_command_event(db=db, user=user, recording=recording, data=data)
     return _command_response(event)
 
 
@@ -102,18 +105,7 @@ async def ingest_connector_session_command_event(
     await _get_active_scoped_connector(db=db, user=user, connector_id=connector_id)
     recording = await _get_scoped_recording(db=db, user=user, recording_id=recording_id)
     _ensure_recording_is_open(recording)
-    event = SessionCommandEvent(
-        tenant_id=recording.tenant_id,
-        recording_id=recording.id,
-        session_id=recording.session_id,
-        sequence=data.sequence,
-        command=data.command,
-        exit_code=data.exit_code,
-        output_excerpt=_redact_command_excerpt(data.output_excerpt),
-    )
-    db.add(event)
-    await db.commit()
-    await db.refresh(event)
+    event = await _persist_command_event(db=db, user=user, recording=recording, data=data)
     return _command_response(event)
 
 
@@ -178,6 +170,109 @@ async def search_session_commands(
     events = result.scalars().all()
     items = [_command_response(event) for event in events]
     return SessionCommandEventListResponse(items=items, total=len(items))
+
+
+async def _persist_command_event(
+    *,
+    db: AsyncSession,
+    user: dict[str, Any],
+    recording: SessionRecording,
+    data: SessionCommandEventCreate,
+) -> SessionCommandEvent:
+    """在入库前走 PolicyDecisionService：拒绝则阻断并审计，放行则脱敏后落库。
+
+    SSH / K8s 连接器均经 ``HttpCommandEventSink`` POST 到本路径，因此这是 #t65
+    命令过滤与脱敏在生产管线上的接线点。拒绝时**不落明文命令**。
+    """
+
+    policy = await build_tenant_policy_service(db, actor_scope_from_user(user))
+    tenant_id = recording.tenant_id
+    subject = SubjectRef(
+        id=recording.subject_id or str(user.get("id") or ""),
+        type="user",
+        tenant_id=tenant_id,
+    )
+    resource = ResourceRef(
+        id=recording.asset_id,
+        type=recording.protocol or "asset",
+        tenant_id=tenant_id,
+    )
+    try:
+        decision = policy.evaluate_command(
+            CommandDecisionRequest(
+                subject=subject,
+                resource=resource,
+                account_id=recording.account_id,
+                command=data.command,
+            )
+        )
+    except Exception:
+        decision = CommandDecisionResponse(
+            effect=CommandFilterEffect.DENY,
+            action="reject",
+            reason_code="COMMAND_EVALUATE_FAILED",
+            explain_trace=["evaluate_command_failed"],
+            audit_event_id=f"pde_{uuid4().hex}",
+        )
+    if decision.effect in (CommandFilterEffect.DENY, CommandFilterEffect.REVIEW):
+        await _audit_rejected_command(
+            user=user, recording=recording, data=data, decision=decision
+        )
+        raise HTTPException(status_code=403, detail=decision.reason_code)
+
+    masking = policy.mask(
+        MaskingRequest(
+            subject=subject,
+            resource=resource,
+            account_id=recording.account_id,
+            text=data.output_excerpt,
+        )
+    )
+    event = SessionCommandEvent(
+        tenant_id=recording.tenant_id,
+        recording_id=recording.id,
+        session_id=recording.session_id,
+        sequence=data.sequence,
+        command=data.command,
+        exit_code=data.exit_code,
+        output_excerpt=_redact_command_excerpt(masking.masked_text),
+    )
+    db.add(event)
+    await db.commit()
+    await db.refresh(event)
+    return event
+
+
+async def _audit_rejected_command(
+    *,
+    user: dict[str, Any],
+    recording: SessionRecording,
+    data: SessionCommandEventCreate,
+    decision: CommandDecisionResponse,
+) -> None:
+    """把拒绝写入审计账本；metadata 只存命令摘要哈希，不落明文。"""
+
+    await audit_service.create_event(
+        AuditEventCreate(
+            event_type="session.command.rejected",
+            category=AuditCategory.policy,
+            action="command.reject",
+            resource_type="session_recording",
+            resource_id=str(recording.id),
+            session_id=recording.session_id,
+            severity=AuditSeverity.high,
+            message="Command rejected by command-filter ACL",
+            metadata={
+                "reason_code": decision.reason_code,
+                "matched_acl_id": decision.matched_acl_id,
+                "matched_command_group_id": decision.matched_command_group_id,
+                "command_sha256": hashlib.sha256(data.command.encode("utf-8")).hexdigest(),
+                "sequence": data.sequence,
+                "policy_audit_event_id": decision.audit_event_id,
+            },
+        ),
+        user,
+    )
 
 
 async def _get_scoped_recording(

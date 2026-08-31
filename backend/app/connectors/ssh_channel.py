@@ -22,6 +22,8 @@ from collections.abc import Sequence
 from dataclasses import dataclass, field
 from typing import Protocol
 
+from app.connectors.command_policy import CommandPolicyGuard, default_command_policy_guard
+
 import asyncssh
 
 PROTOCOL = "ssh"
@@ -81,9 +83,10 @@ class SshChannelError(RuntimeError):
     :param detail: 面向运维的人类可读描述，不得包含私钥、密码等敏感信息。
     """
 
-    def __init__(self, code: str, detail: str) -> None:
+    def __init__(self, code: str, detail: str, *, audit_event_id: str = "") -> None:
         self.code = code
         self.detail = detail
+        self.audit_event_id = audit_event_id
         super().__init__(f"{code}: {detail}")
 
 
@@ -220,9 +223,15 @@ class SshChannel:
     事件，:meth:`close` 释放连接。支持异步上下文管理器语义。
     """
 
-    def __init__(self, connection: asyncssh.SSHClientConnection, target: SshTarget) -> None:
+    def __init__(
+        self,
+        connection: asyncssh.SSHClientConnection,
+        target: SshTarget,
+        policy: CommandPolicyGuard,
+    ) -> None:
         self._connection = connection
         self._target = target
+        self._policy = policy
 
     @classmethod
     async def open(
@@ -231,6 +240,13 @@ class SshChannel:
         credential: SshCredential,
         *,
         connect_timeout: float = 10.0,
+        policy: CommandPolicyGuard | None = None,
+        subject=None,
+        resource=None,
+        account_id: str = "",
+        session_id: str | None = None,
+        session_factory=None,
+        db=None,
     ) -> SshChannel:
         """在强安全约束下建立 SSH 连接。
 
@@ -270,7 +286,15 @@ class SshChannel:
             raise SshChannelError("SSH_CONNECT_TIMEOUT", "connection timed out") from exc
         except (asyncssh.Error, OSError) as exc:
             raise SshChannelError("SSH_CONNECT_FAILED", str(exc)) from exc
-        return cls(connection, target)
+        resolved = policy or await default_command_policy_guard(
+            subject=subject,
+            resource=resource,
+            account_id=account_id,
+            session_id=session_id,
+            session_factory=session_factory,
+            db=db,
+        )
+        return cls(connection, target, resolved)
 
     async def run_command(
         self,
@@ -285,19 +309,28 @@ class SshChannel:
         :param sink: 命令事件下游（#t46 管线）。
         :param sequence: 会话内命令序号。
         :returns: 已投递的命令事件。
-        :raises SshChannelError: 命令执行通道异常（``SSH_COMMAND_FAILED``）。
+        :raises SshChannelError: 命令被策略拒绝（``SSH_COMMAND_DENIED``）或通道异常
+            （``SSH_COMMAND_FAILED``）。
         """
 
+        decision = await self._policy.authorize(command)
+        if not decision.allowed:
+            raise SshChannelError(
+                "SSH_COMMAND_DENIED",
+                decision.reason_code,
+                audit_event_id=decision.audit_event_id,
+            )
         try:
             result = await self._connection.run(command, check=False)
         except asyncssh.Error as exc:
             raise SshChannelError("SSH_COMMAND_FAILED", str(exc)) from exc
         exit_code = result.exit_status if isinstance(result.exit_status, int) else None
+        excerpt = self._policy.mask_text(_excerpt(result.stdout, result.stderr))
         event = CommandEvent(
             sequence=sequence,
             command=command,
             exit_code=exit_code,
-            output_excerpt=_excerpt(result.stdout, result.stderr),
+            output_excerpt=excerpt,
         )
         await sink.emit(event)
         return event

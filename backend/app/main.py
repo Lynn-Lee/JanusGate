@@ -12,6 +12,7 @@ from fastapi.middleware.gzip import GZipMiddleware
 
 from app.api import (
     accounts,
+    acl,
     admin,
     assets,
     auth,
@@ -64,6 +65,7 @@ register_exception_handlers(app)
 
 app.include_router(auth.router, prefix="/api/v1")
 app.include_router(accounts.router, prefix="/api/v1")
+app.include_router(acl.router, prefix="/api/v1")
 app.include_router(admin.router, prefix="/api/v1")
 app.include_router(automation.router, prefix="/api/v1")
 app.include_router(assets.router, prefix="/api/v1")

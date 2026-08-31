@@ -49,5 +49,7 @@
 
 ## 已知边界
 
-- 本切片交付模型 + 判定服务 + 迁移 + 租户 scope 加载器；尚未提供管理 CRUD 路由与连接器接线。连接器（#t69 SSH / #t72 K8s exec）在命令事件管线上调用 `evaluate_command` 的接线为下一步，与 SSH/K8s 通道当前「先做通道层、后接会话网关」的推进节奏一致。
-- 命令过滤只作用于**语句/命令**粒度；数据库 SQL 语句级过滤与脱敏（#t65 数据脱敏规则、#t71 联动）为后续切片。
+- 管理 CRUD：**仅**命令过滤 ACL 与数据脱敏规则两类。`GET/POST/PATCH/DELETE /api/v1/command-filter-acls/`（命令组作为 ACL 内嵌写入面一并持久化）。跨租户 get/update/delete 一律 404 fail-closed。**登录 ACL / 资产登录 ACL / 连接方式 ACL 仍未做。**
+- 执行前守卫：SSH exec、SSH PTY、K8s exec 落到远端之前走 `CommandPolicyGuard` → `PolicyDecisionService.evaluate_command`。`DENY` 与 `REVIEW`（#t74 前按 DENY）不落远程。生产组装按会话租户经 `AclRepository` / `build_tenant_policy_service` 加载规则；无 ACL 命中仍 overlay 放行。库连不上 fail-closed（`COMMAND_POLICY_STORE_UNAVAILABLE`），拒绝写 #t61，命令不落远端。
+- 入库：`session_recordings` 落库前同样 `evaluate_command` + `mask`。`DENY` / `REVIEW` / evaluate 失败 → 403、#t61（只存 `command_sha256`，不落明文），不持久化命令事件。
+- 命令复核触发工单需与 #t74 联调。命令过滤只作用于**语句/命令**粒度；数据库 SQL 语句级过滤与列级脱敏待 #t71。

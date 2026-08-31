@@ -34,6 +34,7 @@ from websockets.asyncio.client import ClientConnection
 from websockets.asyncio.client import connect as ws_connect
 from websockets.exceptions import ConnectionClosedOK, InvalidHandshake
 
+from app.connectors.command_policy import CommandPolicyGuard, default_command_policy_guard
 from app.connectors.ssh_channel import CommandEvent, CommandEventSink
 
 PROTOCOL = "k8s"
@@ -62,9 +63,10 @@ class K8sChannelError(RuntimeError):
     :param detail: 面向运维的人类可读描述，不得包含 token 等敏感信息。
     """
 
-    def __init__(self, code: str, detail: str) -> None:
+    def __init__(self, code: str, detail: str, *, audit_event_id: str = "") -> None:
         self.code = code
         self.detail = detail
+        self.audit_event_id = audit_event_id
         super().__init__(f"{code}: {detail}")
 
 
@@ -220,12 +222,14 @@ class K8sExecChannel:
         *,
         connect_timeout: float,
         exec_shell: str,
+        policy: CommandPolicyGuard,
     ) -> None:
         self._target = target
         self._credential = credential
         self._ssl = ssl_context
         self._connect_timeout = connect_timeout
         self._exec_shell = exec_shell
+        self._policy = policy
 
     @classmethod
     async def open(
@@ -236,6 +240,13 @@ class K8sExecChannel:
         *,
         connect_timeout: float = 10.0,
         exec_shell: str = _DEFAULT_EXEC_SHELL,
+        policy: CommandPolicyGuard | None = None,
+        subject=None,
+        resource=None,
+        account_id: str = "",
+        session_id: str | None = None,
+        session_factory=None,
+        db=None,
     ) -> K8sExecChannel:
         """在 namespace 作用域与 TLS 强校验约束下准备 exec 通道。
 
@@ -261,6 +272,15 @@ class K8sExecChannel:
             ssl_context,
             connect_timeout=connect_timeout,
             exec_shell=exec_shell,
+            policy=policy
+            or await default_command_policy_guard(
+                subject=subject,
+                resource=resource,
+                account_id=account_id,
+                session_id=session_id,
+                session_factory=session_factory,
+                db=db,
+            ),
         )
 
     def _exec_url(self, command: str) -> str:
@@ -296,11 +316,18 @@ class K8sExecChannel:
         :param sink: 命令事件下游（#t46 管线）。
         :param sequence: 会话内命令序号。
         :returns: 已投递的命令事件。
-        :raises K8sChannelError: TLS 握手失败（``K8S_TLS_HANDSHAKE_FAILED``）、API Server
-            拒绝握手/鉴权（``K8S_EXEC_REJECTED``）、超时（``K8S_CONNECT_TIMEOUT``）或其它
-            连接错误（``K8S_CONNECT_FAILED``）。
+        :raises K8sChannelError: 命令被策略拒绝（``K8S_COMMAND_DENIED``）、TLS 握手失败
+            （``K8S_TLS_HANDSHAKE_FAILED``）、API Server 拒绝握手/鉴权（``K8S_EXEC_REJECTED``）、
+            超时（``K8S_CONNECT_TIMEOUT``）或其它连接错误（``K8S_CONNECT_FAILED``）。
         """
 
+        decision = await self._policy.authorize(command)
+        if not decision.allowed:
+            raise K8sChannelError(
+                "K8S_COMMAND_DENIED",
+                decision.reason_code,
+                audit_event_id=decision.audit_event_id,
+            )
         url = self._exec_url(command)
         headers = {"Authorization": f"Bearer {self._credential.token}"}
         try:
@@ -326,7 +353,7 @@ class K8sExecChannel:
             sequence=sequence,
             command=command,
             exit_code=_parse_exit_status(status),
-            output_excerpt=_excerpt(stdout, stderr),
+            output_excerpt=self._policy.mask_text(_excerpt(stdout, stderr)),
         )
         await sink.emit(event)
         return event

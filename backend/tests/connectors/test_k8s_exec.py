@@ -370,3 +370,163 @@ def test_parse_exit_status_unknown_returns_none() -> None:
     assert _parse_exit_status(b"") is None
     assert _parse_exit_status(b"not-json") is None
     assert _parse_exit_status(json.dumps({"status": "Failure"}).encode()) is None
+
+# --- #t65 执行前策略守卫 -------------------------------------------------------
+
+from app.connectors.command_policy import CommandPolicyGuard, InMemoryCommandAuditSink
+from app.models.acl import CommandFilterAction
+from app.policy.schemas import (
+    CommandDecisionResponse,
+    CommandFilterEffect,
+    MaskingResponse,
+    ResourceRef,
+    SubjectRef,
+)
+
+
+class _T65FakePolicy:
+    def __init__(self, *, effect=CommandFilterEffect.ALLOW, reason="COMMAND_ACCEPTED_BY_DEFAULT"):
+        self.effect = effect
+        self.reason = reason
+        self.seen: list[str] = []
+
+    def evaluate_command(self, request):
+        self.seen.append(request.command)
+        return CommandDecisionResponse(
+            effect=self.effect,
+            action=(
+                CommandFilterAction.REJECT
+                if self.effect is CommandFilterEffect.DENY
+                else CommandFilterAction.ACCEPT
+            ),
+            reason_code=self.reason,
+            explain_trace=["test"],
+            audit_event_id="pde_test",
+        )
+
+    def mask(self, request):
+        return MaskingResponse(
+            masked_text=request.text,
+            redaction_count=0,
+            explain_trace=[],
+            audit_event_id="pde_mask",
+        )
+
+
+def _t65_guard(policy: _T65FakePolicy, sink: InMemoryCommandAuditSink) -> CommandPolicyGuard:
+    return CommandPolicyGuard(
+        policy,
+        subject=SubjectRef(id="u1", tenant_id="t1"),
+        resource=ResourceRef(id="a1", type="asset", tenant_id="t1"),
+        account_id="acct",
+        audit_sink=sink,
+    )
+
+async def test_policy_reject_does_not_exec_k8s(k8s_server: _RunningServer) -> None:
+    audit = InMemoryCommandAuditSink()
+    policy = _T65FakePolicy(effect=CommandFilterEffect.DENY, reason="COMMAND_REJECT")
+    channel = await K8sExecChannel.open(
+        _target(k8s_server),
+        K8sCredential(token="sa-token"),
+        _scope("team-a"),
+        policy=_t65_guard(policy, audit),
+    )
+    sink = _RecordingSink()
+    before = len(k8s_server.captured)
+    with pytest.raises(K8sChannelError) as excinfo:
+        await channel.run_command("rm -rf /", sink, sequence=0)
+    assert excinfo.value.code == "K8S_COMMAND_DENIED"
+    assert excinfo.value.audit_event_id == audit.events[0]["id"]
+    assert sink.events == []
+    assert len(k8s_server.captured) == before
+
+
+from collections.abc import AsyncIterator
+
+from fastapi.testclient import TestClient
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy.pool import StaticPool
+
+from app.core.database import Base, get_db, get_read_db
+from app.core.deps import current_user
+from app.main import app
+
+
+@pytest.fixture
+async def acl_session_factory() -> AsyncIterator[async_sessionmaker[AsyncSession]]:
+    engine = create_async_engine(
+        "sqlite+aiosqlite:///:memory:",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+    factory = async_sessionmaker(engine, expire_on_commit=False)
+    try:
+        yield factory
+    finally:
+        await engine.dispose()
+
+
+def _install_acl_db(session_factory: async_sessionmaker[AsyncSession]) -> None:
+    async def override_db() -> AsyncIterator[AsyncSession]:
+        async with session_factory() as session:
+            try:
+                yield session
+            except Exception:
+                await session.rollback()
+                raise
+            finally:
+                await session.close()
+
+    app.dependency_overrides[get_db] = override_db
+    app.dependency_overrides[get_read_db] = override_db
+
+
+def _seed_reject_rm_via_crud(*, tenant_id: str = "tenant-a") -> None:
+    app.dependency_overrides[current_user] = lambda: {
+        "id": "user-1",
+        "username": "alice",
+        "tenant_id": tenant_id,
+        "organization_id": None,
+        "team_id": None,
+        "project_id": None,
+        "permissions": ["admin"],
+    }
+    with TestClient(app) as client:
+        created = client.post(
+            "/api/v1/command-filter-acls/",
+            json={
+                "name": "deny-rm",
+                "priority": 10,
+                "action": "reject",
+                "command_groups": [
+                    {"name": "danger", "match_type": "command", "patterns": ["rm"]}
+                ],
+            },
+        )
+    assert created.status_code == 201, created.text
+
+
+async def test_default_assembly_tenant_acl_does_not_exec_k8s(
+    k8s_server: _RunningServer,
+    acl_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    _install_acl_db(acl_session_factory)
+    _seed_reject_rm_via_crud(tenant_id="tenant-a")
+    channel = await K8sExecChannel.open(
+        _target(k8s_server),
+        K8sCredential(token="sa-token"),
+        _scope("team-a"),
+        subject=SubjectRef(id="user-1", tenant_id="tenant-a"),
+        resource=ResourceRef(id="asset-1", type="k8s", tenant_id="tenant-a"),
+        account_id="root",
+        session_factory=acl_session_factory,
+    )
+    sink = _RecordingSink()
+    before = len(k8s_server.captured)
+    with pytest.raises(K8sChannelError) as excinfo:
+        await channel.run_command("rm -rf /", sink, sequence=0)
+    assert excinfo.value.code == "K8S_COMMAND_DENIED"
+    assert sink.events == []
+    assert len(k8s_server.captured) == before

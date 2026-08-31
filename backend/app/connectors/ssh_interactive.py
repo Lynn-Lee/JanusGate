@@ -20,6 +20,7 @@ import contextlib
 
 import asyncssh
 
+from app.connectors.command_policy import CommandPolicyGuard, default_command_policy_guard
 from app.connectors.ssh_channel import (
     _OUTPUT_EXCERPT_LIMIT,
     CommandEvent,
@@ -148,6 +149,7 @@ class SshInteractiveSession:
         start_sequence: int,
         read_chunk: int,
         read_timeout: float,
+        policy: CommandPolicyGuard,
     ) -> None:
         self._channel = channel
         self._process = process
@@ -157,6 +159,7 @@ class SshInteractiveSession:
         self._sequence = start_sequence
         self._read_chunk = read_chunk
         self._read_timeout = read_timeout
+        self._policy = policy
 
     @classmethod
     async def open(
@@ -171,6 +174,13 @@ class SshInteractiveSession:
         connect_timeout: float = 10.0,
         read_chunk: int = 1024,
         read_timeout: float = 30.0,
+        policy: CommandPolicyGuard | None = None,
+        subject=None,
+        resource=None,
+        account_id: str = "",
+        session_id: str | None = None,
+        session_factory=None,
+        db=None,
     ) -> SshInteractiveSession:
         """建立安全连接、打开 PTY shell，并消费到首个 prompt 后返回就绪会话。
 
@@ -178,7 +188,17 @@ class SshInteractiveSession:
         :raises SshChannelError: 建立连接或打开交互进程失败；失败时不遗留连接。
         """
 
-        channel = await SshChannel.open(target, credential, connect_timeout=connect_timeout)
+        resolved = policy or await default_command_policy_guard(
+            subject=subject,
+            resource=resource,
+            account_id=account_id,
+            session_id=session_id,
+            session_factory=session_factory,
+            db=db,
+        )
+        channel = await SshChannel.open(
+            target, credential, connect_timeout=connect_timeout, policy=resolved
+        )
         try:
             process = await channel.start_interactive(term_type=term_type)
         except BaseException:
@@ -194,6 +214,7 @@ class SshInteractiveSession:
             start_sequence=start_sequence,
             read_chunk=read_chunk,
             read_timeout=read_timeout,
+            policy=resolved,
         )
         try:
             await session._read_until_prompt()  # 消费初始 banner 与首个 prompt
@@ -212,12 +233,20 @@ class SshInteractiveSession:
 
         parsed = self._parser.feed(command_line + "\r")
         canonical = parsed[-1] if parsed else command_line.strip()
+        decision = await self._policy.authorize(canonical)
+        if not decision.allowed:
+            raise SshChannelError(
+                "SSH_COMMAND_DENIED",
+                decision.reason_code,
+                audit_event_id=decision.audit_event_id,
+            )
         try:
             self._process.stdin.write(command_line + "\n")
             raw = await self._read_until_prompt()
         except (asyncssh.Error, OSError) as exc:
             raise SshChannelError("SSH_INTERACTIVE_IO_FAILED", str(exc)) from exc
         output = self._clean_output(raw, canonical)
+        output = self._policy.mask_text(output)
         event = CommandEvent(
             sequence=self._sequence,
             command=canonical,
