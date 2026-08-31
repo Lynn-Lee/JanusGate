@@ -41,7 +41,13 @@ class FakeDB:
     def __init__(self, value: Any = None) -> None:
         self.value = value
 
-    async def execute(self, _statement: Any) -> ScalarResult:
+    async def execute(self, statement: Any) -> ScalarResult:
+        # #t63：token 签发时会查询 RoleBinding，此处返回空绑定（回退到基线权限），
+        # 其它查询（如按用户查询）沿用注入的 value。
+        descriptions = getattr(statement, "column_descriptions", None) or []
+        entity = descriptions[0].get("entity") if descriptions else None
+        if entity is not None and getattr(entity, "__name__", "") == "RoleBinding":
+            return ScalarResult(values=[])
         return ScalarResult(self.value)
 
 
