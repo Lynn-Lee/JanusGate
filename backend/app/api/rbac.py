@@ -12,6 +12,7 @@ import uuid
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, status
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.rbac_schemas import (
@@ -102,7 +103,13 @@ async def create_role(
         description=data.description,
     )
     db.add(role)
-    await db.commit()
+    try:
+        await db.commit()
+    except IntegrityError as exc:
+        await db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="ROLE_ALREADY_EXISTS"
+        ) from exc
     await db.refresh(role)
     return RoleResponse(
         id=role.id,
@@ -172,7 +179,13 @@ async def create_role_binding(
         organization_id=organization_id,
     )
     db.add(binding)
-    await db.commit()
+    try:
+        await db.commit()
+    except IntegrityError as exc:
+        await db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="ROLE_BINDING_ALREADY_EXISTS"
+        ) from exc
     await db.refresh(binding)
     return _binding_response(binding)
 

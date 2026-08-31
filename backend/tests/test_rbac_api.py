@@ -140,6 +140,42 @@ async def test_create_role_binding_and_tenant_scoped_list(
 
 
 @pytest.mark.asyncio
+async def test_create_duplicate_role_binding_returns_400(
+    session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    install_db(session_factory)
+    with TestClient(app) as client:
+        install_user(tenant_id="default", permissions=["rbac:admin"])
+        first = client.post(
+            "/api/v1/rbac/role-bindings",
+            json={"user_id": "42", "role_id": "auditor"},
+        )
+        duplicate = client.post(
+            "/api/v1/rbac/role-bindings",
+            json={"user_id": "42", "role_id": "auditor"},
+        )
+
+    assert first.status_code == 201
+    assert duplicate.status_code == 400
+    assert duplicate.json()["code"] == "ROLE_BINDING_ALREADY_EXISTS"
+
+
+@pytest.mark.asyncio
+async def test_create_duplicate_role_name_returns_400(
+    session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    install_db(session_factory)
+    with TestClient(app) as client:
+        install_user(tenant_id="default", permissions=["rbac:admin"])
+        first = client.post("/api/v1/rbac/roles", json={"name": "Ops", "permissions": []})
+        duplicate = client.post("/api/v1/rbac/roles", json={"name": "Ops", "permissions": []})
+
+    assert first.status_code == 201
+    assert duplicate.status_code == 400
+    assert duplicate.json()["code"] == "ROLE_ALREADY_EXISTS"
+
+
+@pytest.mark.asyncio
 async def test_create_role_binding_rejects_unknown_role(
     session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
