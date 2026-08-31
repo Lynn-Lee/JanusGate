@@ -109,6 +109,10 @@ Phase 6 #t61 已把审计事件从进程内列表改为数据库 append-only：`
 
 Phase 6 #t62 已把会话网关状态落库：`SessionModel` 与 `SqlAlchemySessionStore` 沿用 #t61 的自管会话约定，写流程内的读走主库，仅按 subject 的列表查询走只读副本，与 #t46 `SessionRecording` 经 session_id 逻辑关联。
 
+### M1 资产树与资产授权（#t64 已完成）
+
+Phase 6 #t64 已落地 `NodeModel` 资产树、`AssetPermissionModel` 资产/节点授权和 `Asset.node_id` 挂载映射。节点保存祖先链，资产直接授权或非根节点授权沿树继承；未分组资产不继承节点授权，过期授权不匹配。授权主体支持 `user` / `user_group`，并记录账号、协议、动作、有效期和 `from_ticket` 来源工单。所有授权与资产树读取经 `scoped_select()` 按租户收敛，`PolicyDecisionService.explain_trace` 记录命中授权和继承路径；`/api/v1/assets/` 使用面只返回当前用户有效 connect 资产，admin 不绕过授权。详见 [`docs/site/asset-tree-authorization.md`](docs/site/asset-tree-authorization.md) 和 [`docs/api-contract.md`](docs/api-contract.md) 的 #t64 契约。
+
 ### M3 真实连接通道（SSH / K8s 已走通）
 
 Phase 6 #t69 已在 `backend/app/connectors/` 落地连接器侧真实 SSH 通道，基于纯 Python `asyncssh`，不 fork 任何 `ssh` / `sshpass` 子进程：SSH exec 通道、会话编排、命令事件投递 sink、PTY 交互式会话（从键盘输入流重建命令并带读超时）、SFTP 传输与带 sha256 的传输审计事件、主机密钥采集（scan → 审批 → 固定），以及到会话网关的接线。四条安全约束逐条由 `backend/tests/connectors/test_ssh_channel.py` 断言：强制现代算法白名单、私钥仅内存加载、凭据不经命令行且关闭 agent 与默认密钥扫描、主机密钥严格校验且绝不 trust-on-first-use。详见 [`docs/site/connectors-ssh.md`](docs/site/connectors-ssh.md)。
@@ -119,6 +123,6 @@ Phase 6 #t72 已落地 K8s exec 通道 `backend/app/connectors/k8s_exec.py`，�
 
 ### M1 ACL 访问控制（#t65 部分完成）
 
-Phase 6 #t65 已落地命令过滤 ACL 与数据脱敏规则，判定统一进 `PolicyDecisionService`，不在路由或连接器旁路。命令过滤按优先级 1-100（小者优先）取首个命中者，语义是**已授权会话之上的 deny-overlay**——无 ACL 命中时默认放行；数据脱敏则是转换而非决策，**累计应用**全部命中规则。两者的规则集通过 `backend/app/policy/repository.py` 的 `AclRepository` 经租户 scope helper `scoped_select` 从数据库加载。详见 [`docs/site/acl-command-filter.md`](docs/site/acl-command-filter.md) 与 [`docs/site/acl-data-masking.md`](docs/site/acl-data-masking.md)。
+Phase 6 #t65 已落地命令过滤 ACL 与数据脱敏规则，判定统一进 `PolicyDecisionService`，不在路由或连接器旁路。命令过滤按优先级 1-100（小者优先）取首个命中者，语义是**已授权会话之上的 deny-overlay**——无 ACL 命中时默认放行；数据脱敏则是转换而非决策，**累计应用**全部命中规则。两者的规则集通过 `backend/app/policy/repository.py` 的 `AclRepository` 经租户 scope helper `scoped_select` 从数据库加载，并已接入 SSH exec、SSH PTY 和 K8s exec 的执行前守卫及命令事件入库。详见 [`docs/site/acl-command-filter.md`](docs/site/acl-command-filter.md) 与 [`docs/site/acl-data-masking.md`](docs/site/acl-data-masking.md)。
 
-> 当前仍缺管理 CRUD 路由与连接器接线：判定能力已建成且可按租户加载，但尚无连接器在命令事件入库前调用 `evaluate_command` 或对输出摘要调用 `mask`，因此命令过滤与脱敏尚未在真实会话中生效。
+> 当前仍缺登录 ACL、资产登录 ACL 和连接方式 ACL；命令过滤与脱敏的执行前/入库接线已完成，连接器路由默认仍为 `NoopConnectorScheduler`，生产真实会话启用仍需 #t69 的资产注册表与凭据 resolver。

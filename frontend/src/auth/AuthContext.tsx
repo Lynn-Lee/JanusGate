@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useMemo, useState, type ReactNode } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { ApiClient } from '../api/client';
 
 const ACCESS_TOKEN_KEY = 'janusgate-access-token';
@@ -59,6 +59,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }),
     [logout]
   );
+
+  useEffect(() => {
+    if (!token) {
+      return;
+    }
+    let cancelled = false;
+    api
+      .get<UserMe>('/api/v1/auth/me')
+      .then((current) => {
+        if (!cancelled) {
+          setUser(current);
+        }
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [api, token]);
 
   const login = useCallback(async (username: string, password: string): Promise<LoginOutcome> => {
     const result = await api.post<LoginResult>('/api/v1/auth/login', { username, password });

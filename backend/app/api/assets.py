@@ -8,9 +8,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import settings
 from app.core.database import get_db, get_read_db
 from app.core.deps import require_permission
-from app.models.asset import Platform
+from app.models.asset import Asset, Platform
+from app.policy.asset_permission import connectable_asset_ids
+from app.policy.asset_tree_ops import list_assets as list_scoped_assets
+from app.policy.asset_tree_ops import list_nodes, list_permissions, nodes_by_id
 from app.schemas.asset import AssetCreate, AssetResponse, PlatformCreate, PlatformResponse
 from app.services.asset import AssetService
+from app.tenancy.scope import actor_scope_from_user
 
 router = APIRouter(prefix="/assets", tags=["资产管理"])
 
@@ -20,17 +24,13 @@ async def list_assets(
     skip: int = Query(0, ge=0),
     limit: int = Query(50, ge=1, le=200),
     db: AsyncSession = Depends(get_read_db),
-    _user: dict[str, Any] = Depends(require_permission("assets:read")),
+    user: dict[str, Any] = Depends(require_permission("assets:read")),
 ) -> list[AssetResponse]:
-    assets = await AssetService.list_assets(db, skip, limit)
-    return [
-        AssetResponse(
-            id=a.id, name=a.name, address=a.address, platform_id=a.platform_id,
-            port=a.port, username=a.username, is_active=a.is_active,
-            description=a.description, created_at=a.created_at.isoformat() if a.created_at else "",
-        )
-        for a in assets
-    ]
+    """使用面：只返回当前有效 connect 的资产。admin 不绕过。"""
+
+    visible = await _visible_assets(db, user)
+    sliced = visible[skip: skip + limit]
+    return [_asset_response(asset) for asset in sliced]
 
 
 @router.post("/", response_model=AssetResponse)
@@ -104,13 +104,35 @@ async def list_platforms(
 
 @router.get("/{asset_id}", response_model=AssetResponse)
 async def get_asset(
-    asset_id: int, db: AsyncSession = Depends(get_read_db), _user: dict[str, Any] = Depends(require_permission("assets:read"))
+    asset_id: int,
+    db: AsyncSession = Depends(get_read_db),
+    user: dict[str, Any] = Depends(require_permission("assets:read")),
 ) -> AssetResponse:
-    asset = await AssetService.get_asset(db, asset_id)
-    if not asset:
+    visible = await _visible_assets(db, user)
+    asset = next((item for item in visible if item.id == asset_id), None)
+    if asset is None:
         raise HTTPException(404, "资产不存在")
+    return _asset_response(asset)
+
+def _asset_response(asset: Asset) -> AssetResponse:
     return AssetResponse(
         id=asset.id, name=asset.name, address=asset.address, platform_id=asset.platform_id,
         port=asset.port, username=asset.username, is_active=asset.is_active,
         description=asset.description, created_at=asset.created_at.isoformat() if asset.created_at else "",
     )
+
+
+async def _visible_assets(db: AsyncSession, user: dict[str, Any]) -> list[Asset]:
+    actor_scope = actor_scope_from_user(user)
+    assets = await list_scoped_assets(db, actor_scope)
+    nodes = nodes_by_id(await list_nodes(db, actor_scope))
+    permissions = await list_permissions(db, actor_scope)
+    allowed = connectable_asset_ids(
+        subject_id=str(user["id"]),
+        subject_group_ids=tuple(str(group_id) for group_id in user.get("group_ids", ())),
+        tenant_id=actor_scope.tenant_id,
+        assets=[(str(asset.id), asset.node_id) for asset in assets],
+        permissions=permissions,
+        nodes_by_id=nodes,
+    )
+    return [asset for asset in assets if str(asset.id) in allowed]

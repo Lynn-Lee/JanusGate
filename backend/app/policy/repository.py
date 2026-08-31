@@ -20,6 +20,7 @@ from app.models.acl import (
     DataMaskingRuleModel,
 )
 from app.models.workflow import ApprovalPolicyModel
+from app.policy.asset_tree_repository import AssetTreeRepository
 from app.policy.decision import PolicyDecisionService
 from app.policy.schemas import PolicyRule
 from app.tenancy.scope import ActorScope, scoped_select
@@ -77,15 +78,20 @@ async def build_tenant_policy_service(
     """装配一个已加载某租户 ACL / 脱敏规则的 :class:`PolicyDecisionService`。
 
     会话级规则（``rules`` / ``approval_policies``）由调用方按需传入（其加载归属工作流仓库），
-    本工厂只负责把 #t65 的命令过滤 ACL、命令组、数据脱敏规则接上，返回可直接
+    本工厂装载 #t65 命令过滤 ACL / 命令组 / 脱敏规则，以及 #t64 节点与 AssetPermission
+    （connect 判定走 AssetPermission，overlay 语义不变），返回可直接
     ``evaluate`` / ``evaluate_command`` / ``mask`` 的服务实例。
     """
 
     repository = AclRepository(session)
+    tree = AssetTreeRepository(session)
     return PolicyDecisionService(
         rules=rules or [],
         approval_policies=approval_policies or [],
         command_filter_acls=await repository.list_command_filter_acls(actor_scope),
         command_groups=await repository.list_command_groups(actor_scope),
         data_masking_rules=await repository.list_data_masking_rules(actor_scope),
+        asset_permissions=await tree.list_permissions(actor_scope),
+        nodes=await tree.list_nodes(actor_scope),
+        asset_node_ids=await tree.list_asset_node_ids(actor_scope),
     )

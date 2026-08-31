@@ -114,8 +114,7 @@ def platform(**overrides: Any) -> Platform:
 
 def test_asset_crud_api_contract(monkeypatch: pytest.MonkeyPatch) -> None:
     install_auth_and_db()
-    monkeypatch.setattr(AssetService, "list_assets", async_call(lambda _db, skip, limit: [asset(id=skip + 1)]))
-    monkeypatch.setattr(AssetService, "get_asset", async_call(lambda _db, asset_id: asset(id=asset_id) if asset_id == 1 else None))
+    monkeypatch.setattr(assets_api, "_visible_assets", async_value([asset(id=1)]))
     monkeypatch.setattr(AssetService, "create_asset", async_call(lambda _db, data: asset(id=2, **data)))
     monkeypatch.setattr(AssetService, "delete_asset", async_call(lambda _db, asset_id: asset_id == 1))
 

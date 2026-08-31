@@ -5,6 +5,8 @@ from app.models.acl import (
     DataMaskingRuleModel,
 )
 from app.models.admin import LicenseConfigurationModel
+from app.models.asset import Asset, Platform
+from app.models.asset_tree import AssetPermissionModel, NodeModel
 from app.models.audit import AuditEventModel
 from app.models.automation import AutomationJobRun
 from app.models.connector import Connector
@@ -19,6 +21,8 @@ from app.models.workflow import ApprovalPolicyModel, JitGrantModel, WorkflowRequ
 
 __all__ = [
     "ApiKey",
+    "Asset",
+    "AssetPermissionModel",
     "ApprovalPolicyModel",
     "Account",
     "AuditEventModel",
@@ -31,8 +35,10 @@ __all__ = [
     "JitGrantModel",
     "LicenseConfigurationModel",
     "NotificationRule",
+    "NodeModel",
     "NotificationDelivery",
     "Organization",
+    "Platform",
     "Project",
     "SessionCommandEvent",
     "SessionModel",

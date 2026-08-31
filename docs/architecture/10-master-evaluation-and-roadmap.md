@@ -384,7 +384,7 @@ JumpServer 上游在 2026-06-26 → 07-01 期间进行了重大技术栈升级�
 | **覆盖** | §3.6.1 中 19 个核心 PAM 功能域（身份、RBAC、资产授权、ACL、账号治理、会话网关、审计、工单、通知、作业、K8s 纳管等） |
 | **排除** | 图形应用发布（Applet / RemoteApp / VirtualApp）、商业插件体系（xpack）——见 §3.6.2 |
 | **超越** | 策略决策 + explain、JIT 即时权限、审计链式哈希 + WORM、连接器零信任、envelope 加密——JumpServer 不具备（§3.5） |
-| **当前进度** | **19 个纳入目标的功能域中 0 个达到等价**，13 个部分实现、6 个未开始（§14.3） |
+| **当前进度** | **19 个纳入目标的功能域中 0 个达到等价**，17 个部分实现、2 个未开始（§14.3） |
 
 **排除项的实际影响**：依赖「把 Windows 图形客户端（如 Navicat、SSMS、专有工控软件）以单窗口形式发布给用户并录屏」的场景，JanusGate 不覆盖。
 需要区分的是——**Windows RDP 直连、数据库访问、K8s 容器纳管三项均不受影响**，它们是与 Applet 并列的独立路径（§3.6.2）。
@@ -829,7 +829,7 @@ User ──┬── WorkflowRequest ──── JitGrant
 | 任务 ID | 任务 | Owner | 范围 | 优先级 |
 |---------|------|-------|------|--------|
 | **#t63** | RBAC 角色与权限体系 | architect + backend | `Role` / `RoleBinding` 模型，system / org 双 scope；对象级 `Permission`；内置角色（系统管理员 / 组织管理员 / 审计员 / 普通用户）；菜单权限；与 §4 现有 `admin` / `workflow:admin` 字符串判断的迁移路径。**约束**：单一角色模型，禁止 edition 条件分支（对应关闭 P1#11） | 高 |
-| **#t64** | 资产树与资产授权 | backend | `Node` 树模型（含祖先链与全量资产映射）；`AssetPermission`：用户/用户组 × 资产/节点 × 账号 × 协议 × 动作 × 生效期 × 来源工单；授权结果并入 PolicyDecisionService 的 explain_trace。**约束**：所有授权查询强制走租户 scope helper（对应关闭 P2#9） | 高 |
+| **#t64** | 资产树与资产授权 | backend | **✅ 已完成**：`NodeModel` 树模型含唯一租户根、祖先链与 `Asset.node_id` 全量挂载映射；`AssetPermissionModel` 覆盖用户/用户组 × 资产/节点 × 账号 × 协议 × 动作 × 生效期 × `from_ticket`；节点继承、未分组资产、过期授权、用户组 `group_ids` 上下文和 `PolicyDecisionService.explain_trace` 已接线。所有授权查询强制走租户 scope helper，根节点不授权/不挂资产/不可删，跨租户管理请求 404。 | 高 |
 | **#t65** | ACL 访问控制体系 | architect + backend + security | ACL 基类：优先级 1-100（小者优先）+ 动作 + 复核人；派生登录 ACL、资产登录 ACL（IP 段 / 时间段规则）、连接方式 ACL、命令过滤 ACL + 命令组（命令 / 正则两类）、数据脱敏规则。动作覆盖 `reject` / `accept` / `review` / `warning` / `notice` / `notify_and_warn` / `change_secret`；`face_verify` / `face_online` 不做。**命令复核触发工单需与 #t74 联调**。**约束**：ACL 判定统一进 PolicyDecisionService，不得旁路。**当前进度（部分完成）**：命令过滤 ACL + 命令组已完成——`CommandGroupModel`（字面命令按词边界 / 正则两类）与 `CommandFilterAclModel`（BaseACL：优先级 1-100 小者优先 + 动作 + 复核人 + subject/asset/account/命令组 JSON 选择器），迁移 `b75f09654bda`；`PolicyDecisionService.evaluate_command` 已落地，语义为**已授权会话之上的 deny-overlay**——与会话级 deny-by-default 相反，无 ACL 命中时默认放行（否则每条命令都需显式 accept，不可运维），按优先级升序取首个命中者，动作映射 reject=deny / review=review（带复核人）/ warning|notice|notify_and_warn=allow（带 obligation），非法正则安全跳过不打断会话。数据脱敏规则已完成——`DataMaskingRuleModel`（regex/keyword 匹配、full/partial 打码、前后缀保留），迁移 `4eb764da4aab`；`PolicyDecisionService.mask` 语义为**转换而非决策**，故**累计应用**全部命中规则而非首个即止，partial 在值过短时整体打码不泄露原值。`app/policy/repository.py` 的 `AclRepository` + `build_tenant_policy_service` 已提供经 `scoped_select` 的租户 scope 持久化加载（同时提前落实 #t64 的 scope helper 约束）。管理 CRUD 已落地（仅命令过滤 ACL 与数据脱敏规则两类，跨租户 404）。执行前守卫已接线：`CommandPolicyGuard` 在 SSH exec / SSH PTY / K8s exec **落到远端之前**调用 `evaluate_command`；生产组装经 `AclRepository` / `build_tenant_policy_service` 按会话租户加载规则；无 ACL overlay 放行；库连不上 fail-closed（`UnavailablePolicyStore` / `COMMAND_POLICY_STORE_UNAVAILABLE`）并写 #t61，命令不落远端。`DENY` 与 `REVIEW`（#t74 前按 DENY）均阻断远程并审计。入库路径同样 evaluate + mask，拒绝不落库。**仍待后续切片**：登录 ACL、资产登录 ACL（IP 段 / 时间段规则，可复用 #t48 DSL 已有的 `context_ip_in_cidr` / `context_time_between`）、连接方式 ACL | 高 |
 
 **M2：资产与协议广度**
@@ -893,7 +893,7 @@ User ──┬── WorkflowRequest ──── JitGrant
 |--------|------|------|--------------|------|
 | M0：前置阻塞项 | 1-2 周 | #t60 + #t61 + #t62 | ✅ **3/3 完成** | 必须最先完成，否则后续无迁移与回滚路径 |
 | M3-预研：单协议通道验证 | 1-2 周 | #t69 技术切片 | ✅ **完成** | **与 M1 并行启动**，尽早暴露最高技术风险 |
-| M1：授权与访问控制内核 | 4-6 周 | #t63 + #t64 + #t65 | 🟡 #t65 命令过滤+脱敏+接线已 SHIP（登录 ACL 未做）；#t63/#t64 未开始 | 差距最大，优先级最高 |
+| M1：授权与访问控制内核 | 4-6 周 | #t63 + #t64 + #t65 | 🟡 #t64 已完成；#t65 命令过滤+脱敏+接线已 SHIP（登录 ACL 未做）；#t63 未开始 | 差距最大，优先级最高 |
 | M2：资产与协议广度 | 3-4 周 | #t66 + #t67 + #t68 | ⬜ 未开始 | 依赖 M1 授权模型 |
 | M3：真实连接通道 | 6-8 周 | #t69 + #t70 + #t71 + #t72 | 🟡 #t69/#t72 完成；#t70/#t71 未开始 | 风险最高，#t70 图形通道为其中最重 |
 | M4：账号自动化 | 3-4 周 | #t73 | ⬜ 未开始 | 依赖 #t69 SSH 通道（前置已满足） |
@@ -904,7 +904,7 @@ User ──┬── WorkflowRequest ──── JitGrant
 
 > **v2.4 排期修订**：M3 预研切片（#t69）已完成并解除全局单点关键路径，M0 三项前置阻塞项全部关闭。
 > M3 剩余两项性质已分化——#t71 的 #t65 脱敏依赖已解除，剩协议实现难度；#t70 需外部图形基建，建议独立立项（见其任务行）。
-> 因此后续排序建议为：**#t64 资产授权 → #t63 RBAC**（#t65 命令过滤/脱敏接线已 SHIP），而非按里程碑编号顺序推进。
+> 因此后续排序建议为：**#t63 RBAC → #t65 登录/资产登录/连接方式 ACL**（#t64 资产授权、#t65 命令过滤/脱敏接线已 SHIP），而非按里程碑编号顺序推进。
 
 #### 11.4.5 Phase 6 验收标准
 
@@ -1063,7 +1063,7 @@ P1（15 项）/ P2（18 项）：架构性问题（xpack 侵入、common 大杂�
 | 3 | RBAC 角色权限 | ⬜ 仅 `admin` / `workflow:admin` 字符串判断 | 角色模型、角色绑定、system/org 双 scope、对象级权限、内置角色、菜单权限 | 是 | **P6 #t63** |
 | 4 | 组织 / 多租户 | 🟡 `Organization`/`Team`/`Project` + `scoped_select()` 租户过滤 + 只读页 | 组织级角色绑定、组织切换、跨组织数据边界回归 | 是 | P4 #t42 → **P6 #t63** |
 | 5 | 资产管理 | 🟡 `Asset` + `Platform` 基础模型 + SSRF 防护 | 资产类型分化、协议模型、资产树、网域网关、收藏、标签 | 是 | P1 已有 → **P6 #t66、#t67** |
-| 6 | 资产授权 | ⬜ `PolicyRule` 覆盖部分场景 | 资产授权模型（用户/组 × 资产/节点 × 账号 × 协议 × 动作 × 有效期） | 是 | **P6 #t64** |
+| 6 | 资产授权 | 🟡 `NodeModel` / `AssetPermissionModel` + 祖先继承 + 使用面过滤 + `scoped_select()` | RBAC 角色/用户组管理、更多资产类型与协议 | 是 | **P6 #t64 已完成，域能力仍为部分实现** |
 | 7 | ACL 访问控制 | 🟡 命令过滤 ACL + 命令组 + 数据脱敏规则 + 租户 CRUD + SSH/K8s/PTY 执行前守卫，判定统一进 PolicyDecisionService | 登录 ACL、资产登录 ACL、连接方式 ACL | 是 | **P6 #t65** |
 | 8 | 账号与凭据 | 🟡 `Account` + `CredentialRotation` + envelope 加密 + 审批后 unwrap | 8 类账号自动化、账号模板、账号风险、真实云 KMS/HSM | 是 | P4 #t43/#t50 → **P6 #t73** |
 | 9 | 会话网关 | 🟡 会话生命周期 + 策略校验 + 短期 connection token + grant 绑定 + **会话已持久化** + SSH/K8s 真实通道 | RDP/VNC/DB 通道、会话共享与监控、端点路由；路由默认仍为 `NoopConnectorScheduler`，缺生产 resolver | 是 | P1 已有 → **P6 #t62、#t69-72、#t78** |
@@ -1088,13 +1088,13 @@ P1（15 项）/ P2（18 项）：架构性问题（xpack 侵入、common 大杂�
 | 状态 | 数量 | 占比 |
 |------|------|------|
 | ✅ 等价或超越 | 0 | 0% |
-| 🟡 部分实现 | 16 | 84% |
-| ⬜ 未开始 | 3 | 16% |
+| 🟡 部分实现 | 17 | 89% |
+| ⬜ 未开始 | 2 | 11% |
 
 **功能替代完成度：0/19 达到等价。**
 
 > **v2.4 计数订正**：v2.3 表内记为 13 🟡 / 6 ⬜，与矩阵逐行实际符号（14 🟡 / 5 ⬜）不符，属统计错误，本次一并订正。
-> v2.4 的 16 🟡 / 3 ⬜ 中，#7 ACL 与 #19 K8s 容器纳管由 ⬜ 转 🟡；剩余 3 个 ⬜ 为 #3 RBAC 角色权限、#6 资产授权、#16 标签体系。
+> v2.4 的 17 🟡 / 2 ⬜ 中，#7 ACL、#19 K8s 容器纳管和 #6 资产授权已纳入部分实现；剩余 2 个 ⬜ 为 #3 RBAC 角色权限、#16 标签体系。
 
 这个数字需要正确解读，否则容易误判两个方向：
 
@@ -1112,7 +1112,7 @@ P1（15 项）/ P2（18 项）：架构性问题（xpack 侵入、common 大杂�
 | 原交汇点 | ~~**#t69 真实连接通道**~~——**已于 v2.4 解除**，4 项 P0 已关闭，SSH / K8s 运行时已走通 | |
 
 **结论（v2.4 修订）**：v2.3 判定的全局单点关键路径 #t69 **已解除**。两条路线不再强耦合于同一任务——
-安全侧剩余 2 项 P0 全部收敛到 #t76 SSO；#t65 判定已接到 SSH/K8s/PTY 执行前。功能侧下一刀是 #t64 资产树与 AssetPermission（路由默认仍为 `NoopConnectorScheduler`，生产 resolver 属 #t69）。
+安全侧剩余 2 项 P0 全部收敛到 #t76 SSO；#t65 判定已接到 SSH/K8s/PTY 执行前。功能侧 #t64 资产树与 AssetPermission 已完成；下一刀是 #t63 RBAC（路由默认仍为 `NoopConnectorScheduler`，生产 resolver 属 #t69）。
 
 **表述边界仍然有效**：#t69 的走通只解除了运行时前提，功能替代完成度仍为 **0/19 等价**。
 在 §14.2 矩阵出现第一个 ✅ 之前，「功能替代进度过半」的表述依然不成立；

@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+from typing import Any
 
 import asyncssh
 
@@ -30,6 +31,7 @@ from app.connectors.ssh_channel import (
     SshCredential,
     SshTarget,
 )
+from app.policy.schemas import ResourceRef, SubjectRef
 
 # 控制字符
 _ESC = "\x1b"
@@ -175,12 +177,12 @@ class SshInteractiveSession:
         read_chunk: int = 1024,
         read_timeout: float = 30.0,
         policy: CommandPolicyGuard | None = None,
-        subject=None,
-        resource=None,
+        subject: SubjectRef | None = None,
+        resource: ResourceRef | None = None,
         account_id: str = "",
         session_id: str | None = None,
-        session_factory=None,
-        db=None,
+        session_factory: Any = None,
+        db: Any = None,
     ) -> SshInteractiveSession:
         """建立安全连接、打开 PTY shell，并消费到首个 prompt 后返回就绪会话。
 

@@ -24,7 +24,6 @@ from uuid import uuid4
 
 from app.api.sessions.service import ConnectorDispatchRequest
 from app.connectors.command_policy import CommandPolicyGuard, default_command_policy_guard
-from app.policy.schemas import ResourceRef, SubjectRef
 from app.connectors.ssh_channel import (
     CommandEventSink,
     SshChannel,
@@ -34,6 +33,7 @@ from app.connectors.ssh_channel import (
 )
 from app.connectors.ssh_interactive import SshInteractiveSession
 from app.connectors.ssh_sftp import FileTransferEventSink, SftpChannel
+from app.policy.schemas import ResourceRef, SubjectRef
 
 
 class ConnectorSessionMode(StrEnum):

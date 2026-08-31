@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from typing import Any, cast
+from typing import Any, NoReturn, cast
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -30,10 +30,20 @@ from app.core.database import get_db, get_read_db
 from app.core.deps import current_user
 from app.core.redis import create_redis_client
 from app.policy.decision import PolicyDecisionService
-from app.policy.schemas import PolicyRule
 from app.workflows.audit import WorkflowAuditSink
 
 router = APIRouter(prefix="/sessions", tags=["会话网关"])
+
+# 无授权 / 判定失败对外一律「资产不存在」，不暴露「没有权限」。
+_ASSET_CONNECT_DENY_REASONS = frozenset(
+    {
+        "ASSET_PERMISSION_DENIED",
+        "POLICY_EVALUATE_FAILED",
+        "POLICY_CLIENT_NOT_CONFIGURED",
+        "NO_MATCHING_POLICY",
+        "COMMAND_POLICY_STORE_UNAVAILABLE",
+    }
+)
 
 
 def build_connection_token_store(
@@ -54,24 +64,35 @@ def build_connection_token_store(
     raise ValueError("UNSUPPORTED_SESSION_CONNECTION_TOKEN_STORE")
 
 
+def _raise_connect_denied(exc: PermissionError) -> NoReturn:
+    reason = str(exc)
+    if reason in _ASSET_CONNECT_DENY_REASONS:
+        raise HTTPException(status_code=404, detail="资产不存在") from exc
+    raise HTTPException(status_code=403, detail=reason) from exc
+
+
+async def _tenant_policy_client(
+    db: AsyncSession, user: dict[str, Any]
+) -> PolicyDecisionServiceClient:
+    """按租户装载 PolicyDecisionService（含 AssetPermission）。库失败 fail-closed。"""
+
+    from app.policy.repository import build_tenant_policy_service
+    from app.tenancy.scope import actor_scope_from_user
+
+    try:
+        service = await build_tenant_policy_service(db, actor_scope_from_user(user))
+    except Exception:
+        service = PolicyDecisionService(asset_permissions=[])
+    return PolicyDecisionServiceClient(service)
+
+
 _session_gateway_service = SessionGatewayService(
     token_store=build_connection_token_store(),
     session_store=SqlAlchemySessionStore(),
 )
 _workflow_audit_sink = WorkflowAuditSink(audit_service)
-_session_policy_client = PolicyDecisionServiceClient(
-    PolicyDecisionService(
-        rules=[
-            PolicyRule(
-                id="approved-jit-session",
-                subject_ids=["*"],
-                actions=["session.connect"],
-                resource_ids=["*"],
-                tenant_id="*",
-                require_approval=True,
-            )
-        ]
-    )
+_fail_closed_policy_client = PolicyDecisionServiceClient(
+    PolicyDecisionService(asset_permissions=[])
 )
 
 
@@ -79,8 +100,13 @@ def get_session_revoker() -> SessionGatewayService:
     return _session_gateway_service
 
 
-def get_session_gateway_service(db: AsyncSession = Depends(get_db)) -> SessionGatewayService:
-    return _build_session_gateway_service(db)
+async def get_session_gateway_service(
+    db: AsyncSession = Depends(get_db),
+    user: dict[str, Any] = Depends(current_user),
+) -> SessionGatewayService:
+    return _build_session_gateway_service(
+        db, policy_client=await _tenant_policy_client(db, user)
+    )
 
 
 def get_read_session_gateway_service(
@@ -89,7 +115,11 @@ def get_read_session_gateway_service(
     return _build_session_gateway_service(db)
 
 
-def _build_session_gateway_service(db: AsyncSession) -> SessionGatewayService:
+def _build_session_gateway_service(
+    db: AsyncSession,
+    *,
+    policy_client: PolicyDecisionServiceClient | None = None,
+) -> SessionGatewayService:
     from app.api.workflows.service import SQLAlchemyWorkflowStore, WorkflowService
 
     workflow_service = WorkflowService(
@@ -98,7 +128,7 @@ def _build_session_gateway_service(db: AsyncSession) -> SessionGatewayService:
         session_revoker=_session_gateway_service,
     )
     return SessionGatewayService(
-        policy_client=_session_policy_client,
+        policy_client=policy_client or _fail_closed_policy_client,
         token_store=_session_gateway_service.token_store,
         connector_scheduler=_session_gateway_service.connector_scheduler,
         session_store=_session_gateway_service.session_store,
@@ -136,7 +166,7 @@ async def issue_connection_token(
             jit_grant_id=data.jit_grant_id,
         )
     except PermissionError as exc:
-        raise HTTPException(status_code=403, detail=str(exc)) from exc
+        _raise_connect_denied(exc)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return SessionConnectionTokenResponse.from_issue(issue)
@@ -165,6 +195,7 @@ async def create_session(
     try:
         session = await service.create_session(
             subject_id=str(user["id"]),
+            subject_group_ids=tuple(str(group_id) for group_id in user.get("group_ids", ())),
             tenant_id=str(user.get("tenant_id", "default")),
             asset_id=data.asset_id,
             account_id=data.account_id,
@@ -175,7 +206,7 @@ async def create_session(
             jit_grant_id=data.jit_grant_id,
         )
     except PermissionError as exc:
-        raise HTTPException(status_code=403, detail=str(exc)) from exc
+        _raise_connect_denied(exc)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return SessionResponse.from_record(session)

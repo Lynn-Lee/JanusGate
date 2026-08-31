@@ -19,6 +19,9 @@ function mockFetch() {
     if (url.endsWith('/api/v1/assets/platforms')) {
       return Response.json([{ id: 1, name: 'Linux', category: 'host', protocols: '["ssh"]', is_active: true }]);
     }
+    if (url.endsWith('/api/v1/asset-nodes/')) {
+      return Response.json({ items: [{ id: 'node-root', tenant_id: 'default', parent_id: null, name: '根', is_root: true, ancestor_ids: [] }] });
+    }
     if (url.endsWith('/api/v1/workflows/requests')) {
       return Response.json({ items: [], total: 0 });
     }
@@ -53,6 +56,7 @@ describe('JanusGate console app', () => {
     await userEvent.click(screen.getByRole('button', { name: '登录' }));
 
     expect(await screen.findByRole('heading', { name: '资产列表' })).toBeInTheDocument();
+    await userEvent.click(await screen.findByText('连接'));
     expect(await screen.findByText('堡垒机资产')).toBeInTheDocument();
   });
 
@@ -85,6 +89,9 @@ describe('JanusGate console app', () => {
       if (url.endsWith('/api/v1/assets/platforms')) {
         return Response.json([{ id: 1, name: 'Linux', category: 'host', protocols: '["ssh"]', is_active: true }]);
       }
+      if (url.endsWith('/api/v1/asset-nodes/')) {
+        return Response.json({ items: [{ id: 'node-root', tenant_id: 'default', parent_id: null, name: '根', is_root: true, ancestor_ids: [] }] });
+      }
       return Response.json({ detail: `Unhandled ${method} ${url}` }, { status: 404 });
     });
     vi.stubGlobal('fetch', fetchMock);
@@ -101,6 +108,7 @@ describe('JanusGate console app', () => {
     await userEvent.click(screen.getByRole('button', { name: '验证并登录' }));
 
     expect(await screen.findByRole('heading', { name: '资产列表' })).toBeInTheDocument();
+    await userEvent.click(await screen.findByText('连接'));
     expect(await screen.findByText('MFA 资产')).toBeInTheDocument();
     expect(localStorage.getItem('janusgate-access-token')).toBe('token-2fa');
     expect(localStorage.getItem('janusgate-refresh-token')).toBe('refresh-2fa');

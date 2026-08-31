@@ -1,3 +1,4 @@
+# ruff: noqa: E402, I001
 """#t65：执行前 command_policy 守卫单元测试（无 live SSH）。"""
 
 from __future__ import annotations
@@ -14,6 +15,7 @@ from app.connectors.command_policy import (
     default_command_policy_guard,
     load_tenant_policy_service,
 )
+from app.models.acl import CommandFilterAction
 from app.policy.schemas import (
     CommandDecisionRequest,
     CommandDecisionResponse,
@@ -22,7 +24,6 @@ from app.policy.schemas import (
     ResourceRef,
     SubjectRef,
 )
-from app.models.acl import CommandFilterAction
 
 
 @dataclass

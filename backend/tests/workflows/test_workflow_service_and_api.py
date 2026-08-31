@@ -208,7 +208,10 @@ async def test_workflow_service_dependency_uses_sqlalchemy_store(session_factory
 @pytest.mark.asyncio
 async def test_session_gateway_dependency_uses_sqlalchemy_jit_client(session_factory) -> None:
     async with session_factory() as session:
-        service = get_session_gateway_service(session)
+        service = await get_session_gateway_service(
+            session,
+            {"id": "user-1", "tenant_id": "tenant-1", "permissions": []},
+        )
         assert isinstance(service.jit_grant_client, WorkflowService)
         assert isinstance(service.jit_grant_client.store, SQLAlchemyWorkflowStore)
 

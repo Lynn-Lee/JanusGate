@@ -226,3 +226,42 @@ export type SshCertificate = {
   revoked_at: string | null;
   revoke_reason: string | null;
 };
+
+export type AssetNode = {
+  id: string;
+  tenant_id: string;
+  parent_id: string | null;
+  name: string;
+  is_root: boolean;
+  ancestor_ids: string[];
+};
+
+export type TreeAsset = {
+  id: number;
+  name: string;
+  address: string;
+  node_id: string | null;
+  location_label: string;
+};
+
+export type AssetGrant = {
+  id: string;
+  tenant_id: string;
+  subject_id: string;
+  subject_type: 'user' | 'user_group';
+  resource_type: string;
+  resource_id: string;
+  account_id: string;
+  protocol: string;
+  action: string;
+  expires_at: string | null;
+  from_ticket: string | null;
+  expired: boolean;
+  inherited: boolean;
+  inherited_from_node_id: string | null;
+  inherited_from_node_name: string | null;
+};
+
+export type ConnectImpact = {
+  lost: Array<{ subject_id: string; asset_id: string; asset_name: string }>;
+};

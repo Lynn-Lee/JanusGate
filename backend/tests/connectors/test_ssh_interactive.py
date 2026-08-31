@@ -1,3 +1,4 @@
+# ruff: noqa: E402, I001
 """#t69：交互式 PTY 通道与命令流解析测试。
 
 - 解析器用例为纯单元测试，无 SSH。
@@ -327,7 +328,6 @@ async def test_interactive_reject_after_rebuild_before_remote(server: _RunningSe
         await session.close()
 
 
-from collections.abc import AsyncIterator
 
 from fastapi.testclient import TestClient
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine

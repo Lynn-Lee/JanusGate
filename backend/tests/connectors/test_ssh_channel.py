@@ -1,3 +1,4 @@
+# ruff: noqa: E402, I001
 """#t69 M3 预研切片：真实 SSH 通道端到端与安全回归测试。
 
 全部用例基于 asyncssh 进程内服务器，无外部依赖、可在 CI 中确定性运行。四条安全
@@ -347,7 +348,6 @@ async def test_open_always_attaches_command_policy_guard(server: _RunningServer)
     assert sink.events
 
 
-from collections.abc import AsyncIterator
 
 from fastapi.testclient import TestClient
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine

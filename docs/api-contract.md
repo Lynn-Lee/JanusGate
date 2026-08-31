@@ -1549,6 +1549,40 @@ template=soc2-access
 - 只返回当前租户会话；跨租户数据 fail-closed 为空集合。
 - 列表按 `created_at` 倒序，便于控制台优先展示最新会话。
 
+## Phase 6 Asset tree / AssetPermission（#t64）
+
+### 资产树与资产挂载
+
+资产树 API 使用当前用户的 `tenant_id` 做边界，所有读取经过 `scoped_select()`。`GET /api/v1/asset-nodes/` 自动确保租户存在一个根节点；根节点只能作为容器，不能挂资产、授权或删除。非根节点保存祖先链，资产通过 `node_id` 挂载；`node_id=null` 表示未分组且不继承节点授权。
+
+节点管理路径：`POST /api/v1/asset-nodes/`、`PATCH /api/v1/asset-nodes/{node_id}`、`POST /api/v1/asset-nodes/{node_id}/move`、`DELETE /api/v1/asset-nodes/{node_id}`。资产挂载路径为 `POST /api/v1/asset-nodes/{node_id}/assets` 和 `POST /api/v1/asset-nodes/ungroup`；对应的 `hang-impact`、`move-impact`、`ungroup-impact` GET 路径在变更前返回可能失去有效连接授权的主体。
+
+### AssetPermission
+
+节点或资产授权分别使用：
+
+- `GET/POST /api/v1/asset-nodes/{node_id}/permissions`
+- `GET/POST /api/v1/asset-permissions/by-asset/{asset_id}`
+- `DELETE /api/v1/asset-permissions/{permission_id}`
+
+创建请求字段：
+
+```json
+{
+  "subject_id": "ops",
+  "subject_type": "user_group",
+  "action": "connect",
+  "account_id": "root",
+  "protocol": "ssh",
+  "expires_at": "2026-09-30T00:00:00Z",
+  "from_ticket": "ticket-64"
+}
+```
+
+`subject_type` 支持 `user` / `user_group`；空字符串或 `*` 的账号、协议为通配选择器。会话 `connect` 判定沿资产节点祖先链继承授权，跳过根节点授权和过期授权。策略命中返回 `ASSET_PERMISSION_ALLOWED`，并在 `explain_trace` 和 `obligations.permission_id` 中记录授权来源；无命中返回 `ASSET_PERMISSION_DENIED`。admin 不绕过该判定，跨租户管理请求统一按 404 处理。
+
+用户组成员 ID由身份层放入策略请求上下文 `group_ids`；#t64 提供用户组授权主体和判定接口，不实现 #t63 的 RBAC/用户组管理 CRUD。
+
 ## Phase 4 Observability Metrics（#t51）
 
 ### GET `/metrics`
