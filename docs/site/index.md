@@ -14,6 +14,7 @@ Phase 5 #t59 文档站 foundation 面向安装、运维和 API 集成读者，�
 - [命令过滤 ACL](acl-command-filter.md)：#t65 ACL 体系首个派生类型——命令过滤 ACL + 命令组的数据模型、优先级/动作/复核人语义，以及统一进 `PolicyDecisionService.evaluate_command` 的 deny-overlay 判定。
 - [数据脱敏规则](acl-data-masking.md)：#t65 数据脱敏规则的数据模型、full/partial 打码方式，以及统一进 `PolicyDecisionService.mask` 的累计应用语义（#t71 DB 代理联动的前置）。
 - [资产树与 AssetPermission](asset-tree-authorization.md)：#t64 的节点树、资产挂载、用户/用户组授权、账号/协议/动作/有效期/来源工单选择器，以及会话授权 explain 链路。
+- [RBAC 角色权限](rbac.md)：#t63 的角色/绑定/用户组/对象级权限模型、内置角色、JWT 权限解析与租户 scope 约束。
 
 ## 版本边界
 

@@ -113,6 +113,10 @@ Phase 6 #t62 已把会话网关状态落库：`SessionModel` 与 `SqlAlchemySess
 
 Phase 6 #t64 已落地 `NodeModel` 资产树、`AssetPermissionModel` 资产/节点授权和 `Asset.node_id` 挂载映射。节点保存祖先链，资产直接授权或非根节点授权沿树继承；未分组资产不继承节点授权，过期授权不匹配。授权主体支持 `user` / `user_group`，并记录账号、协议、动作、有效期和 `from_ticket` 来源工单。所有授权与资产树读取经 `scoped_select()` 按租户收敛，`PolicyDecisionService.explain_trace` 记录命中授权和继承路径；`/api/v1/assets/` 使用面只返回当前用户有效 connect 资产，admin 不绕过授权。详见 [`docs/site/asset-tree-authorization.md`](docs/site/asset-tree-authorization.md) 和 [`docs/api-contract.md`](docs/api-contract.md) 的 #t64 契约。
 
+### M1 RBAC 角色权限（#t63 已完成）
+
+Phase 6 #t63 已落地 `RoleModel` / `RoleBindingModel` / `UserGroupModel` / `ObjectPermissionModel`，覆盖 system / org 双 scope、内置角色（系统管理员 / 组织管理员 / 审计员 / 普通用户）、用户组与对象级权限。`RbacService.resolve_effective_rbac()` 在登录与 refresh 时将 `permissions`、`menu_permissions`、`group_ids` 写入 JWT，与既有 `require_permission` 和 `scoped_select` 路径兼容；无绑定时 superuser 回退管理员权限集，普通用户回退 MVP 权限集。管理 API 位于 `/api/v1/rbac/*`。详见 [`docs/site/rbac.md`](docs/site/rbac.md)。
+
 ### M3 真实连接通道（SSH / K8s 已走通）
 
 Phase 6 #t69 已在 `backend/app/connectors/` 落地连接器侧真实 SSH 通道，基于纯 Python `asyncssh`，不 fork 任何 `ssh` / `sshpass` 子进程：SSH exec 通道、会话编排、命令事件投递 sink、PTY 交互式会话（从键盘输入流重建命令并带读超时）、SFTP 传输与带 sha256 的传输审计事件、主机密钥采集（scan → 审批 → 固定），以及到会话网关的接线。四条安全约束逐条由 `backend/tests/connectors/test_ssh_channel.py` 断言：强制现代算法白名单、私钥仅内存加载、凭据不经命令行且关闭 agent 与默认密钥扫描、主机密钥严格校验且绝不 trust-on-first-use。详见 [`docs/site/connectors-ssh.md`](docs/site/connectors-ssh.md)。
