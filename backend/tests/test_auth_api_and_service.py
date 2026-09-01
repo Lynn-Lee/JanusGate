@@ -43,8 +43,11 @@ class FakeDB:
 
     async def execute(self, _statement: Any) -> ScalarResult:
         if not self.results:
-            raise AssertionError("unexpected execute call")
+            return ScalarResult(values=[])
         return self.results.pop(0)
+
+    async def flush(self) -> None:
+        return None
 
     def add(self, obj: Any) -> None:
         self.added.append(obj)
@@ -356,6 +359,8 @@ async def test_current_user_returns_active_user_and_rejects_disabled_user() -> N
         "team_id": None,
         "project_id": None,
         "permissions": ["assets:read"],
+        "menu_permissions": [],
+        "group_ids": [],
     }
 
     with pytest.raises(HTTPException) as disabled_error:

@@ -77,6 +77,8 @@ async def current_user(
         "team_id": getattr(db_user, "team_id", None),
         "project_id": getattr(db_user, "project_id", None),
         "permissions": payload.get("permissions", []),
+        "menu_permissions": payload.get("menu_permissions", []),
+        "group_ids": payload.get("group_ids", []),
     }
 
 

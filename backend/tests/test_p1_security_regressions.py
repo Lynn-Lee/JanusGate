@@ -17,6 +17,7 @@ from app.core.security import (
 )
 from app.main import app
 from app.models.user import User
+from app.policy.rbac import MVP_CONSOLE_MENUS, MVP_CONSOLE_PERMISSIONS, EffectiveRbac
 from app.services import asset as asset_service_module
 from app.services.asset import AssetService
 from app.services.auth import AuthService
@@ -142,7 +143,23 @@ def test_access_token_issued_before_password_change_is_rejected() -> None:
     assert response.status_code == 401
 
 
+def stub_rbac_resolution(monkeypatch: pytest.MonkeyPatch) -> None:
+    async def fake_resolve(*_args: Any, **_kwargs: Any) -> EffectiveRbac:
+        return EffectiveRbac(
+            permissions=MVP_CONSOLE_PERMISSIONS,
+            menu_permissions=MVP_CONSOLE_MENUS,
+            group_ids=(),
+            role_ids=(),
+        )
+
+    monkeypatch.setattr(
+        "app.api.auth.RbacService.resolve_effective_rbac",
+        fake_resolve,
+    )
+
+
 def test_mfa_challenge_token_is_single_use(monkeypatch: pytest.MonkeyPatch) -> None:
+    stub_rbac_resolution(monkeypatch)
     mfa_user = user(totp_enabled=True)
     install_auth_dependencies(mfa_user, FakeRedis())
 
@@ -167,6 +184,7 @@ def test_mfa_challenge_token_is_single_use(monkeypatch: pytest.MonkeyPatch) -> N
 
 
 def test_mfa_challenge_token_consume_is_atomic(monkeypatch: pytest.MonkeyPatch) -> None:
+    stub_rbac_resolution(monkeypatch)
     mfa_user = user(totp_enabled=True)
     install_auth_dependencies(mfa_user, RaceyRedis())
 
