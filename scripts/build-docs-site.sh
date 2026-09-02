@@ -21,6 +21,7 @@ cp "$repo_root/docs/site/api.md" "$output_abs/api.md"
 cp "$repo_root/docs/site/runbooks.md" "$output_abs/runbooks.md"
 cp "$repo_root/docs/site/connectors-ssh.md" "$output_abs/connectors-ssh.md"
 cp "$repo_root/docs/site/connectors-k8s.md" "$output_abs/connectors-k8s.md"
+cp "$repo_root/docs/site/k8s-management.md" "$output_abs/k8s-management.md"
 cp "$repo_root/docs/site/acl-command-filter.md" "$output_abs/acl-command-filter.md"
 cp "$repo_root/docs/site/acl-data-masking.md" "$output_abs/acl-data-masking.md"
 cp "$repo_root/docs/site/asset-tree-authorization.md" "$output_abs/asset-tree-authorization.md"
@@ -96,6 +97,7 @@ cat > "$output_abs/manifest.json" <<'JSON'
     "runbooks.md",
     "connectors-ssh.md",
     "connectors-k8s.md",
+    "k8s-management.md",
     "acl-command-filter.md",
     "acl-data-masking.md",
     "asset-tree-authorization.md"

@@ -24,6 +24,8 @@ from app.models.user import ApiKey, User
 from app.models.vault import SecretRecordModel
 from app.models.webhook import NotificationDelivery, NotificationRule, WebhookEndpoint
 from app.models.workflow import ApprovalPolicyModel, JitGrantModel, WorkflowRequestModel
+from app.models.k8s_cluster import K8sClusterModel
+from app.models.zone import ZoneGatewayModel, ZoneModel
 
 __all__ = [
     "ApiKey",
@@ -41,6 +43,7 @@ __all__ = [
     "DataMaskingRuleModel",
     "CredentialRotation",
     "JitGrantModel",
+    "K8sClusterModel",
     "LicenseConfigurationModel",
     "LoginAclModel",
     "LoginAssetAclModel",
@@ -66,4 +69,6 @@ __all__ = [
     "User",
     "WebhookEndpoint",
     "WorkflowRequestModel",
+    "ZoneGatewayModel",
+    "ZoneModel",
 ]

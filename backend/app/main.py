@@ -28,6 +28,8 @@ from app.api import (
     ssh_certificate_authorities,
     ssh_certificates,
     webhook_endpoints,
+    k8s,
+    zones,
 )
 from app.api.audits.routes import router as audits_router
 from app.api.tenancy.routes import router as tenancy_router
@@ -74,6 +76,8 @@ app.include_router(admin.router, prefix="/api/v1")
 app.include_router(automation.router, prefix="/api/v1")
 app.include_router(assets.router, prefix="/api/v1")
 app.include_router(protocols.router, prefix="/api/v1")
+app.include_router(k8s.router, prefix="/api/v1")
+app.include_router(zones.router, prefix="/api/v1")
 app.include_router(asset_tree.router, prefix="/api/v1")
 app.include_router(rbac.router, prefix="/api/v1")
 app.include_router(connectors.router, prefix="/api/v1")
