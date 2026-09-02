@@ -9,17 +9,16 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.api.sessions.service import ConnectorDispatchRequest
-from app.connectors.postgres_proxy import (
-    PostgresChannelError,
-    PostgresCredential,
-    PostgresTarget,
-)
+from app.connectors.db_channel_errors import DbChannelError
+from app.connectors.mysql_proxy import MysqlCredential, MysqlTarget
+from app.connectors.postgres_proxy import PostgresCredential, PostgresTarget
 from app.connectors.session_runtime import ConnectorSessionMode, DbConnectionBundle, SessionConnectionSpec
 from app.models.account import Account
 from app.models.asset import Asset
 from app.protocols.catalog import CRED_PASSWORD, PROTOCOL_BY_ID
 
-DATABASE_PROTOCOLS = frozenset({"postgresql"})
+DATABASE_PROTOCOLS = frozenset({"postgresql", "mysql", "mariadb"})
+MYSQL_PROTOCOLS = frozenset({"mysql", "mariadb"})
 
 
 class DbSecretUnwrapper(Protocol):
@@ -39,32 +38,34 @@ class CallableDbSecretUnwrapper:
 
 
 class DatabaseVaultSessionConnectionResolver:
-    """把网关身份解析为 PostgreSQL Simple Query 参数。"""
+    """把网关身份解析为 PostgreSQL / MySQL COM_QUERY 参数。"""
 
     def __init__(
         self,
         *,
         session_factory: async_sessionmaker[AsyncSession],
         secrets: DbSecretUnwrapper,
-        default_database: str = "postgres",
+        default_postgres_database: str = "postgres",
+        default_mysql_database: str = "mysql",
     ) -> None:
         self._session_factory = session_factory
         self._secrets = secrets
-        self._default_database = default_database
+        self._default_postgres_database = default_postgres_database
+        self._default_mysql_database = default_mysql_database
 
     async def resolve(self, request: ConnectorDispatchRequest) -> SessionConnectionSpec:
         protocol = request.protocol.lower()
         if protocol not in DATABASE_PROTOCOLS:
-            raise PostgresChannelError(
-                "PG_PROTOCOL_UNSUPPORTED",
+            raise DbChannelError(
+                "DB_PROTOCOL_UNSUPPORTED",
                 f"database resolver does not support protocol={protocol}",
             )
 
         async with self._session_factory() as session:
             asset = await _load_asset(session, tenant_id=request.tenant_id, asset_id=request.asset_id)
             if asset is None or not asset.is_active or asset.asset_type != "database":
-                raise PostgresChannelError(
-                    "PG_TARGET_UNRESOLVED",
+                raise DbChannelError(
+                    "DB_TARGET_UNRESOLVED",
                     f"no database asset for asset={request.asset_id}",
                 )
             account = await _load_account(
@@ -75,8 +76,8 @@ class DatabaseVaultSessionConnectionResolver:
                 protocol=request.protocol,
             )
             if account is None or account.status != "active":
-                raise PostgresChannelError(
-                    "PG_TARGET_UNRESOLVED",
+                raise DbChannelError(
+                    "DB_TARGET_UNRESOLVED",
                     f"no database account for asset={request.asset_id} account={request.account_id}",
                 )
             _validate_database_account(protocol=protocol, account=account)
@@ -84,17 +85,33 @@ class DatabaseVaultSessionConnectionResolver:
         try:
             password = await self._secrets.unwrap(account.secret_id)
         except ValueError as exc:
-            raise PostgresChannelError("PG_PASSWORD_UNWRAP_DENIED", str(exc)) from exc
+            raise DbChannelError("DB_PASSWORD_UNWRAP_DENIED", str(exc)) from exc
         except Exception as exc:
-            raise PostgresChannelError("PG_TARGET_UNRESOLVED", "cannot unwrap database password") from exc
+            raise DbChannelError("DB_TARGET_UNRESOLVED", "cannot unwrap database password") from exc
+
+        if protocol in MYSQL_PROTOCOLS:
+            return SessionConnectionSpec(
+                mode=ConnectorSessionMode.DB_MYSQL,
+                db=DbConnectionBundle(
+                    engine="mysql",
+                    target=MysqlTarget(
+                        host=asset.address,
+                        port=asset.port,
+                        database=self._default_mysql_database,
+                        username=account.username,
+                    ),
+                    credential=MysqlCredential(password=password),
+                ),
+            )
 
         return SessionConnectionSpec(
             mode=ConnectorSessionMode.DB_POSTGRESQL,
             db=DbConnectionBundle(
+                engine="postgresql",
                 target=PostgresTarget(
                     host=asset.address,
                     port=asset.port,
-                    database=self._default_database,
+                    database=self._default_postgres_database,
                     username=account.username,
                 ),
                 credential=PostgresCredential(password=password),
@@ -105,11 +122,11 @@ class DatabaseVaultSessionConnectionResolver:
 def _validate_database_account(*, protocol: str, account: Account) -> None:
     definition = PROTOCOL_BY_ID.get(protocol)
     if definition is None or CRED_PASSWORD not in definition.credential_types:
-        raise PostgresChannelError("PG_PROTOCOL_INVALID", f"invalid database protocol {protocol}")
+        raise DbChannelError("DB_PROTOCOL_INVALID", f"invalid database protocol {protocol}")
     if not account.secret_id.strip():
-        raise PostgresChannelError("PG_PASSWORD_SECRET_REQUIRED", "database account requires secret_id")
+        raise DbChannelError("DB_PASSWORD_SECRET_REQUIRED", "database account requires secret_id")
     if not account.username.strip():
-        raise PostgresChannelError("PG_USERNAME_REQUIRED", "database account requires username")
+        raise DbChannelError("DB_USERNAME_REQUIRED", "database account requires username")
 
 
 async def _load_asset(

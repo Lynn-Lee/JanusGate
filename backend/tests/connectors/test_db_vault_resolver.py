@@ -91,6 +91,7 @@ async def test_db_resolver_returns_postgresql_spec(
     spec = await resolver.resolve(_dispatch(asset.id))
     assert spec.mode is ConnectorSessionMode.DB_POSTGRESQL
     assert spec.db is not None
+    assert spec.db.engine == "postgresql"
     assert spec.db.target.host == "10.0.0.20"
     assert spec.db.target.username == "app_user"
     assert spec.db.credential.password == "db-pass"
@@ -121,3 +122,59 @@ async def test_routing_resolver_delegates_postgresql_protocol(
     )
     spec = await routing.resolve(_dispatch(asset.id))
     assert spec.mode is ConnectorSessionMode.DB_POSTGRESQL
+
+
+async def _seed_mysql_asset(session_factory: async_sessionmaker[AsyncSession]) -> Asset:
+    async with session_factory() as session:
+        platform = Platform(name="MySQL", category="database", protocols='["mysql"]')
+        session.add(platform)
+        await session.flush()
+        asset = Asset(
+            name="prod-mysql",
+            address="10.0.0.30",
+            tenant_id="tenant-a",
+            platform_id=platform.id,
+            asset_type="database",
+            port=3306,
+            is_active=True,
+        )
+        session.add(asset)
+        await session.flush()
+        session.add(
+            Account(
+                tenant_id="tenant-a",
+                asset_id=asset.id,
+                username="app_user",
+                protocol="mysql",
+                secret_id="sec_mysql",
+                status="active",
+            )
+        )
+        await session.commit()
+        await session.refresh(asset)
+        return asset
+
+
+@pytest.mark.asyncio
+async def test_db_resolver_returns_mysql_spec(
+    session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    asset = await _seed_mysql_asset(session_factory)
+    resolver = DatabaseVaultSessionConnectionResolver(
+        session_factory=session_factory,
+        secrets=CallableDbSecretUnwrapper(lambda secret_id: "db-pass"),
+    )
+    dispatch = ConnectorDispatchRequest(
+        session_id="sess-1",
+        connector_id="conn-1",
+        tenant_id="tenant-a",
+        subject_id="user-1",
+        asset_id=str(asset.id),
+        account_id="app_user",
+        protocol="mysql",
+    )
+    spec = await resolver.resolve(dispatch)
+    assert spec.mode is ConnectorSessionMode.DB_MYSQL
+    assert spec.db is not None
+    assert spec.db.engine == "mysql"
+    assert spec.db.target.host == "10.0.0.30"
