@@ -27,6 +27,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from app.api.sessions.service import ConnectorDispatchRequest
 from app.connectors.command_policy import CommandPolicyGuard, default_command_policy_guard
 from app.connectors.k8s_exec import K8sCredential, K8sExecChannel, K8sTarget, NamespaceScope
+from app.connectors.mysql_proxy import MysqlCredential, MysqlQueryChannel, MysqlTarget
 from app.connectors.postgres_proxy import PostgresCredential, PostgresQueryChannel, PostgresTarget
 from app.connectors.ssh_channel import (
     CommandEvent,
@@ -54,6 +55,7 @@ class ConnectorSessionMode(StrEnum):
     SFTP = "sftp"
     K8S_EXEC = "k8s"
     DB_POSTGRESQL = "db_postgresql"
+    DB_MYSQL = "db_mysql"
 
 
 @dataclass(frozen=True)
@@ -67,10 +69,11 @@ class K8sConnectionBundle:
 
 @dataclass(frozen=True)
 class DbConnectionBundle:
-    """PostgreSQL Simple Query 通道参数（#t71）。"""
+    """数据库 COM_QUERY / Simple Query 通道参数（#t71）。"""
 
-    target: PostgresTarget
-    credential: PostgresCredential
+    engine: str
+    target: PostgresTarget | MysqlTarget
+    credential: PostgresCredential | MysqlCredential
 
 
 @dataclass(frozen=True)
@@ -89,7 +92,14 @@ class SessionConnectionSpec:
 
 
 # 已打开通道的联合类型：均提供 async close()。
-OpenChannel = SshChannel | SshInteractiveSession | SftpChannel | K8sExecChannel | PostgresQueryChannel
+OpenChannel = (
+    SshChannel
+    | SshInteractiveSession
+    | SftpChannel
+    | K8sExecChannel
+    | PostgresQueryChannel
+    | MysqlQueryChannel
+)
 
 
 @dataclass
@@ -248,14 +258,35 @@ class ConnectorSessionRuntime:
                 policy=policy,
             )
         if spec.mode is ConnectorSessionMode.DB_POSTGRESQL:
-            if spec.db is None:
-                raise SshChannelError("DB_SPEC_MISSING", "db mode requires db bundle")
+            if spec.db is None or spec.db.engine != "postgresql":
+                raise SshChannelError("DB_SPEC_MISSING", "postgresql mode requires postgresql db bundle")
             if self._command_sink is None:
                 raise SshChannelError(
                     "CONNECTOR_COMMAND_SINK_MISSING",
                     "db postgresql mode requires a command_sink",
                 )
+            if not isinstance(spec.db.target, PostgresTarget) or not isinstance(
+                spec.db.credential, PostgresCredential
+            ):
+                raise SshChannelError("DB_SPEC_INVALID", "postgresql bundle type mismatch")
             return await PostgresQueryChannel.open(
+                spec.db.target,
+                spec.db.credential,
+                policy=policy,
+            )
+        if spec.mode is ConnectorSessionMode.DB_MYSQL:
+            if spec.db is None or spec.db.engine != "mysql":
+                raise SshChannelError("DB_SPEC_MISSING", "mysql mode requires mysql db bundle")
+            if self._command_sink is None:
+                raise SshChannelError(
+                    "CONNECTOR_COMMAND_SINK_MISSING",
+                    "db mysql mode requires a command_sink",
+                )
+            if not isinstance(spec.db.target, MysqlTarget) or not isinstance(
+                spec.db.credential, MysqlCredential
+            ):
+                raise SshChannelError("DB_SPEC_INVALID", "mysql bundle type mismatch")
+            return await MysqlQueryChannel.open(
                 spec.db.target,
                 spec.db.credential,
                 policy=policy,
