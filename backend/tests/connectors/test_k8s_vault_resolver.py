@@ -153,12 +153,18 @@ async def test_routing_resolver_delegates_k8s_protocol(
         async def resolve(self, request: ConnectorDispatchRequest):
             raise PermissionError("SSH_SHOULD_NOT_RUN")
 
+    class DenyDb:
+        async def resolve(self, request: ConnectorDispatchRequest):
+            raise RuntimeError("DB_SHOULD_NOT_RUN")
+
     secrets = CallableK8sSecretUnwrapper(lambda secret_id: "long-lived-token")
     k8s_resolver = K8sVaultSessionConnectionResolver(
         session_factory=session_factory,
         secrets=secrets,
     )
-    routing = RoutingSessionConnectionResolver(ssh_resolver=DenySsh(), k8s_resolver=k8s_resolver)
+    routing = RoutingSessionConnectionResolver(
+        ssh_resolver=DenySsh(), k8s_resolver=k8s_resolver, db_resolver=DenyDb()
+    )
 
     spec = await routing.resolve(_dispatch(asset.id))
     assert spec.mode is ConnectorSessionMode.K8S_EXEC

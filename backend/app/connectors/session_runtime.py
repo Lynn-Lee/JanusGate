@@ -25,6 +25,7 @@ from uuid import uuid4
 from app.api.sessions.service import ConnectorDispatchRequest
 from app.connectors.command_policy import CommandPolicyGuard, default_command_policy_guard
 from app.connectors.k8s_exec import K8sCredential, K8sExecChannel, K8sTarget, NamespaceScope
+from app.connectors.postgres_proxy import PostgresCredential, PostgresQueryChannel, PostgresTarget
 from app.connectors.ssh_channel import (
     CommandEvent,
     CommandEventSink,
@@ -46,6 +47,7 @@ class ConnectorSessionMode(StrEnum):
     INTERACTIVE = "interactive"
     SFTP = "sftp"
     K8S_EXEC = "k8s"
+    DB_POSTGRESQL = "db_postgresql"
 
 
 @dataclass(frozen=True)
@@ -58,10 +60,18 @@ class K8sConnectionBundle:
 
 
 @dataclass(frozen=True)
+class DbConnectionBundle:
+    """PostgreSQL Simple Query 通道参数（#t71）。"""
+
+    target: PostgresTarget
+    credential: PostgresCredential
+
+
+@dataclass(frozen=True)
 class SessionConnectionSpec:
     """打开一个连接器通道所需的完整参数（含凭据，仅存在于连接器侧）。
 
-    SSH 与 K8s 二选一：SSH 模式填 ``target``/``credential``；K8s 模式填 ``k8s``。
+    SSH 与 K8s 与 DB 三选一：SSH 填 ``target``/``credential``；K8s 填 ``k8s``；DB 填 ``db``。
     """
 
     mode: ConnectorSessionMode
@@ -69,10 +79,11 @@ class SessionConnectionSpec:
     credential: SshCredential | None = None
     proxy_jump: SshProxyJump | None = None
     k8s: K8sConnectionBundle | None = None
+    db: DbConnectionBundle | None = None
 
 
 # 已打开通道的联合类型：均提供 async close()。
-OpenChannel = SshChannel | SshInteractiveSession | SftpChannel | K8sExecChannel
+OpenChannel = SshChannel | SshInteractiveSession | SftpChannel | K8sExecChannel | PostgresQueryChannel
 
 
 @dataclass
@@ -230,6 +241,19 @@ class ConnectorSessionRuntime:
                 spec.k8s.scope,
                 policy=policy,
             )
+        if spec.mode is ConnectorSessionMode.DB_POSTGRESQL:
+            if spec.db is None:
+                raise SshChannelError("DB_SPEC_MISSING", "db mode requires db bundle")
+            if self._command_sink is None:
+                raise SshChannelError(
+                    "CONNECTOR_COMMAND_SINK_MISSING",
+                    "db postgresql mode requires a command_sink",
+                )
+            return await PostgresQueryChannel.open(
+                spec.db.target,
+                spec.db.credential,
+                policy=policy,
+            )
         if spec.target is None or spec.credential is None:
             raise SshChannelError("SSH_SPEC_MISSING", "ssh mode requires target and credential")
         proxy_kw = {"proxy_jump": spec.proxy_jump} if spec.proxy_jump is not None else {}
@@ -307,6 +331,10 @@ def build_production_connector_scheduler(
         CallableSecretUnwrapper,
     )
     from app.connectors.host_key_trust import AsyncScanAdapter, HostKeyTrustStore
+    from app.connectors.db_vault_resolver import (
+        CallableDbSecretUnwrapper,
+        DatabaseVaultSessionConnectionResolver,
+    )
     from app.connectors.k8s_vault_resolver import (
         CallableK8sSecretUnwrapper,
         K8sVaultSessionConnectionResolver,
@@ -351,6 +379,7 @@ def build_production_connector_scheduler(
                 return await provider.unwrap_after_approval(secret_id, approval)
 
         k8s_secrets = CallableK8sSecretUnwrapper(_unwrap, _unwrap_k8s)
+        db_secrets = CallableDbSecretUnwrapper(_unwrap)
     else:
 
         async def _unwrap_injected(secret_id: str) -> str:
@@ -364,6 +393,7 @@ def build_production_connector_scheduler(
             return await secrets.unwrap(secret_id)
 
         k8s_secrets = CallableK8sSecretUnwrapper(_unwrap_injected, _unwrap_injected_after_approval)
+        db_secrets = CallableDbSecretUnwrapper(_unwrap_injected)
 
     ssh_resolver = AssetVaultSessionConnectionResolver(
         session_factory=factory,
@@ -375,7 +405,15 @@ def build_production_connector_scheduler(
         session_factory=factory,
         secrets=k8s_secrets,
     )
-    resolver = RoutingSessionConnectionResolver(ssh_resolver=ssh_resolver, k8s_resolver=k8s_resolver)
+    db_resolver = DatabaseVaultSessionConnectionResolver(
+        session_factory=factory,
+        secrets=db_secrets,
+    )
+    resolver = RoutingSessionConnectionResolver(
+        ssh_resolver=ssh_resolver,
+        k8s_resolver=k8s_resolver,
+        db_resolver=db_resolver,
+    )
     runtime = ConnectorSessionRuntime(
         resolver,
         command_sink=_NoopCommandEventSink(),
