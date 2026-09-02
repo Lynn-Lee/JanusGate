@@ -26,6 +26,7 @@ from app.connectors.ssh_channel import (
     SshChannel,
     SshChannelError,
     SshCredential,
+    SshProxyJump,
     SshTarget,
 )
 
@@ -98,13 +99,16 @@ class SftpChannel:
         sink: FileTransferEventSink,
         *,
         connect_timeout: float = 10.0,
+        proxy_jump: SshProxyJump | None = None,
     ) -> SftpChannel:
         """建立安全连接并打开 SFTP 会话。
 
         :raises SshChannelError: 建立连接或打开 SFTP 会话失败；失败时不遗留连接。
         """
 
-        channel = await SshChannel.open(target, credential, connect_timeout=connect_timeout)
+        channel = await SshChannel.open(
+            target, credential, connect_timeout=connect_timeout, proxy_jump=proxy_jump
+        )
         try:
             sftp = await channel.start_sftp()
         except BaseException:
