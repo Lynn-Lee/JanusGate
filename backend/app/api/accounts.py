@@ -1,4 +1,5 @@
 """Phase 4 account custody API routes."""
+import json
 from datetime import UTC, datetime
 from typing import Any
 
@@ -15,6 +16,8 @@ from app.api.account_schemas import (
 )
 from app.core.database import get_db, get_read_db
 from app.core.deps import current_user
+from app.k8s.service import validate_k8s_account_fields
+from app.k8s.validation import load_namespaces
 from app.models.account import Account, CredentialRotation
 from app.models.asset import Asset
 from app.models.tenancy import Organization, Project, Team
@@ -56,6 +59,17 @@ async def create_account(
         project_id=data.project_id,
     )
 
+    try:
+        validate_k8s_account_fields(
+            protocol=data.protocol,
+            secret_id=data.secret_id,
+            k8s_namespaces=data.k8s_namespaces,
+            k8s_service_account=data.k8s_service_account,
+            k8s_token_ttl_seconds=data.k8s_token_ttl_seconds,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
     account = Account(
         tenant_id=tenant_id,
         asset_id=data.asset_id,
@@ -67,6 +81,12 @@ async def create_account(
         project_id=data.project_id,
         status=data.status,
         rotation_policy=data.rotation_policy,
+        k8s_namespaces_json=json.dumps(data.k8s_namespaces),
+        k8s_service_account=data.k8s_service_account,
+        k8s_default_pod=data.k8s_default_pod,
+        k8s_default_container=data.k8s_default_container,
+        k8s_use_short_lived_token=data.k8s_use_short_lived_token,
+        k8s_token_ttl_seconds=data.k8s_token_ttl_seconds,
     )
     db.add(account)
     await db.commit()
@@ -188,6 +208,12 @@ def _account_response(account: Account) -> AccountResponse:
         project_id=account.project_id,
         status=account.status,
         rotation_policy=account.rotation_policy,
+        k8s_namespaces=load_namespaces(account.k8s_namespaces_json),
+        k8s_service_account=account.k8s_service_account,
+        k8s_default_pod=account.k8s_default_pod,
+        k8s_default_container=account.k8s_default_container,
+        k8s_use_short_lived_token=account.k8s_use_short_lived_token,
+        k8s_token_ttl_seconds=account.k8s_token_ttl_seconds,
     )
 
 
