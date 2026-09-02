@@ -16,6 +16,7 @@ from app.core.security import (
     decode_token,
 )
 from app.models.user import User
+from app.policy.rbac import RbacService
 from app.schemas.auth import (
     ChangePasswordRequest,
     CreateApiKeyRequest,
@@ -30,21 +31,6 @@ from app.services.auth import AuthService
 
 router = APIRouter(prefix="/auth", tags=["认证"])
 
-MVP_CONSOLE_PERMISSIONS = ("assets:read",)
-ADMIN_CONSOLE_PERMISSIONS = (
-    "admin",
-    "assets:read",
-    "assets:write",
-    "assets:test",
-    "audit:read",
-    "audit:write",
-    "sessions:connect",
-    "workflow:approve",
-    "workflow:audit",
-    "workflow:admin",
-)
-
-
 @router.post("/login", response_model=TokenResponse)
 async def login(data: LoginRequest, db: AsyncSession = Depends(get_db)) -> TokenResponse:
     user = await AuthService.authenticate(db, data.username, data.password)
@@ -57,7 +43,7 @@ async def login(data: LoginRequest, db: AsyncSession = Depends(get_db)) -> Token
             two_fa_token=create_mfa_token({"sub": str(user.id), "username": user.username}),
         )
 
-    token_data = _token_data_for_user(user)
+    token_data = await _token_data_for_user(db, user)
     return TokenResponse(
         access_token=create_access_token(token_data),
         refresh_token=create_refresh_token(token_data),
@@ -89,7 +75,7 @@ async def login_2fa(
         raise HTTPException(status_code=401, detail="用户不存在或已被禁用")
     if not await AuthService.verify_totp(db, user.id, data.totp_code):
         raise HTTPException(status_code=400, detail="TOTP 验证码错误")
-    token_data = _token_data_for_user(user, extra={"2fa_verified": True})
+    token_data = await _token_data_for_user(db, user, extra={"2fa_verified": True})
     return TokenResponse(
         access_token=create_access_token(token_data),
         refresh_token=create_refresh_token(token_data),
@@ -122,7 +108,7 @@ async def refresh_token_endpoint(
     password_changed_at = _coerce_datetime(user.password_changed_at)
     if not issued_at or (password_changed_at and issued_at < password_changed_at):
         raise HTTPException(status_code=401, detail="refresh_token 无效或已过期")
-    token_data = _token_data_for_user(user)
+    token_data = await _token_data_for_user(db, user)
     return TokenResponse(
         access_token=create_access_token(token_data),
         refresh_token=create_refresh_token(token_data),
@@ -222,17 +208,23 @@ def _coerce_datetime(value: Any) -> datetime | None:
     return value.astimezone(UTC)
 
 
-def _token_data_for_user(user: User, *, extra: dict[str, Any] | None = None) -> dict[str, Any]:
-    permissions = (
-        list(ADMIN_CONSOLE_PERMISSIONS)
-        if user.is_superuser
-        else list(MVP_CONSOLE_PERMISSIONS)
+async def _token_data_for_user(
+    db: AsyncSession, user: User, *, extra: dict[str, Any] | None = None
+) -> dict[str, Any]:
+    effective = await RbacService.resolve_effective_rbac(
+        db,
+        user_id=str(user.id),
+        tenant_id=getattr(user, "tenant_id", None) or "default",
+        is_superuser=user.is_superuser,
+        organization_id=getattr(user, "organization_id", None),
     )
     token_data: dict[str, Any] = {
         "sub": str(user.id),
         "username": user.username,
         "tenant_id": getattr(user, "tenant_id", None) or "default",
-        "permissions": permissions,
+        "permissions": list(effective.permissions),
+        "menu_permissions": list(effective.menu_permissions),
+        "group_ids": list(effective.group_ids),
     }
     if extra:
         token_data.update(extra)

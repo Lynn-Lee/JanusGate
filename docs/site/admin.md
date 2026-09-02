@@ -8,7 +8,9 @@
 
 - 所有受保护 API 默认使用 Bearer access token。
 - 管理接口要求当前用户具备对应权限或 `admin`。
+- Phase 6 #t63 起，登录与 refresh 经 `RbacService` 将角色绑定解析为 JWT 中的 `permissions`、`menu_permissions`、`group_ids`；管理 API 见 `/api/v1/rbac/*`（需 `rbac:read` / `rbac:write` 或 `admin`）。详见 `rbac.md`。
 - 普通用户不能审批自己的 JIT 申请，也不能读取他人的申请、grant、会话或审计详情。
+- `admin` 权限不绕过 #t64 资产 connect 授权判定。
 
 ## 资产、账号与会话
 

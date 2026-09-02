@@ -1581,7 +1581,36 @@ template=soc2-access
 
 `subject_type` 支持 `user` / `user_group`；空字符串或 `*` 的账号、协议为通配选择器。会话 `connect` 判定沿资产节点祖先链继承授权，跳过根节点授权和过期授权。策略命中返回 `ASSET_PERMISSION_ALLOWED`，并在 `explain_trace` 和 `obligations.permission_id` 中记录授权来源；无命中返回 `ASSET_PERMISSION_DENIED`。admin 不绕过该判定，跨租户管理请求统一按 404 处理。
 
-用户组成员 ID由身份层放入策略请求上下文 `group_ids`；#t64 提供用户组授权主体和判定接口，不实现 #t63 的 RBAC/用户组管理 CRUD。
+用户组成员 ID 由登录态 JWT 的 `group_ids` 与 RBAC 用户组解析写入策略请求上下文；#t64 资产授权可引用 `user_group` 主体。
+
+## Phase 6 RBAC 角色权限（#t63）
+
+### 模型与内置角色
+
+- `rbac_roles`：角色定义（`scope=system|org`、权限 JSON、菜单 JSON、可选 `organization_id`）
+- `rbac_role_bindings`：角色授予 `user` 或 `user_group`
+- `rbac_user_groups`：用户组及成员列表
+- `rbac_object_permissions`：对象级细粒度授权
+
+每个租户首次解析权限时幂等补全内置角色：`system_admin`、`org_admin`、`auditor`、`user`。
+
+### 管理 API
+
+| 方法 | 路径 | 权限 |
+| --- | --- | --- |
+| GET | `/api/v1/rbac/roles` | `rbac:read` 或 `admin` |
+| POST | `/api/v1/rbac/roles` | `rbac:write` 或 `admin` |
+| GET/POST | `/api/v1/rbac/role-bindings` | 同上 |
+| GET/POST | `/api/v1/rbac/user-groups` | 同上 |
+| PATCH | `/api/v1/rbac/user-groups/{group_id}/members` | `rbac:write` 或 `admin` |
+| GET/POST | `/api/v1/rbac/object-permissions` | 同上 |
+| GET | `/api/v1/rbac/me/effective` | 登录态 |
+
+登录与 refresh token 时，`RbacService.resolve_effective_rbac()` 将有效 `permissions`、`menu_permissions`、`group_ids` 写入 JWT。无角色绑定时：`is_superuser` 回退系统管理员权限集，否则回退普通用户权限集。
+
+`admin` 权限仍作为 `scoped_select` 租户过滤放宽条件，**不**绕过 #t64 资产 connect 判定。跨租户资源访问统一 404。
+
+详见 [`docs/site/rbac.md`](site/rbac.md)。
 
 ## Phase 4 Observability Metrics（#t51）
 

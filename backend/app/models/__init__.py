@@ -10,6 +10,12 @@ from app.models.asset_tree import AssetPermissionModel, NodeModel
 from app.models.audit import AuditEventModel
 from app.models.automation import AutomationJobRun
 from app.models.connector import Connector
+from app.models.rbac import (
+    ObjectPermissionModel,
+    RoleBindingModel,
+    RoleModel,
+    UserGroupModel,
+)
 from app.models.session import SessionModel
 from app.models.session_recording import SessionCommandEvent, SessionRecording
 from app.models.ssh_ca import SshCertificate, SshCertificateAuthority
@@ -37,16 +43,20 @@ __all__ = [
     "NotificationRule",
     "NodeModel",
     "NotificationDelivery",
+    "ObjectPermissionModel",
     "Organization",
     "Platform",
     "Project",
     "SessionCommandEvent",
     "SessionModel",
     "SessionRecording",
-    "SecretRecordModel",
+    "RoleBindingModel",
+    "RoleModel",
     "SshCertificate",
     "SshCertificateAuthority",
+    "SecretRecordModel",
     "Team",
+    "UserGroupModel",
     "User",
     "WebhookEndpoint",
     "WorkflowRequestModel",

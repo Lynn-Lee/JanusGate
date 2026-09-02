@@ -99,7 +99,7 @@ Phase 5 #t53 已启动无状态 Core 的前置切片：Session connection token 
 
 ## Phase 6 JumpServer 核心功能对标
 
-Phase 6 的任务分解、验收标准与完成度矩阵以 [`docs/architecture/10-master-evaluation-and-roadmap.md`](docs/architecture/10-master-evaluation-and-roadmap.md)（v2.4）为唯一权威来源。以下为已落地切片的入口索引。
+Phase 6 的任务分解、验收标准与完成度矩阵以 [`docs/architecture/10-master-evaluation-and-roadmap.md`](docs/architecture/10-master-evaluation-and-roadmap.md)（v2.5）为唯一权威来源。以下为已落地切片的入口索引。
 
 ### M0 前置阻塞项（已全部关闭）
 
@@ -112,6 +112,10 @@ Phase 6 #t62 已把会话网关状态落库：`SessionModel` 与 `SqlAlchemySess
 ### M1 资产树与资产授权（#t64 已完成）
 
 Phase 6 #t64 已落地 `NodeModel` 资产树、`AssetPermissionModel` 资产/节点授权和 `Asset.node_id` 挂载映射。节点保存祖先链，资产直接授权或非根节点授权沿树继承；未分组资产不继承节点授权，过期授权不匹配。授权主体支持 `user` / `user_group`，并记录账号、协议、动作、有效期和 `from_ticket` 来源工单。所有授权与资产树读取经 `scoped_select()` 按租户收敛，`PolicyDecisionService.explain_trace` 记录命中授权和继承路径；`/api/v1/assets/` 使用面只返回当前用户有效 connect 资产，admin 不绕过授权。详见 [`docs/site/asset-tree-authorization.md`](docs/site/asset-tree-authorization.md) 和 [`docs/api-contract.md`](docs/api-contract.md) 的 #t64 契约。
+
+### M1 RBAC 角色权限（#t63 已完成）
+
+Phase 6 #t63 已落地 `RoleModel` / `RoleBindingModel` / `UserGroupModel` / `ObjectPermissionModel`，覆盖 system / org 双 scope、内置角色（系统管理员 / 组织管理员 / 审计员 / 普通用户）、用户组与对象级权限。`RbacService.resolve_effective_rbac()` 在登录与 refresh 时将 `permissions`、`menu_permissions`、`group_ids` 写入 JWT，与既有 `require_permission` 和 `scoped_select` 路径兼容；无绑定时 superuser 回退管理员权限集，普通用户回退 MVP 权限集。管理 API 位于 `/api/v1/rbac/*`。详见 [`docs/site/rbac.md`](docs/site/rbac.md)。
 
 ### M3 真实连接通道（SSH / K8s 已走通）
 

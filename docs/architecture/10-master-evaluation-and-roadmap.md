@@ -6,18 +6,23 @@
 > 后续所有架构决策、任务拆分、验收标准均以本文档为依据。
 >
 > - 评估基线：jumpserver `dev` 分支提交 `77eb299`（2026-07-18 复核；v2.0 原基线为 `87f3b2b`）
-> - JanusGate 基线：`dev` 分支，提交 `ecc9edcff`（2026-07-25）
-> - 文档版本：v2.4
-> - 日期：2026-08-31（v2.4 修订；v2.3 为 2026-07-18）
-> - 编制：opencode-glm-5.2（v1.0-v2.0）、Claude Code（v2.1-v2.4）
+> - JanusGate 基线：`cursor/rbac-t63-93c0` 分支，提交 `812e5728f`（2026-09-01）
+> - 文档版本：v2.5
+> - 日期：2026-09-01（v2.5 修订；v2.4 为 2026-08-31）
+> - 编制：opencode-glm-5.2（v1.0-v2.0）、Claude Code（v2.1-v2.5）
 >
 > **产品定位边界（必读）**：JanusGate 是 **JumpServer 核心 PAM 能力的安全重构版**，
 > **不是 JumpServer 的全量替代**。明确排除图形应用发布（Applet / RemoteApp / VirtualApp）
 > 与商业插件体系（xpack），排除依据与代价见 §3.6.2。
 > 当前功能替代进度见 §14——**纳入目标的 19 个功能域中，0 个达到等价**。
 >
+> **v2.5 修订说明**：v2.4 之后 Phase 6 M1 **#t63 RBAC** 已落地——`RoleModel` / `RoleBindingModel` /
+> `UserGroupModel` / `ObjectPermissionModel`、内置角色、`RbacService` JWT 权限解析与管理 API
+> `/api/v1/rbac/*`。本次修订回写 §4.2、§11.4 #t63 任务行、§11.4.4 M1 里程碑、§14.2/#14.3/#14.4
+> 完成度矩阵，并将 M1 下一优先级调整为 **#t65 登录/资产登录/连接方式 ACL**。
+>
 > **v2.4 修订说明**：v2.3 之后 Phase 6 已落地 M0 全部三项（#t60/#t61/#t62）、M3 的 #t69 与 #t72，
-> 以及 M1 #t65 的命令过滤 ACL、数据脱敏规则、租户 scope 持久化加载，以及 SSH/K8s/PTY 执行前守卫（QA SHIP）。本次修订按实际代码状态回写
+> 以及 M1 #t65 的命令过滤 ACL、数据脱敏规则、租户 scope 持久化加载，以及 SSH/K8s/PTY 执行前守卫（QA SHIP）。v2.4 按实际代码状态回写
 > §2 阶段表、§11.4 任务表、§11.4.4 里程碑表与 §14 完成度矩阵。**#t69 作为全局单点关键路径已解除**（见 §14.4）。
 
 ---
@@ -326,6 +331,7 @@ JumpServer 上游在 2026-06-26 → 07-01 期间进行了重大技术栈升级�
 | **Credential Vault** | `vault/provider.py` | 94 | AES-GCM(32字节 key + 12字节 nonce + secret_id 作 AAD)、revoke/rotate |
 | **Session Gateway** | `api/sessions/service.py` | 634 | 会话创建、策略校验、短期 connection token、状态流转、grant 绑定 |
 | **Workflow/JIT** | `api/workflows/service.py` + `workflows/repository.py` + `models/workflow.py` | 1590 | JIT 申请/审批/Grant 状态机、SQLAlchemy 持久化、防自审批、grant revoke 断连 |
+| **RBAC** | `models/rbac.py` + `policy/rbac.py` + `api/rbac.py` | — | #t63：角色/绑定/用户组/对象级权限、内置角色、JWT 权限解析、`/api/v1/rbac/*` 管理 API |
 | **Audit/SIEM** | `api/audits/service.py` | 171 | append-only sequence/hash chain、SIEM 投递、metadata 脱敏 |
 | **CI/CD** | `.github/workflows/ci.yml` | — | ruff + mypy + pytest + bandit + pip-audit |
 | **部署** | `Dockerfile` + `deploy/helm/` | — | Docker/Compose/Helm，existingSecret 边界 |
@@ -362,6 +368,7 @@ JumpServer 上游在 2026-06-26 → 07-01 期间进行了重大技术栈升级�
 12. **运行时安全**：Phase 5 #t56 已启动 supply-chain security foundation：CI 通过 Trivy 对仓库文件系统执行 high/critical vulnerability gate；release tag 镜像推送后为 digest 生成 SPDX JSON SBOM artifact，并通过 GitHub OIDC + Cosign keyless signing 对 backend 镜像 digest 签名；`scripts/phase5-supply-chain-security-smoke.sh` 校验 CI wiring。当前已补 runtime monitoring smoke foundation，`scripts/phase5-runtime-monitoring-smoke.sh` 校验 Compose/Helm 运行时加固、Prometheus `/metrics` 回归契约和 `deploy/monitoring/phase5-runtime-alerts.yaml` 告警规则基线；当前告警覆盖高 5xx、p95 延迟和 metrics 缺失；`docs/site/fixtures/runtime-alert-evidence.json` 已补 runtime alert evidence manifest，固定 Prometheus 规则校验、Alertmanager route drill、receiver owner、通知结果、ack owner、升级联系人与 receiver token/webhook payload 脱敏边界，并随 `scripts/build-docs-site.sh dist/docs-site` 发布且由 `scripts/phase5-runtime-monitoring-smoke.sh` 校验；真实 Alertmanager 接入和目标环境告警演练仍待后续切片
 13. **版本发布与回滚**：Phase 5 #t57 已启动 release readiness foundation，`scripts/phase5-release-readiness-smoke.sh` 校验后端包版本、FastAPI metadata、`/health`、Helm chart/appVersion/image tag 的语义版本一致性，并确认 release tag pipeline、Alembic 迁移检查点、迁移前备份要求和 `helm rollback` runbook 文档被 CI 门禁覆盖；真实生产发布演练、破坏性迁移演练和数据回滚恢复证据仍待后续切片
 14. **License / Edition 边界**：Phase 5 #t58 已启动后端 feature flag 与 license 摘要 foundation，并已在前端 `/settings` 接入 License / Edition 摘要和最小 License lifecycle 激活表单：默认 community edition 启用基础能力；enterprise 配置必须携带验签通过且未过期的 license 才启用声明的 enterprise feature，缺失、非法、过期或签名不匹配时 fail-closed 回退 community；当前支持 HMAC-SHA256、离线 Ed25519 公钥验签与 `external-http` 外部商业授权服务验证 foundation，部署环境不需要保存签名私钥；外部验证只向 HTTPS validation endpoint 发送 opaque license key，service token 仅从环境注入，不写入 DB；`GET /api/v1/admin/license-summary` 仅允许 admin 读取 configured/effective edition、license 状态和 feature 列表，不返回 license key、签名 secret、公钥、validation token 或原始 payload；`POST /api/v1/admin/license-config` 已提供 admin-only 持久化配置 foundation，summary 优先读取 DB 中的激活配置，无记录时回退环境变量，响应仍只返回脱敏摘要；前端可提交 configured edition、verifier、license key、signing secret 或 public key，并支持选择 `external-http` verifier；`external-http` 只提交 opaque license key，validation endpoint 与 service token 仍只从环境读取；页面只展示提交后的脱敏摘要，不回显 license key、签名 secret、公钥或原始 payload；成功写入 license 配置会追加 `admin.license_config.updated` 审计事件，metadata 只保存版本、状态、verifier、密钥材料是否已配置和启用 feature 摘要，不保存商业授权密钥材料；`docs/site/fixtures/license-operations-evidence.json` 已固定 external-http 授权服务 SLA、timeout budget、fail-closed drill、目标环境、升级联系人、key custody owner、rotation cadence 与 revocation process 证据字段，并明确不得归档 license key、signing secret、validation token、私钥或原始授权 payload。真实目标环境联调仍待后续切片。
+15. **RBAC 角色权限**：Phase 6 #t63 已落地 `RoleModel` / `RoleBindingModel` / `UserGroupModel` / `ObjectPermissionModel`（Alembic `d3f1a2b4c5e6`），覆盖 system / org 双 scope 与四类内置角色（`system_admin` / `org_admin` / `auditor` / `user`）；`RbacService.resolve_effective_rbac()` 在登录与 refresh 时将 `permissions`、`menu_permissions`、`group_ids` 写入 JWT，与既有 `require_permission` / `scoped_select` 路径兼容；管理 API 位于 `/api/v1/rbac/*`，全部查询经 `scoped_select()` 租户收敛。仍待：前端 RBAC 管理页与 `menu_permissions` 导航接入；全 API 路由从硬编码 `admin` 字符串渐进迁移到角色绑定（登录签发已走 RBAC 解析）。详见 `docs/site/rbac.md`。
 
 ---
 
@@ -384,7 +391,7 @@ JumpServer 上游在 2026-06-26 → 07-01 期间进行了重大技术栈升级�
 | **覆盖** | §3.6.1 中 19 个核心 PAM 功能域（身份、RBAC、资产授权、ACL、账号治理、会话网关、审计、工单、通知、作业、K8s 纳管等） |
 | **排除** | 图形应用发布（Applet / RemoteApp / VirtualApp）、商业插件体系（xpack）——见 §3.6.2 |
 | **超越** | 策略决策 + explain、JIT 即时权限、审计链式哈希 + WORM、连接器零信任、envelope 加密——JumpServer 不具备（§3.5） |
-| **当前进度** | **19 个纳入目标的功能域中 0 个达到等价**，17 个部分实现、2 个未开始（§14.3） |
+| **当前进度** | **19 个纳入目标的功能域中 0 个达到等价**，18 个部分实现、1 个未开始（§14.3） |
 
 **排除项的实际影响**：依赖「把 Windows 图形客户端（如 Navicat、SSMS、专有工控软件）以单窗口形式发布给用户并录屏」的场景，JanusGate 不覆盖。
 需要区分的是——**Windows RDP 直连、数据库访问、K8s 容器纳管三项均不受影响**，它们是与 Applet 并列的独立路径（§3.6.2）。
@@ -828,7 +835,7 @@ User ──┬── WorkflowRequest ──── JitGrant
 
 | 任务 ID | 任务 | Owner | 范围 | 优先级 |
 |---------|------|-------|------|--------|
-| **#t63** | RBAC 角色与权限体系 | architect + backend | `Role` / `RoleBinding` 模型，system / org 双 scope；对象级 `Permission`；内置角色（系统管理员 / 组织管理员 / 审计员 / 普通用户）；菜单权限；与 §4 现有 `admin` / `workflow:admin` 字符串判断的迁移路径。**约束**：单一角色模型，禁止 edition 条件分支（对应关闭 P1#11） | 高 |
+| **#t63** | RBAC 角色与权限体系 | architect + backend | **✅ 已完成**：`RoleModel` / `RoleBindingModel` / `UserGroupModel` / `ObjectPermissionModel`（迁移 `d3f1a2b4c5e6`）；system / org 双 scope；内置角色 `system_admin` / `org_admin` / `auditor` / `user`；`RbacService.resolve_effective_rbac()` 在登录与 refresh 时将 `permissions` / `menu_permissions` / `group_ids` 写入 JWT；管理 API `/api/v1/rbac/*`（角色、绑定、用户组、对象级权限、`/me/effective`）；全部查询经 `scoped_select()` 租户收敛，跨租户 404。对象级 `ObjectPermissionModel` 基础已落地，完整审批工单联调待 #t74。**仍待**：前端 RBAC 管理页与 `menu_permissions` 导航接入；全 API 路由从硬编码 `admin` 字符串渐进迁移到角色绑定。详见 `docs/site/rbac.md`。 | 高 |
 | **#t64** | 资产树与资产授权 | backend | **✅ 已完成**：`NodeModel` 树模型含唯一租户根、祖先链与 `Asset.node_id` 全量挂载映射；`AssetPermissionModel` 覆盖用户/用户组 × 资产/节点 × 账号 × 协议 × 动作 × 生效期 × `from_ticket`；节点继承、未分组资产、过期授权、用户组 `group_ids` 上下文和 `PolicyDecisionService.explain_trace` 已接线。所有授权查询强制走租户 scope helper，根节点不授权/不挂资产/不可删，跨租户管理请求 404。 | 高 |
 | **#t65** | ACL 访问控制体系 | architect + backend + security | ACL 基类：优先级 1-100（小者优先）+ 动作 + 复核人；派生登录 ACL、资产登录 ACL（IP 段 / 时间段规则）、连接方式 ACL、命令过滤 ACL + 命令组（命令 / 正则两类）、数据脱敏规则。动作覆盖 `reject` / `accept` / `review` / `warning` / `notice` / `notify_and_warn` / `change_secret`；`face_verify` / `face_online` 不做。**命令复核触发工单需与 #t74 联调**。**约束**：ACL 判定统一进 PolicyDecisionService，不得旁路。**当前进度（部分完成）**：命令过滤 ACL + 命令组已完成——`CommandGroupModel`（字面命令按词边界 / 正则两类）与 `CommandFilterAclModel`（BaseACL：优先级 1-100 小者优先 + 动作 + 复核人 + subject/asset/account/命令组 JSON 选择器），迁移 `b75f09654bda`；`PolicyDecisionService.evaluate_command` 已落地，语义为**已授权会话之上的 deny-overlay**——与会话级 deny-by-default 相反，无 ACL 命中时默认放行（否则每条命令都需显式 accept，不可运维），按优先级升序取首个命中者，动作映射 reject=deny / review=review（带复核人）/ warning|notice|notify_and_warn=allow（带 obligation），非法正则安全跳过不打断会话。数据脱敏规则已完成——`DataMaskingRuleModel`（regex/keyword 匹配、full/partial 打码、前后缀保留），迁移 `4eb764da4aab`；`PolicyDecisionService.mask` 语义为**转换而非决策**，故**累计应用**全部命中规则而非首个即止，partial 在值过短时整体打码不泄露原值。`app/policy/repository.py` 的 `AclRepository` + `build_tenant_policy_service` 已提供经 `scoped_select` 的租户 scope 持久化加载（同时提前落实 #t64 的 scope helper 约束）。管理 CRUD 已落地（仅命令过滤 ACL 与数据脱敏规则两类，跨租户 404）。执行前守卫已接线：`CommandPolicyGuard` 在 SSH exec / SSH PTY / K8s exec **落到远端之前**调用 `evaluate_command`；生产组装经 `AclRepository` / `build_tenant_policy_service` 按会话租户加载规则；无 ACL overlay 放行；库连不上 fail-closed（`UnavailablePolicyStore` / `COMMAND_POLICY_STORE_UNAVAILABLE`）并写 #t61，命令不落远端。`DENY` 与 `REVIEW`（#t74 前按 DENY）均阻断远程并审计。入库路径同样 evaluate + mask，拒绝不落库。**仍待后续切片**：登录 ACL、资产登录 ACL（IP 段 / 时间段规则，可复用 #t48 DSL 已有的 `context_ip_in_cidr` / `context_time_between`）、连接方式 ACL | 高 |
 
@@ -889,11 +896,11 @@ User ──┬── WorkflowRequest ──── JitGrant
 
 #### 11.4.4 Phase 6 里程碑建议
 
-| 里程碑 | 周期 | 交付 | 状态（v2.4） | 说明 |
+| 里程碑 | 周期 | 交付 | 状态（v2.5） | 说明 |
 |--------|------|------|--------------|------|
 | M0：前置阻塞项 | 1-2 周 | #t60 + #t61 + #t62 | ✅ **3/3 完成** | 必须最先完成，否则后续无迁移与回滚路径 |
 | M3-预研：单协议通道验证 | 1-2 周 | #t69 技术切片 | ✅ **完成** | **与 M1 并行启动**，尽早暴露最高技术风险 |
-| M1：授权与访问控制内核 | 4-6 周 | #t63 + #t64 + #t65 | 🟡 #t64 已完成；#t65 命令过滤+脱敏+接线已 SHIP（登录 ACL 未做）；#t63 未开始 | 差距最大，优先级最高 |
+| M1：授权与访问控制内核 | 4-6 周 | #t63 + #t64 + #t65 | 🟡 **#t63/#t64 已完成**；#t65 命令过滤+脱敏+接线已 SHIP（登录/资产登录/连接方式 ACL 未做） | 差距最大；下一刀 **#t65 剩余 ACL** |
 | M2：资产与协议广度 | 3-4 周 | #t66 + #t67 + #t68 | ⬜ 未开始 | 依赖 M1 授权模型 |
 | M3：真实连接通道 | 6-8 周 | #t69 + #t70 + #t71 + #t72 | 🟡 #t69/#t72 完成；#t70/#t71 未开始 | 风险最高，#t70 图形通道为其中最重 |
 | M4：账号自动化 | 3-4 周 | #t73 | ⬜ 未开始 | 依赖 #t69 SSH 通道（前置已满足） |
@@ -902,9 +909,8 @@ User ──┬── WorkflowRequest ──── JitGrant
 
 > **周期为规模估算而非承诺**，未考虑团队规模与并行度。M3 的估算不确定性最大，建议在预研切片完成后重估。
 
-> **v2.4 排期修订**：M3 预研切片（#t69）已完成并解除全局单点关键路径，M0 三项前置阻塞项全部关闭。
-> M3 剩余两项性质已分化——#t71 的 #t65 脱敏依赖已解除，剩协议实现难度；#t70 需外部图形基建，建议独立立项（见其任务行）。
-> 因此后续排序建议为：**#t63 RBAC → #t65 登录/资产登录/连接方式 ACL**（#t64 资产授权、#t65 命令过滤/脱敏接线已 SHIP），而非按里程碑编号顺序推进。
+> **v2.5 排期修订**：#t63 RBAC 已 SHIP，M1 三项中 #t63/#t64 完成、#t65 命令过滤/脱敏已 SHIP。
+> 因此后续排序建议为：**#t65 登录/资产登录/连接方式 ACL**（可复用 #t48 DSL 的 `context_ip_in_cidr` / `context_time_between`），而非按里程碑编号顺序推进。
 
 #### 11.4.5 Phase 6 验收标准
 
@@ -1039,7 +1045,7 @@ P0 级 20 项逐项状态（评估口径：已有代码与测试可证明为关�
 | 状态 | 数量 | 条目 |
 |------|------|------|
 | ✅ 已关闭 | 17 | P0#1,2,3,4,5,6,8,9,10,11,18,19,20 + **P0#7,15,16,17（v2.4 新增，由 #t69 关闭）** |
-| 🟡 部分关闭 | 1 | P0#13（架构上无 SuperConnectionToken，但对象级授权待 #t63/#t74 补齐） |
+| 🟡 部分关闭 | 1 | P0#13（架构上无 SuperConnectionToken；`ObjectPermissionModel` 基础已落地，完整审批工单联调待 #t74） |
 | ⬜ 未关闭 | 2 | P0#12,14（依赖 SSO 接入 #t76） |
 
 **P0 完成度：17/20 ≈ 85%。**
@@ -1059,11 +1065,11 @@ P1（15 项）/ P2（18 项）：架构性问题（xpack 侵入、common 大杂�
 | # | JumpServer 功能域 | JanusGate 当前状态 | 缺口 | 纳入目标 | Phase |
 |---|------------------|-------------------|------|----------|-------|
 | 1 | 身份认证 | 🟡 密码 + MFA + API Key + JWT 生命周期管理 | LDAP / OIDC / OAuth2 / SAML2 / CAS / RADIUS / passkey；MFA 仅 TOTP，缺邮件 / SMS / RADIUS | 是 | P1 已有 → **P6 #t76** |
-| 2 | 用户与用户组 | 🟡 `User` 模型 | 用户组、认证源绑定、密码历史、用户偏好 | 是 | **P6 #t63、#t79** |
-| 3 | RBAC 角色权限 | ⬜ 仅 `admin` / `workflow:admin` 字符串判断 | 角色模型、角色绑定、system/org 双 scope、对象级权限、内置角色、菜单权限 | 是 | **P6 #t63** |
-| 4 | 组织 / 多租户 | 🟡 `Organization`/`Team`/`Project` + `scoped_select()` 租户过滤 + 只读页 | 组织级角色绑定、组织切换、跨组织数据边界回归 | 是 | P4 #t42 → **P6 #t63** |
+| 2 | 用户与用户组 | 🟡 `User` + `UserGroupModel`（#t63）+ JWT `group_ids` | 认证源绑定、密码历史、用户偏好 | 是 | **P6 #t63 部分完成、#t79** |
+| 3 | RBAC 角色权限 | 🟡 `RoleModel` / `RoleBindingModel` / 内置角色 / 对象级权限 / JWT 解析 / 管理 API | 前端 RBAC 管理页、`menu_permissions` 导航接入、全路由角色绑定迁移 | 是 | **P6 #t63 部分完成** |
+| 4 | 组织 / 多租户 | 🟡 `Organization`/`Team`/`Project` + `scoped_select()` + 只读页 + 绑定可选 `organization_id` | 组织切换、跨组织数据边界回归 | 是 | P4 #t42 → **P6 #t63 部分完成** |
 | 5 | 资产管理 | 🟡 `Asset` + `Platform` 基础模型 + SSRF 防护 | 资产类型分化、协议模型、资产树、网域网关、收藏、标签 | 是 | P1 已有 → **P6 #t66、#t67** |
-| 6 | 资产授权 | 🟡 `NodeModel` / `AssetPermissionModel` + 祖先继承 + 使用面过滤 + `scoped_select()` | RBAC 角色/用户组管理、更多资产类型与协议 | 是 | **P6 #t64 已完成，域能力仍为部分实现** |
+| 6 | 资产授权 | 🟡 `NodeModel` / `AssetPermissionModel` + 祖先继承 + 使用面过滤 + `scoped_select()` + `user_group` 主体 | 更多资产类型与协议 | 是 | **P6 #t64 已完成，域能力仍为部分实现** |
 | 7 | ACL 访问控制 | 🟡 命令过滤 ACL + 命令组 + 数据脱敏规则 + 租户 CRUD + SSH/K8s/PTY 执行前守卫，判定统一进 PolicyDecisionService | 登录 ACL、资产登录 ACL、连接方式 ACL | 是 | **P6 #t65** |
 | 8 | 账号与凭据 | 🟡 `Account` + `CredentialRotation` + envelope 加密 + 审批后 unwrap | 8 类账号自动化、账号模板、账号风险、真实云 KMS/HSM | 是 | P4 #t43/#t50 → **P6 #t73** |
 | 9 | 会话网关 | 🟡 会话生命周期 + 策略校验 + 短期 connection token + grant 绑定 + **会话已持久化** + SSH/K8s 真实通道 | RDP/VNC/DB 通道、会话共享与监控、端点路由；路由默认仍为 `NoopConnectorScheduler`，缺生产 resolver | 是 | P1 已有 → **P6 #t62、#t69-72、#t78** |
@@ -1088,13 +1094,13 @@ P1（15 项）/ P2（18 项）：架构性问题（xpack 侵入、common 大杂�
 | 状态 | 数量 | 占比 |
 |------|------|------|
 | ✅ 等价或超越 | 0 | 0% |
-| 🟡 部分实现 | 17 | 89% |
-| ⬜ 未开始 | 2 | 11% |
+| 🟡 部分实现 | 18 | 95% |
+| ⬜ 未开始 | 1 | 5% |
 
 **功能替代完成度：0/19 达到等价。**
 
-> **v2.4 计数订正**：v2.3 表内记为 13 🟡 / 6 ⬜，与矩阵逐行实际符号（14 🟡 / 5 ⬜）不符，属统计错误，本次一并订正。
-> v2.4 的 17 🟡 / 2 ⬜ 中，#7 ACL、#19 K8s 容器纳管和 #6 资产授权已纳入部分实现；剩余 2 个 ⬜ 为 #3 RBAC 角色权限、#16 标签体系。
+> **v2.5 计数修订**：#t63 RBAC 落地后，#2 用户与用户组、#3 RBAC、#4 组织/多租户由 ⬜/纯骨架升级为 🟡 部分实现；剩余唯一 ⬜ 为 #16 标签体系。
+> **v2.4 计数订正**：v2.3 表内记为 13 🟡 / 6 ⬜，与矩阵逐行实际符号（14 🟡 / 5 ⬜）不符，属统计错误，v2.4 已订正。
 
 这个数字需要正确解读，否则容易误判两个方向：
 
@@ -1106,13 +1112,14 @@ P1（15 项）/ P2（18 项）：架构性问题（xpack 侵入、common 大杂�
 
 | | 安全重构完成度 | 功能替代完成度 |
 |---|---|---|
-| 当前（v2.4） | P0 17/20 ≈ 85% | 0/19 等价，16/19 部分 |
+| 当前（v2.5） | P0 17/20 ≈ 85% | 0/19 等价，18/19 部分 |
+| v2.4 时 | P0 17/20 ≈ 85% | 0/19 等价，17/19 部分 |
 | v2.3 时 | P0 13/20 ≈ 65% | 0/19 等价，14/19 部分（原记 13，属统计错误） |
-| 剩余工作的性质 | 2 项 P0 全部依赖 #t76 SSO | 19 个域全部需要 Phase 6 推进 |
-| 原交汇点 | ~~**#t69 真实连接通道**~~——**已于 v2.4 解除**，4 项 P0 已关闭，SSH / K8s 运行时已走通 | |
+| 剩余工作的性质 | 2 项 P0 全部依赖 #t76 SSO | 19 个域仍需 Phase 6 推进至等价 |
+| 原交汇点 | ~~**#t69 真实连接通道**~~——**已于 v2.4 解除** | |
 
-**结论（v2.4 修订）**：v2.3 判定的全局单点关键路径 #t69 **已解除**。两条路线不再强耦合于同一任务——
-安全侧剩余 2 项 P0 全部收敛到 #t76 SSO；#t65 判定已接到 SSH/K8s/PTY 执行前。功能侧 #t64 资产树与 AssetPermission 已完成；下一刀是 #t63 RBAC（路由默认仍为 `NoopConnectorScheduler`，生产 resolver 属 #t69）。
+**结论（v2.5 修订）**：M1 授权内核中 #t63 RBAC 与 #t64 资产授权均已 SHIP；#t65 命令过滤/脱敏与执行前守卫已接线。
+下一刀为 **#t65 登录/资产登录/连接方式 ACL**。安全侧剩余 2 项 P0 全部收敛到 #t76 SSO。
 
 **表述边界仍然有效**：#t69 的走通只解除了运行时前提，功能替代完成度仍为 **0/19 等价**。
 在 §14.2 矩阵出现第一个 ✅ 之前，「功能替代进度过半」的表述依然不成立；
@@ -1222,3 +1229,4 @@ P1（15 项）/ P2（18 项）：架构性问题（xpack 侵入、common 大杂�
 | v2.1 | 2026-07-18 | 基于 jumpserver `77eb299` 重新做功能面对标：新增 §3.6 功能基线清单与对标决策、§11.4 Phase 6 任务分解（#t60-#t79）、§11.4.3 任务 DoD；修正 v2.0 只覆盖约 15% 功能面的范围缺口 |
 | v2.2 | 2026-07-18 | 文档更名为《JanusGate 安全重构版 PAM 产品设计与研发计划》；新增 §14 JumpServer 功能等价矩阵，将「安全重构完成度」与「功能替代完成度」拆分为两条独立计量口径，原附录顺延为 §15 |
 | **v2.3** | **2026-07-18** | **元信息与代码统计同步（Codex 复核意见）：头部基线更新为 jumpserver `77eb299` / JanusGate `abe3e9a6c`；§4.1 与 §15.2 代码统计全量重测（后端 81 文件 11,856 行、测试 44 文件 13,048 行、前端 25 文件 2,763 行）；新增 §5.1.1 替代关系边界声明与表述红线** |
+| **v2.5** | **2026-09-01** | **#t63 RBAC 落地后回写：§4.2/§4.4 增补 RBAC 模块；§11.4 #t63 标为已完成；§11.4.4 M1 里程碑与下一优先级调整为 #t65 剩余 ACL；§14.2/#14.3/#14.4 完成度矩阵更新（18 🟡 / 1 ⬜）** |
