@@ -120,6 +120,12 @@ async def test_account_api_creates_and_lists_accounts_with_tenant_scope(
         "project_id": "project-a",
         "status": "active",
         "rotation_policy": "manual",
+        "k8s_namespaces": [],
+        "k8s_service_account": "default",
+        "k8s_default_pod": "",
+        "k8s_default_container": None,
+        "k8s_use_short_lived_token": True,
+        "k8s_token_ttl_seconds": 3600,
     }
     assert "plaintext" not in created
     assert tenant_a_list.status_code == 200
