@@ -838,7 +838,7 @@ User ──┬── WorkflowRequest ──── JitGrant
 | 任务 ID | 任务 | Owner | 范围 | 优先级 |
 |---------|------|-------|------|--------|
 | **#t66** | 资产类型与协议模型 | backend | **✅ 已完成**：`ProtocolModel` 全局声明式目录（19 对标 + `gpt` 扩展位共 20 条）、`PlatformProtocolModel` 关联约束、`assets.asset_type` / `platforms.asset_type` 八类资产类型；`GET /api/v1/protocols/`、`GET /api/v1/protocols/by-asset-type/{asset_type}`、`GET /api/v1/assets/platforms/{platform_id}/protocols`；创建资产校验 Platform 资产类型一致；数据库驱动仅 `driver_module` 占位按需加载 | 高 |
-| **#t67** | 网域与网关中转 | backend | `Zone` + `Gateway` 模型；建连时按网域选取活跃网关并做连通性探测；连接侧走 SSH ProxyJump 语义。**约束**：网关凭据同样走 Vault，不得明文传递（对应关闭 P0#16） | 中 |
+| **#t67** | 网域与网关中转 | backend | **✅ 已完成**：`ZoneModel` + `ZoneGatewayModel`；资产 `zone_id` 挂载；`GET/POST /api/v1/zones/` 与网关登记/探测 API；建连时 `pick_random_active_gateway()` + TCP 探测；`AssetVaultSessionConnectionResolver` 解析 ProxyJump；`SshChannel.open(proxy_jump=)` 走 `asyncssh` tunnel 语义；网关凭据经 Vault 内存传递（关闭 P0#16） | 中 |
 | **#t68** | K8s 容器纳管（对标 + 安全增强） | backend + security | 云资产 + `k8s` 协议（端口 443、凭据类型限定 token、namespace 作用域）；审计化 kubectl 访问。**增强项（超出 JumpServer）**：集群 token 走 envelope encryption + 审批后 unwrap；支持对接 K8s TokenRequest API 签发短期 token 替代长期静态 token（对应关闭 P0#8 在容器场景的放大风险） | 高 |
 
 **M3：真实连接通道**（技术风险最高，建议独立立项并优先做技术验证）
@@ -895,7 +895,7 @@ User ──┬── WorkflowRequest ──── JitGrant
 | M0：前置阻塞项 | 1-2 周 | #t60 + #t61 + #t62 | ✅ **3/3 完成** | 必须最先完成，否则后续无迁移与回滚路径 |
 | M3-预研：单协议通道验证 | 1-2 周 | #t69 技术切片 | ✅ **完成** | **与 M1 并行启动**，尽早暴露最高技术风险 |
 | M1：授权与访问控制内核 | 4-6 周 | #t63 + #t64 + #t65 | ✅ **3/3 完成** | 差距最大，优先级最高 |
-| M2：资产与协议广度 | 3-4 周 | #t66 + #t67 + #t68 | 🟡 #t66 已完成；#t67/#t68 未开始 | 依赖 M1 授权模型 |
+| M2：资产与协议广度 | 3-4 周 | #t66 + #t67 + #t68 | 🟡 #t66/#t67 已完成；#t68 未开始 | 依赖 M1 授权模型 |
 | M3：真实连接通道 | 6-8 周 | #t69 + #t70 + #t71 + #t72 | 🟡 #t69/#t72 完成；#t70/#t71 未开始 | 风险最高，#t70 图形通道为其中最重 |
 | M4：账号自动化 | 3-4 周 | #t73 | ⬜ 未开始 | 依赖 #t69 SSH 通道（前置已满足） |
 | M5：工单、通知、认证源 | 4-5 周 | #t74 + #t75 + #t76 | ⬜ 未开始 | 可与 M3 并行 |
@@ -905,7 +905,7 @@ User ──┬── WorkflowRequest ──── JitGrant
 
 > **v2.4 排期修订**：M3 预研切片（#t69）已完成并解除全局单点关键路径，M0 三项前置阻塞项全部关闭；**#t69 生产 SessionConnectionResolver 已 QA SHIP**。
 > M3 剩余两项性质已分化——#t71 的 #t65 脱敏依赖已解除，剩协议实现难度；#t70 需外部图形基建，建议独立立项（见其任务行）。
-> 因此后续排序建议为：**#t67 网域与网关中转** 或 **#t68 K8s 容器纳管**（#t66 资产类型与协议已 SHIP），而非按里程碑编号顺序推进。
+> 因此后续排序建议为：**#t68 K8s 容器纳管**（#t66 资产类型与协议、#t67 网域与网关中转已 SHIP），而非按里程碑编号顺序推进。
 
 #### 11.4.5 Phase 6 验收标准
 
