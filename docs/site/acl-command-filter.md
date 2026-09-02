@@ -1,6 +1,6 @@
 # 命令过滤 ACL（#t65）
 
-#t65 落地 ACL 访问控制体系的首个派生类型——**命令过滤 ACL**，以及其引用的**命令组**。判定统一由 `backend/app/policy/decision.py` 的 `PolicyDecisionService.evaluate_command` 承担，**不在连接器或路由旁路**（#t65 约束）。本切片同时确立所有 ACL 共享的 BaseACL 语义（优先级 + 动作 + 复核人），后续登录 ACL / 资产登录 ACL / 连接方式 ACL / 数据脱敏规则复用同一范式。
+#t65 落地 ACL 访问控制体系的首个派生类型——**命令过滤 ACL**，以及其引用的**命令组**。判定统一由 `backend/app/policy/decision.py` 的 `PolicyDecisionService.evaluate_command` 承担，**不在连接器或路由旁路**（#t65 约束）。本切片同时确立所有 ACL 共享的 BaseACL 语义（优先级 + 动作 + 复核人）；数据脱敏规则与登录 / 资产登录 / 连接方式 overlay ACL 已复用同一判定入口。
 
 ## 数据模型（`backend/app/models/acl.py`）
 
@@ -49,7 +49,7 @@
 
 ## 已知边界
 
-- 管理 CRUD：**仅**命令过滤 ACL 与数据脱敏规则两类。`GET/POST/PATCH/DELETE /api/v1/command-filter-acls/`（命令组作为 ACL 内嵌写入面一并持久化）。跨租户 get/update/delete 一律 404 fail-closed。**登录 ACL / 资产登录 ACL / 连接方式 ACL 仍未做。**
+- 管理 CRUD：命令过滤 ACL 与数据脱敏规则见本页与[数据脱敏规则](acl-data-masking.md)；登录 / 资产登录 / 连接方式 overlay ACL 的 CRUD 已落地（跨租户 get/update/delete 一律 404 fail-closed）。`GET/POST/PATCH/DELETE /api/v1/command-filter-acls/`（命令组作为 ACL 内嵌写入面一并持久化）。
 - 执行前守卫：SSH exec、SSH PTY、K8s exec 落到远端之前走 `CommandPolicyGuard` → `PolicyDecisionService.evaluate_command`。`DENY` 与 `REVIEW`（#t74 前按 DENY）不落远程。生产组装按会话租户经 `AclRepository` / `build_tenant_policy_service` 加载规则；无 ACL 命中仍 overlay 放行。库连不上 fail-closed（`COMMAND_POLICY_STORE_UNAVAILABLE`），拒绝写 #t61，命令不落远端。
 - 入库：`session_recordings` 落库前同样 `evaluate_command` + `mask`。`DENY` / `REVIEW` / evaluate 失败 → 403、#t61（只存 `command_sha256`，不落明文），不持久化命令事件。
 - 命令复核触发工单需与 #t74 联调。命令过滤只作用于**语句/命令**粒度；数据库 SQL 语句级过滤与列级脱敏待 #t71。

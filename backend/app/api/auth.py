@@ -2,7 +2,7 @@
 from datetime import UTC, datetime
 from typing import Any, cast
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from redis.asyncio import Redis
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -15,6 +15,7 @@ from app.core.security import (
     create_refresh_token,
     decode_token,
 )
+from app.models.tenancy import DEFAULT_TENANT_TIMEZONE, Tenant
 from app.models.user import User
 from app.rbac.repository import ensure_default_user_binding, ensure_superuser_binding
 from app.rbac.resolver import RbacResolver
@@ -26,12 +27,15 @@ from app.schemas.auth import (
     TokenResponse,
     TwoFASetupResponse,
     TwoFAVerifyRequest,
+    UserDirectoryItem,
+    UserDirectoryListResponse,
     UserMeResponse,
 )
 from app.services.auth import AuthService
-from app.tenancy.scope import ActorScope
+from app.tenancy.scope import ActorScope, actor_scope_from_user, scoped_select
 
 router = APIRouter(prefix="/auth", tags=["认证"])
+users_router = APIRouter(tags=["用户"])
 
 MVP_CONSOLE_PERMISSIONS = ("assets:read", "sessions:connect")
 ADMIN_CONSOLE_PERMISSIONS = (
@@ -49,10 +53,16 @@ ADMIN_CONSOLE_PERMISSIONS = (
 
 
 @router.post("/login", response_model=TokenResponse)
-async def login(data: LoginRequest, db: AsyncSession = Depends(get_db)) -> TokenResponse:
+async def login(
+    data: LoginRequest,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+) -> TokenResponse:
     user = await AuthService.authenticate(db, data.username, data.password)
     if not user:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="用户名或密码错误")
+
+    await _enforce_login_acl(db, user, request)
 
     if user.totp_enabled:
         return TokenResponse(
@@ -70,6 +80,7 @@ async def login(data: LoginRequest, db: AsyncSession = Depends(get_db)) -> Token
 @router.post("/login/2fa", response_model=TokenResponse)
 async def login_2fa(
     data: Login2FARequest,
+    request: Request,
     db: AsyncSession = Depends(get_db),
     redis: Redis = Depends(get_redis),
 ) -> TokenResponse:
@@ -92,6 +103,7 @@ async def login_2fa(
         raise HTTPException(status_code=401, detail="用户不存在或已被禁用")
     if not await AuthService.verify_totp(db, user.id, data.totp_code):
         raise HTTPException(status_code=400, detail="TOTP 验证码错误")
+    await _enforce_login_acl(db, user, request)
     token_data = await _token_data_for_user(db, user, extra={"2fa_verified": True})
     return TokenResponse(
         access_token=create_access_token(token_data),
@@ -140,6 +152,16 @@ async def get_me(
     db_user = result.scalar_one_or_none()
     if not db_user:
         raise HTTPException(404, "用户不存在")
+    timezone = DEFAULT_TENANT_TIMEZONE
+    try:
+        tenant_id = str(getattr(db_user, "tenant_id", None) or user.get("tenant_id") or "default")
+        tenant = (
+            await db.execute(select(Tenant).where(Tenant.id == tenant_id))
+        ).scalar_one_or_none()
+        if tenant is not None and str(tenant.timezone or "").strip():
+            timezone = str(tenant.timezone)
+    except Exception:
+        timezone = DEFAULT_TENANT_TIMEZONE
     return UserMeResponse(
         id=db_user.id,
         username=db_user.username,
@@ -147,6 +169,8 @@ async def get_me(
         email=db_user.email,
         is_superuser=db_user.is_superuser,
         totp_enabled=db_user.totp_enabled,
+        permissions=list(user.get("permissions") or []),
+        timezone=timezone,
     )
 
 
@@ -207,6 +231,65 @@ async def create_api_key(
     db: AsyncSession = Depends(get_db),
 ) -> dict[str, Any]:
     return await AuthService.create_api_key(db, user["id"], data.name)
+
+
+
+@users_router.get("/users/", response_model=UserDirectoryListResponse)
+async def list_tenant_users(
+    db: AsyncSession = Depends(get_read_db),
+    user: dict[str, Any] = Depends(current_user),
+) -> UserDirectoryListResponse:
+    """租户用户目录：LoginACL 与资产授权「谁能连」共用。不含密码哈希。"""
+    _require_users_directory(user)
+    actor_scope = actor_scope_from_user(user)
+    result = await db.execute(
+        scoped_select(User, actor_scope)
+        .where(User.is_active.is_(True))
+        .order_by(User.username.asc(), User.id.asc())
+    )
+    users = list(result.scalars().all())
+    items = [
+        UserDirectoryItem(
+            id=item.id,
+            username=item.username,
+            display_name=item.display_name or "",
+        )
+        for item in users
+    ]
+    return UserDirectoryListResponse(items=items, total=len(items))
+
+
+def _require_users_directory(user: dict[str, Any]) -> None:
+    permissions = user.get("permissions", [])
+    if "admin" in permissions or "acl:read" in permissions or "assets:read" in permissions:
+        return
+    raise HTTPException(status_code=404, detail="USERS_NOT_FOUND")
+
+
+
+LOGIN_ACL_DENIED_COPY = "当前无法登录"
+
+
+async def _enforce_login_acl(
+    db: AsyncSession, user: User, request: Request | None = None
+) -> None:
+    """交互式登录 overlay。加载/判定失败 fail-closed。不作用于 API Key 路径。"""
+
+    del request  # LoginACL 无 IP 条件；保留 Request 以便后续 overlay 扩展。
+    from app.policy.repository import build_tenant_policy_service
+    from app.policy.schemas import PolicyDecision
+    from app.tenancy.scope import ActorScope
+
+    tenant_id = getattr(user, "tenant_id", None) or "default"
+    try:
+        service = await build_tenant_policy_service(
+            db, ActorScope(user_id=str(user.id), tenant_id=str(tenant_id))
+        )
+        decision = service.evaluate_login(str(user.id), str(tenant_id))
+    except Exception:
+        raise HTTPException(status_code=403, detail=LOGIN_ACL_DENIED_COPY) from None
+    if decision.decision == PolicyDecision.DENY:
+        raise HTTPException(status_code=403, detail=LOGIN_ACL_DENIED_COPY)
 
 
 def _coerce_timestamp(value: Any) -> datetime | None:

@@ -174,6 +174,10 @@ function installFetch() {
       return Response.json({ ...sshCertificate, status: 'revoked', revoke_reason: 'console revoked' });
     }
     if (url.endsWith('/health')) return Response.json({ status: 'ok', version: '0.1.0' });
+    if (url.endsWith('/api/v1/users/') && method === 'GET') return Response.json({ items: [], total: 0 });
+    if (url.endsWith('/api/v1/login-acls/')) return Response.json({ items: [], total: 0 });
+    if (url.endsWith('/api/v1/login-asset-acls/')) return Response.json({ items: [], total: 0 });
+    if (url.endsWith('/api/v1/connect-method-acls/')) return Response.json({ items: [], total: 0 });
     return Response.json(session);
   });
 }
@@ -350,6 +354,66 @@ describe('MVP pages', () => {
     await waitFor(() =>
       expect(fetchMock).toHaveBeenCalledWith('/api/v1/admin/license-summary', expect.any(Object))
     );
+    expect(await screen.findByText('登录 ACL')).toBeInTheDocument();
+    expect(screen.getByText('资产登录 ACL')).toBeInTheDocument();
+    expect(screen.getByText('连接方式 ACL')).toBeInTheDocument();
+    expect(screen.getByText('只限制从网页或客户端登录，用 API Key 访问不受影响。')).toBeInTheDocument();
+    expect(screen.queryByText('没有权限')).not.toBeInTheDocument();
+  });
+
+  it('hides overlay ACL lists without acl:read', async () => {
+    const fetchMock = installFetch();
+    vi.stubGlobal('fetch', async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.endsWith('/api/v1/auth/me')) {
+        return Response.json({
+          id: 2,
+          username: 'bob',
+          display_name: '普通用户',
+          email: 'bob@example.com',
+          is_superuser: false,
+          totp_enabled: false,
+          permissions: []
+        });
+      }
+      return fetchMock(input, init);
+    });
+    history.pushState(null, '', '/settings');
+    render(<App />);
+
+    expect(await screen.findByRole('heading', { name: '系统设置' })).toBeInTheDocument();
+    expect(await screen.findByText('运行时状态')).toBeInTheDocument();
+    expect(screen.queryByText('登录 ACL')).not.toBeInTheDocument();
+    expect(screen.queryByText('资产登录 ACL')).not.toBeInTheDocument();
+    expect(screen.queryByText('连接方式 ACL')).not.toBeInTheDocument();
+    expect(screen.queryByText('没有权限')).not.toBeInTheDocument();
+  });
+
+  it('shows overlay ACL lists with acl:read', async () => {
+    const fetchMock = installFetch();
+    vi.stubGlobal('fetch', async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.endsWith('/api/v1/auth/me')) {
+        return Response.json({
+          id: 3,
+          username: 'acl-reader',
+          display_name: 'ACL 只读',
+          email: 'acl@example.com',
+          is_superuser: false,
+          totp_enabled: false,
+          permissions: ['acl:read']
+        });
+      }
+      return fetchMock(input, init);
+    });
+    history.pushState(null, '', '/settings');
+    render(<App />);
+
+    expect(await screen.findByText('登录 ACL')).toBeInTheDocument();
+    expect(screen.getByText('资产登录 ACL')).toBeInTheDocument();
+    expect(screen.getByText('连接方式 ACL')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '新增' })).not.toBeInTheDocument();
+    expect(screen.queryByText('没有权限')).not.toBeInTheDocument();
   });
 
   it('activates a persisted license config without echoing secrets', async () => {

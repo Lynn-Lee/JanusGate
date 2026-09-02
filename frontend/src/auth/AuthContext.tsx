@@ -11,6 +11,7 @@ export type UserMe = {
   email: string;
   is_superuser: boolean;
   totp_enabled: boolean;
+  permissions?: string[];
 };
 
 type LoginResult = {

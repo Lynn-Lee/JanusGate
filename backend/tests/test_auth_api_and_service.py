@@ -99,6 +99,33 @@ def clear_dependency_overrides() -> None:
     app.dependency_overrides.clear()
 
 
+@pytest.fixture(autouse=True)
+def allow_login_overlay(monkeypatch: pytest.MonkeyPatch) -> None:
+    async def _allow(*_args: Any, **_kwargs: Any) -> None:
+        return None
+
+    monkeypatch.setattr(auth_api, "_enforce_login_acl", _allow)
+
+
+@pytest.fixture(autouse=True)
+def stub_token_data_for_fake_db(monkeypatch: pytest.MonkeyPatch) -> None:
+    async def _token_data(db: Any, user: User, *, extra: dict[str, Any] | None = None) -> dict[str, Any]:
+        del db
+        payload: dict[str, Any] = {
+            "sub": str(user.id),
+            "username": user.username,
+            "tenant_id": getattr(user, "tenant_id", None) or "default",
+            "permissions": list(auth_api.MVP_CONSOLE_PERMISSIONS),
+            "menu_permissions": [],
+            "role_ids": [],
+        }
+        if extra:
+            payload.update(extra)
+        return payload
+
+    monkeypatch.setattr(auth_api, "_token_data_for_user", _token_data)
+
+
 def install_db(fake_db: FakeDB) -> None:
     app.dependency_overrides[get_db] = lambda: fake_db
     app.dependency_overrides[get_read_db] = lambda: fake_db
@@ -283,7 +310,9 @@ def test_authenticated_profile_and_account_mutation_routes(monkeypatch: pytest.M
     monkeypatch.setattr(AuthService, "create_api_key", async_value({"key_id": "kid", "secret": "secret", "name": "ci"}))
 
     with TestClient(app) as client:
-        assert client.get("/api/v1/auth/me").json()["username"] == "alice"
+        me = client.get("/api/v1/auth/me").json()
+        assert me["username"] == "alice"
+        assert me["timezone"] == "Asia/Singapore"
         assert client.post("/api/v1/auth/2fa/setup").json()["secret"] == "SECRET"
         assert client.post("/api/v1/auth/2fa/verify", json={"totp_code": "123456"}).json()["status"] == "ok"
         assert client.post("/api/v1/auth/2fa/disable", json={"totp_code": "123456"}).json()["status"] == "ok"

@@ -64,10 +64,20 @@ def build_connection_token_store(
     raise ValueError("UNSUPPORTED_SESSION_CONNECTION_TOKEN_STORE")
 
 
+_OVERLAY_CONNECT_DENY_REASONS = frozenset(
+    {
+        "LOGIN_ASSET_ACL_REJECTED",
+        "CONNECT_METHOD_ACL_REJECTED",
+    }
+)
+
+
 def _raise_connect_denied(exc: PermissionError) -> NoReturn:
     reason = str(exc)
     if reason in _ASSET_CONNECT_DENY_REASONS:
         raise HTTPException(status_code=404, detail="资产不存在") from exc
+    if reason in _OVERLAY_CONNECT_DENY_REASONS:
+        raise HTTPException(status_code=403, detail="无法连接") from exc
     raise HTTPException(status_code=403, detail=reason) from exc
 
 

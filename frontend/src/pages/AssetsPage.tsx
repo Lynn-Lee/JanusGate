@@ -20,6 +20,7 @@ import type { DataNode } from 'antd/es/tree';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../auth/AuthContext';
 import { ErrorState, LoadingState } from '../components/StatusView';
+import { UserSelect } from '../components/UserSelect';
 import { getErrorMessage, useApiData, useApiMessage } from './pageUtils';
 import type {
   Asset,
@@ -607,7 +608,7 @@ function AddGrantModal({
           from_ticket?: string;
         }) => {
           const body = {
-            subject_id: values.subject_id,
+            subject_id: String(values.subject_id),
             subject_type: values.subject_type,
             expires_at: values.expires_at?.toISOString?.() ?? null,
             from_ticket: values.from_ticket?.trim() || null
@@ -628,8 +629,18 @@ function AddGrantModal({
         <Form.Item name="subject_type" label="主体类型" initialValue="user">
           <Select options={[{ value: 'user', label: '用户' }, { value: 'user_group', label: '用户组' }]} />
         </Form.Item>
-        <Form.Item name="subject_id" label="主体 ID" rules={[{ required: true, message: '请输入主体 ID' }]}>
-          <Input placeholder="用户或用户组 ID" />
+        <Form.Item noStyle shouldUpdate={(prev, next) => prev.subject_type !== next.subject_type}>
+          {({ getFieldValue }) =>
+            getFieldValue('subject_type') === 'user_group' ? (
+              <Form.Item name="subject_id" label="主体 ID" rules={[{ required: true, message: '请输入主体 ID' }]}>
+                <Input placeholder="用户组 ID" />
+              </Form.Item>
+            ) : (
+              <Form.Item name="subject_id" label="用户" rules={[{ required: true, message: '请选择用户' }]}>
+                <UserSelect />
+              </Form.Item>
+            )
+          }
         </Form.Item>
         <Form.Item name="expires_at" label="到期">
           <DatePicker showTime placeholder="长期" style={{ width: '100%' }} />

@@ -61,3 +61,16 @@ class UserMeResponse(BaseModel):
     email: str
     is_superuser: bool
     totp_enabled: bool
+    permissions: list[str] = Field(default_factory=list)
+    timezone: str = "Asia/Singapore"
+
+
+class UserDirectoryItem(BaseModel):
+    id: int
+    username: str
+    display_name: str = ""
+
+
+class UserDirectoryListResponse(BaseModel):
+    items: list[UserDirectoryItem]
+    total: int

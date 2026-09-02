@@ -69,3 +69,27 @@ class Project(Base):
 
     organization: Mapped[Organization] = relationship(back_populates="projects")
     team: Mapped[Team | None] = relationship()
+
+
+DEFAULT_TENANT_TIMEZONE = "Asia/Singapore"
+
+
+class Tenant(Base):
+    """Per-tenant settings. ``id`` is the tenant_id string used on User/Organization."""
+
+    __tablename__ = "tenants"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    timezone: Mapped[str] = mapped_column(
+        String(64),
+        nullable=False,
+        default=DEFAULT_TENANT_TIMEZONE,
+        server_default=DEFAULT_TENANT_TIMEZONE,
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+

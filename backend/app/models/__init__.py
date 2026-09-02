@@ -2,7 +2,10 @@ from app.models.account import Account, CredentialRotation
 from app.models.acl import (
     CommandFilterAclModel,
     CommandGroupModel,
+    ConnectMethodAclModel,
     DataMaskingRuleModel,
+    LoginAclModel,
+    LoginAssetAclModel,
 )
 from app.models.admin import LicenseConfigurationModel
 from app.models.asset import Asset, Platform
@@ -14,7 +17,7 @@ from app.models.rbac import RoleBindingModel, RoleModel, RoleObjectPermissionMod
 from app.models.session import SessionModel
 from app.models.session_recording import SessionCommandEvent, SessionRecording
 from app.models.ssh_ca import SshCertificate, SshCertificateAuthority
-from app.models.tenancy import Organization, Project, Team
+from app.models.tenancy import Organization, Project, Team, Tenant
 from app.models.user import ApiKey, User
 from app.models.vault import SecretRecordModel
 from app.models.webhook import NotificationDelivery, NotificationRule, WebhookEndpoint
@@ -30,11 +33,14 @@ __all__ = [
     "AutomationJobRun",
     "CommandFilterAclModel",
     "CommandGroupModel",
+    "ConnectMethodAclModel",
     "Connector",
     "DataMaskingRuleModel",
     "CredentialRotation",
     "JitGrantModel",
     "LicenseConfigurationModel",
+    "LoginAclModel",
+    "LoginAssetAclModel",
     "NotificationRule",
     "NodeModel",
     "NotificationDelivery",
@@ -51,6 +57,7 @@ __all__ = [
     "SshCertificate",
     "SshCertificateAuthority",
     "Team",
+    "Tenant",
     "User",
     "WebhookEndpoint",
     "WorkflowRequestModel",

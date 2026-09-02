@@ -11,6 +11,7 @@ from app.models.acl import (
     CommandGroupMatchType,
     DataMaskingMatchType,
     DataMaskingMethod,
+    OverlayAclAction,
 )
 
 
@@ -129,3 +130,117 @@ class DataMaskingRuleResponse(BaseModel):
 class DataMaskingRuleListResponse(BaseModel):
     items: list[DataMaskingRuleResponse]
     total: int
+
+
+OVERLAY_PROTOCOLS = ("ssh", "k8s", "sftp")
+OVERLAY_RESOURCE_TYPES = ("node", "asset")
+
+
+class LoginAclCreate(BaseModel):
+    name: str = Field(default="", max_length=128)
+    priority: int = Field(default=50, ge=1, le=100)
+    action: OverlayAclAction = OverlayAclAction.REJECT
+    subject_id: str = Field(min_length=1, max_length=64)
+
+
+class LoginAclUpdate(BaseModel):
+    name: str | None = Field(default=None, min_length=1, max_length=128)
+    priority: int | None = Field(default=None, ge=1, le=100)
+    action: OverlayAclAction | None = None
+    subject_id: str | None = Field(default=None, min_length=1, max_length=64)
+
+
+class LoginAclResponse(BaseModel):
+    id: str
+    tenant_id: str
+    name: str
+    priority: int
+    action: OverlayAclAction
+    subject_id: str
+    subject_username: str = ""
+    created_at: datetime | None
+    updated_at: datetime | None
+
+
+class LoginAclListResponse(BaseModel):
+    items: list[LoginAclResponse]
+    total: int
+
+
+class LoginAssetAclCreate(BaseModel):
+    name: str = Field(default="", max_length=128)
+    priority: int = Field(default=50, ge=1, le=100)
+    action: OverlayAclAction = OverlayAclAction.REJECT
+    resource_type: str = Field(min_length=1, max_length=16)
+    resource_id: str = Field(min_length=1, max_length=64)
+    ip_cidr: str | None = Field(default=None, max_length=64)
+    time_start: str | None = Field(default=None, max_length=8)
+    time_end: str | None = Field(default=None, max_length=8)
+
+
+class LoginAssetAclUpdate(BaseModel):
+    name: str | None = Field(default=None, min_length=1, max_length=128)
+    priority: int | None = Field(default=None, ge=1, le=100)
+    action: OverlayAclAction | None = None
+    resource_type: str | None = Field(default=None, min_length=1, max_length=16)
+    resource_id: str | None = Field(default=None, min_length=1, max_length=64)
+    ip_cidr: str | None = Field(default=None, max_length=64)
+    time_start: str | None = Field(default=None, max_length=8)
+    time_end: str | None = Field(default=None, max_length=8)
+
+
+class LoginAssetAclResponse(BaseModel):
+    id: str
+    tenant_id: str
+    name: str
+    priority: int
+    action: OverlayAclAction
+    resource_type: str
+    resource_id: str
+    ip_cidr: str | None
+    time_start: str | None
+    time_end: str | None
+    created_at: datetime | None
+    updated_at: datetime | None
+
+
+class LoginAssetAclListResponse(BaseModel):
+    items: list[LoginAssetAclResponse]
+    total: int
+
+
+class ConnectMethodAclCreate(BaseModel):
+    name: str = Field(default="", max_length=128)
+    priority: int = Field(default=50, ge=1, le=100)
+    action: OverlayAclAction = OverlayAclAction.REJECT
+    protocol: str = Field(min_length=1, max_length=32)
+    resource_type: str | None = Field(default=None, max_length=16)
+    resource_id: str | None = Field(default=None, max_length=64)
+
+
+class ConnectMethodAclUpdate(BaseModel):
+    name: str | None = Field(default=None, min_length=1, max_length=128)
+    priority: int | None = Field(default=None, ge=1, le=100)
+    action: OverlayAclAction | None = None
+    protocol: str | None = Field(default=None, min_length=1, max_length=32)
+    resource_type: str | None = Field(default=None, max_length=16)
+    resource_id: str | None = Field(default=None, max_length=64)
+
+
+class ConnectMethodAclResponse(BaseModel):
+    id: str
+    tenant_id: str
+    name: str
+    priority: int
+    action: OverlayAclAction
+    protocol: str
+    resource_type: str | None
+    resource_id: str | None
+    created_at: datetime | None
+    updated_at: datetime | None
+
+
+class ConnectMethodAclListResponse(BaseModel):
+    items: list[ConnectMethodAclResponse]
+    total: int
+

@@ -157,3 +157,80 @@ class DataMaskingRuleModel(Base):
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )
+
+
+class OverlayAclAction(StrEnum):
+    """登录 / 资产登录 / 连接方式 overlay ACL 的动作：仅拒绝或放行。"""
+
+    REJECT = "reject"
+    ACCEPT = "accept"
+
+
+class LoginAclModel(Base):
+    """登录 ACL：只限制交互式登录（网页 / 客户端），不作用于 API Key。"""
+
+    __tablename__ = "login_acls"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    tenant_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    name: Mapped[str] = mapped_column(String(128), nullable=False)
+    priority: Mapped[int] = mapped_column(Integer, nullable=False, default=50)
+    action: Mapped[OverlayAclAction] = mapped_column(
+        String(16), nullable=False, default=OverlayAclAction.REJECT
+    )
+    subject_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+
+class LoginAssetAclModel(Base):
+    """资产登录 ACL：叠加在 AssetPermission 之后，按节点/资产 + 可选 IP/时段拒绝连接。"""
+
+    __tablename__ = "login_asset_acls"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    tenant_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    name: Mapped[str] = mapped_column(String(128), nullable=False)
+    priority: Mapped[int] = mapped_column(Integer, nullable=False, default=50)
+    action: Mapped[OverlayAclAction] = mapped_column(
+        String(16), nullable=False, default=OverlayAclAction.REJECT
+    )
+    resource_type: Mapped[str] = mapped_column(String(16), nullable=False)
+    resource_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    ip_cidr: Mapped[str | None] = mapped_column(String(64), nullable=True, default=None)
+    time_start: Mapped[str | None] = mapped_column(String(8), nullable=True, default=None)
+    time_end: Mapped[str | None] = mapped_column(String(8), nullable=True, default=None)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+
+class ConnectMethodAclModel(Base):
+    """连接方式 ACL：按协议限制连接；可作用于节点、资产或全部资产。"""
+
+    __tablename__ = "connect_method_acls"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    tenant_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    name: Mapped[str] = mapped_column(String(128), nullable=False)
+    priority: Mapped[int] = mapped_column(Integer, nullable=False, default=50)
+    action: Mapped[OverlayAclAction] = mapped_column(
+        String(16), nullable=False, default=OverlayAclAction.REJECT
+    )
+    protocol: Mapped[str] = mapped_column(String(32), nullable=False)
+    resource_type: Mapped[str | None] = mapped_column(String(16), nullable=True, default=None)
+    resource_id: Mapped[str | None] = mapped_column(String(64), nullable=True, default=None)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+

@@ -10,21 +10,28 @@ import re
 from datetime import UTC, datetime, time
 from typing import Any
 from uuid import uuid4
+from zoneinfo import ZoneInfo
 
 from app.models.acl import (
     CommandFilterAclModel,
     CommandFilterAction,
     CommandGroupMatchType,
     CommandGroupModel,
+    ConnectMethodAclModel,
     DataMaskingMatchType,
     DataMaskingMethod,
     DataMaskingRuleModel,
+    LoginAclModel,
+    LoginAssetAclModel,
+    OverlayAclAction,
 )
 from app.models.asset_tree import AssetPermissionModel, NodeModel
+from app.models.tenancy import DEFAULT_TENANT_TIMEZONE
 from app.models.workflow import ApprovalPolicyModel
 from app.policy.asset_permission import (
     CONNECT_ACTIONS,
     find_effective_connect_permission,
+    node_covers_asset_node,
     request_account_protocol,
 )
 from app.policy.schemas import (
@@ -68,6 +75,10 @@ class PolicyDecisionService:
         asset_permissions: list[AssetPermissionModel] | None = None,
         nodes: list[NodeModel] | None = None,
         asset_node_ids: dict[str, str | None] | None = None,
+        login_acls: list[LoginAclModel] | None = None,
+        login_asset_acls: list[LoginAssetAclModel] | None = None,
+        connect_method_acls: list[ConnectMethodAclModel] | None = None,
+        tenant_timezone: str = DEFAULT_TENANT_TIMEZONE,
     ) -> None:
         self._rules = rules or []
         self._approval_policies = approval_policies or []
@@ -78,6 +89,11 @@ class PolicyDecisionService:
         self._asset_permissions = asset_permissions
         self._nodes = nodes or []
         self._asset_node_ids = asset_node_ids or {}
+        self._login_acls = login_acls or []
+        self._login_asset_acls = login_asset_acls or []
+        self._connect_method_acls = connect_method_acls or []
+        timezone = (tenant_timezone or DEFAULT_TENANT_TIMEZONE).strip()
+        self._tenant_timezone = timezone or DEFAULT_TENANT_TIMEZONE
 
     def evaluate(self, request: PolicyDecisionRequest) -> PolicyDecisionResponse:
         trace: list[str] = [
@@ -143,6 +159,41 @@ class PolicyDecisionService:
 
         trace.append("no_matching_policy")
         return self._deny("NO_MATCHING_POLICY", trace)
+
+    def evaluate_login(self, subject_id: str, tenant_id: str) -> PolicyDecisionResponse:
+        """交互式登录 overlay：无命中默认放行；首个匹配规则的 accept/reject 即止。"""
+
+        trace: list[str] = [
+            f"subject=user:{subject_id}",
+            "action=login.interactive",
+            f"tenant={tenant_id}",
+        ]
+        candidates = sorted(
+            (acl for acl in self._login_acls if acl.tenant_id == tenant_id),
+            key=lambda acl: (acl.priority, acl.id),
+        )
+        for acl in candidates:
+            if str(acl.subject_id) != str(subject_id):
+                trace.append(f"login_acl:{acl.id}:subject_not_matched")
+                continue
+            trace.append(f"login_acl:{acl.id}:matched")
+            if str(acl.action) == OverlayAclAction.REJECT:
+                return self._deny("LOGIN_ACL_REJECTED", trace)
+            return self._response(
+                decision=PolicyDecision.ALLOW,
+                reason_code="LOGIN_ACL_ACCEPTED",
+                trace=trace,
+                obligations={"matched_acl_id": acl.id},
+                ttl_seconds=0,
+            )
+        trace.append("no_matching_login_acl")
+        return self._response(
+            decision=PolicyDecision.ALLOW,
+            reason_code="LOGIN_ACL_NO_MATCH",
+            trace=trace,
+            obligations={},
+            ttl_seconds=0,
+        )
 
     def evaluate_command(self, request: CommandDecisionRequest) -> CommandDecisionResponse:
         """评估会话内单条命令是否被命令过滤 ACL 拦截 / 需复核。
@@ -907,6 +958,32 @@ class PolicyDecisionService:
             trace.append(f"permission:{permission.id}:direct")
         else:
             trace.append(f"permission:{permission.id}:inherited:{path}")
+
+        overlay = self._evaluate_overlay_layer(
+            acls=self._login_asset_acls,
+            request=request,
+            nodes_by_id=nodes_by_id,
+            trace=trace,
+            match=self._login_asset_acl_matches,
+            label="login_asset_acl",
+            reject_code="LOGIN_ASSET_ACL_REJECTED",
+            accept_code="LOGIN_ASSET_ACL_ACCEPTED",
+        )
+        if overlay is not None:
+            return overlay
+        overlay = self._evaluate_overlay_layer(
+            acls=self._connect_method_acls,
+            request=request,
+            nodes_by_id=nodes_by_id,
+            trace=trace,
+            match=self._connect_method_acl_matches,
+            label="connect_method_acl",
+            reject_code="CONNECT_METHOD_ACL_REJECTED",
+            accept_code="CONNECT_METHOD_ACL_ACCEPTED",
+        )
+        if overlay is not None:
+            return overlay
+
         return self._response(
             decision=PolicyDecision.ALLOW,
             reason_code="ASSET_PERMISSION_ALLOWED",
@@ -917,6 +994,153 @@ class PolicyDecisionService:
             },
             ttl_seconds=0,
         )
+
+    def _evaluate_overlay_layer(
+        self,
+        *,
+        acls: list[Any],
+        request: PolicyDecisionRequest,
+        nodes_by_id: dict[str, NodeModel],
+        trace: list[str],
+        match: Any,
+        label: str,
+        reject_code: str,
+        accept_code: str,
+    ) -> PolicyDecisionResponse | None:
+        """Deny-overlay：无命中放行（返回 None）；reject 拒绝；accept 放行本层并停止。"""
+
+        candidates = sorted(
+            (acl for acl in acls if acl.tenant_id == request.subject.tenant_id),
+            key=lambda acl: (acl.priority, acl.id),
+        )
+        for acl in candidates:
+            if not match(acl, request, nodes_by_id):
+                trace.append(f"{label}:{acl.id}:selector_not_matched")
+                continue
+            trace.append(f"{label}:{acl.id}:matched")
+            if str(acl.action) == OverlayAclAction.REJECT:
+                return self._deny(reject_code, trace)
+            # accept：本层放行并停止，不改写 AssetPermission 的最终 reason。
+            trace.append(f"{label}:{acl.id}:{accept_code}")
+            return None
+        trace.append(f"no_matching_{label}")
+        return None
+
+    def _login_asset_acl_matches(
+        self,
+        acl: LoginAssetAclModel,
+        request: PolicyDecisionRequest,
+        nodes_by_id: dict[str, NodeModel],
+    ) -> bool:
+        if not self._overlay_resource_matches(
+            acl.resource_type,
+            acl.resource_id,
+            request,
+            nodes_by_id,
+            empty_matches_all=False,
+        ):
+            return False
+        cidr = (acl.ip_cidr or "").strip()
+        if cidr:
+            client_ip = str(request.context.get("client_ip") or "")
+            if not self._context_ip_in_cidr(client_ip, [cidr]):
+                return False
+        return self._overlay_time_matches(acl.time_start, acl.time_end, request)
+
+    def _connect_method_acl_matches(
+        self,
+        acl: ConnectMethodAclModel,
+        request: PolicyDecisionRequest,
+        nodes_by_id: dict[str, NodeModel],
+    ) -> bool:
+        protocol = str(request.context.get("protocol") or "")
+        if str(acl.protocol) != protocol:
+            return False
+        return self._overlay_resource_matches(
+            acl.resource_type,
+            acl.resource_id,
+            request,
+            nodes_by_id,
+            empty_matches_all=True,
+        )
+
+    def _overlay_resource_matches(
+        self,
+        resource_type: str | None,
+        resource_id: str | None,
+        request: PolicyDecisionRequest,
+        nodes_by_id: dict[str, NodeModel],
+        *,
+        empty_matches_all: bool,
+    ) -> bool:
+        rtype = (resource_type or "").strip()
+        rid = (resource_id or "").strip()
+        if not rtype and not rid:
+            return empty_matches_all
+        asset_id = request.resource.id
+        asset_node_id = self._asset_node_ids.get(asset_id)
+        if rtype == "asset":
+            return rid == asset_id
+        if rtype == "node":
+            return node_covers_asset_node(rid, asset_node_id, nodes_by_id)
+        return False
+
+    def _overlay_time_matches(
+        self,
+        time_start: str | None,
+        time_end: str | None,
+        request: PolicyDecisionRequest,
+    ) -> bool:
+        start_raw = (time_start or "").strip()
+        end_raw = (time_end or "").strip()
+        if not start_raw and not end_raw:
+            return True
+        if not start_raw or not end_raw:
+            return False
+        start = self._parse_hhmm(start_raw)
+        end = self._parse_hhmm(end_raw)
+        if start is None or end is None or start > end:
+            return False
+        now = self._overlay_now(request)
+        current = time(now.hour, now.minute)
+        return start <= current <= end
+
+    def _parse_hhmm(self, value: str) -> time | None:
+        try:
+            parsed = time.fromisoformat(value)
+        except ValueError:
+            return None
+        return time(parsed.hour, parsed.minute)
+
+    def _overlay_tz(self, request: PolicyDecisionRequest) -> ZoneInfo:
+        """Resolve evaluation timezone: context override, else tenant, else Singapore."""
+
+        raw = request.context.get("timezone") or request.context.get("tenant_timezone")
+        name = raw.strip() if isinstance(raw, str) and raw.strip() else self._tenant_timezone
+        return self._zoneinfo_or_default(name)
+
+    def _zoneinfo_or_default(self, name: str) -> ZoneInfo:
+        try:
+            return ZoneInfo(name)
+        except Exception:
+            return ZoneInfo(DEFAULT_TENANT_TIMEZONE)
+
+    def _overlay_now(self, request: PolicyDecisionRequest) -> datetime:
+        tz = self._overlay_tz(request)
+        raw = request.context.get("now")
+        if isinstance(raw, datetime):
+            current = raw if raw.tzinfo else raw.replace(tzinfo=UTC)
+            return current.astimezone(tz)
+        if isinstance(raw, str) and raw:
+            try:
+                current = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+            except ValueError:
+                current = None
+            else:
+                if current.tzinfo is None:
+                    current = current.replace(tzinfo=UTC)
+                return current.astimezone(tz)
+        return datetime.now(tz)
 
     @staticmethod
     def _request_group_ids(request: PolicyDecisionRequest) -> tuple[str, ...]:
