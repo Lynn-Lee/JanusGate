@@ -109,6 +109,17 @@ class SshTarget:
 
 
 @dataclass(frozen=True)
+class SshProxyJump:
+    """SSH ProxyJump 中继跳：经网关资产建立到内网目标的隧道（#t67）。
+
+    网关凭据同样仅内存持有，经 Vault 解析，不经命令行传递（关闭 P0#16）。
+    """
+
+    target: SshTarget
+    credential: SshCredential
+
+
+@dataclass(frozen=True)
 class SshCredential:
     """SSH 登录凭据，仅在内存中持有，绝不落盘。
 
@@ -178,6 +189,76 @@ def _load_client_keys(credential: SshCredential) -> list[asyncssh.SSHKey] | None
     return [key]
 
 
+def _connect_kwargs(
+    target: SshTarget,
+    credential: SshCredential,
+    *,
+    connect_timeout: float,
+    tunnel: asyncssh.SSHClientConnection | None = None,
+) -> dict[str, object]:
+    """构造 ``asyncssh.connect`` 的安全参数集。"""
+
+    client_keys = _load_client_keys(credential)
+    known_hosts = _build_known_hosts(target)
+    return {
+        "host": target.host,
+        "port": target.port,
+        "username": target.username,
+        "client_keys": client_keys,
+        "password": credential.password,
+        "passphrase": credential.private_key_passphrase,
+        "known_hosts": known_hosts,
+        "agent_path": None,
+        "config": None,
+        "kex_algs": MODERN_KEX_ALGS,
+        "encryption_algs": MODERN_ENCRYPTION_ALGS,
+        "mac_algs": MODERN_MAC_ALGS,
+        "server_host_key_algs": MODERN_HOST_KEY_ALGS,
+        "connect_timeout": connect_timeout,
+        "tunnel": tunnel,
+    }
+
+
+async def _open_connection(
+    target: SshTarget,
+    credential: SshCredential,
+    *,
+    connect_timeout: float,
+    proxy_jump: SshProxyJump | None = None,
+) -> tuple[asyncssh.SSHClientConnection, asyncssh.SSHClientConnection | None]:
+    """建立 SSH 连接，可选经 ProxyJump 中继。"""
+
+    tunnel_connection: asyncssh.SSHClientConnection | None = None
+    try:
+        if proxy_jump is not None:
+            tunnel_connection = await asyncssh.connect(
+                **_connect_kwargs(
+                    proxy_jump.target,
+                    proxy_jump.credential,
+                    connect_timeout=connect_timeout,
+                )
+            )
+        connection = await asyncssh.connect(
+            **_connect_kwargs(
+                target,
+                credential,
+                connect_timeout=connect_timeout,
+                tunnel=tunnel_connection,
+            )
+        )
+    except asyncssh.HostKeyNotVerifiable as exc:
+        raise SshChannelError("SSH_HOST_KEY_REJECTED", str(exc)) from exc
+    except asyncssh.KeyExchangeFailed as exc:
+        raise SshChannelError("SSH_ALGORITHM_NEGOTIATION_FAILED", str(exc)) from exc
+    except asyncssh.PermissionDenied as exc:
+        raise SshChannelError("SSH_AUTH_FAILED", str(exc)) from exc
+    except TimeoutError as exc:
+        raise SshChannelError("SSH_CONNECT_TIMEOUT", "connection timed out") from exc
+    except (asyncssh.Error, OSError) as exc:
+        raise SshChannelError("SSH_CONNECT_FAILED", str(exc)) from exc
+    return connection, tunnel_connection
+
+
 def _build_known_hosts(target: SshTarget) -> asyncssh.SSHKnownHosts:
     """由可信主机公钥构造 known_hosts，实现主机密钥强校验（关闭 P0#17）。"""
 
@@ -229,8 +310,11 @@ class SshChannel:
         connection: asyncssh.SSHClientConnection,
         target: SshTarget,
         policy: CommandPolicyGuard,
+        *,
+        tunnel_connection: asyncssh.SSHClientConnection | None = None,
     ) -> None:
         self._connection = connection
+        self._tunnel_connection = tunnel_connection
         self._target = target
         self._policy = policy
 
@@ -241,6 +325,7 @@ class SshChannel:
         credential: SshCredential,
         *,
         connect_timeout: float = 10.0,
+        proxy_jump: SshProxyJump | None = None,
         policy: CommandPolicyGuard | None = None,
         subject: SubjectRef | None = None,
         resource: ResourceRef | None = None,
@@ -257,36 +342,12 @@ class SshChannel:
             （``SSH_CONNECT_FAILED``）。
         """
 
-        client_keys = _load_client_keys(credential)
-        known_hosts = _build_known_hosts(target)
-        try:
-            connection = await asyncssh.connect(
-                host=target.host,
-                port=target.port,
-                username=target.username,
-                client_keys=client_keys,
-                password=credential.password,
-                passphrase=credential.private_key_passphrase,
-                known_hosts=known_hosts,
-                # 显式关闭 agent、默认密钥扫描与用户 ssh_config，杜绝磁盘凭据来源。
-                agent_path=None,
-                config=None,
-                kex_algs=MODERN_KEX_ALGS,
-                encryption_algs=MODERN_ENCRYPTION_ALGS,
-                mac_algs=MODERN_MAC_ALGS,
-                server_host_key_algs=MODERN_HOST_KEY_ALGS,
-                connect_timeout=connect_timeout,
-            )
-        except asyncssh.HostKeyNotVerifiable as exc:
-            raise SshChannelError("SSH_HOST_KEY_REJECTED", str(exc)) from exc
-        except asyncssh.KeyExchangeFailed as exc:
-            raise SshChannelError("SSH_ALGORITHM_NEGOTIATION_FAILED", str(exc)) from exc
-        except asyncssh.PermissionDenied as exc:
-            raise SshChannelError("SSH_AUTH_FAILED", str(exc)) from exc
-        except TimeoutError as exc:
-            raise SshChannelError("SSH_CONNECT_TIMEOUT", "connection timed out") from exc
-        except (asyncssh.Error, OSError) as exc:
-            raise SshChannelError("SSH_CONNECT_FAILED", str(exc)) from exc
+        connection, tunnel_connection = await _open_connection(
+            target,
+            credential,
+            connect_timeout=connect_timeout,
+            proxy_jump=proxy_jump,
+        )
         resolved = policy or await default_command_policy_guard(
             subject=subject,
             resource=resource,
@@ -295,7 +356,7 @@ class SshChannel:
             session_factory=session_factory,
             db=db,
         )
-        return cls(connection, target, resolved)
+        return cls(connection, target, resolved, tunnel_connection=tunnel_connection)
 
     async def run_command(
         self,
@@ -398,6 +459,9 @@ class SshChannel:
 
         self._connection.close()
         await self._connection.wait_closed()
+        if self._tunnel_connection is not None:
+            self._tunnel_connection.close()
+            await self._tunnel_connection.wait_closed()
 
     async def __aenter__(self) -> SshChannel:
         return self

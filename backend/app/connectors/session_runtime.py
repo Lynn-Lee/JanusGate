@@ -30,6 +30,7 @@ from app.connectors.ssh_channel import (
     SshChannel,
     SshChannelError,
     SshCredential,
+    SshProxyJump,
     SshTarget,
 )
 from app.connectors.ssh_interactive import SshInteractiveSession
@@ -52,11 +53,13 @@ class SessionConnectionSpec:
     :param mode: 通道形态。
     :param target: SSH 目标与可信主机公钥。
     :param credential: 内存凭据（私钥或密码）。
+    :param proxy_jump: 可选 ProxyJump 网关跳（#t67 网域中转）。
     """
 
     mode: ConnectorSessionMode
     target: SshTarget
     credential: SshCredential
+    proxy_jump: SshProxyJump | None = None
 
 
 # 已打开通道的联合类型：三者均提供 async close()，故运行时可统一关闭。
@@ -204,8 +207,9 @@ class ConnectorSessionRuntime:
         self, spec: SessionConnectionSpec, request: ConnectorDispatchRequest
     ) -> OpenChannel:
         policy = await self._policy_for(request)
+        proxy_kw = {"proxy_jump": spec.proxy_jump} if spec.proxy_jump is not None else {}
         if spec.mode is ConnectorSessionMode.EXEC:
-            return await SshChannel.open(spec.target, spec.credential, policy=policy)
+            return await SshChannel.open(spec.target, spec.credential, policy=policy, **proxy_kw)
         if spec.mode is ConnectorSessionMode.INTERACTIVE:
             if self._command_sink is None:
                 raise SshChannelError(
@@ -213,7 +217,11 @@ class ConnectorSessionRuntime:
                     "interactive mode requires a command_sink",
                 )
             return await SshInteractiveSession.open(
-                spec.target, spec.credential, self._command_sink, policy=policy
+                spec.target,
+                spec.credential,
+                self._command_sink,
+                policy=policy,
+                **proxy_kw,
             )
         if spec.mode is ConnectorSessionMode.SFTP:
             if self._transfer_sink is None:
@@ -221,7 +229,9 @@ class ConnectorSessionRuntime:
                     "CONNECTOR_TRANSFER_SINK_MISSING",
                     "sftp mode requires a transfer_sink",
                 )
-            return await SftpChannel.open(spec.target, spec.credential, self._transfer_sink)
+            return await SftpChannel.open(
+                spec.target, spec.credential, self._transfer_sink, **proxy_kw
+            )
         raise SshChannelError("CONNECTOR_UNSUPPORTED_MODE", str(spec.mode))
 
 
