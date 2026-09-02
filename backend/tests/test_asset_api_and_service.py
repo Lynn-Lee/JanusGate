@@ -107,13 +107,22 @@ def asset(**overrides: Any) -> Asset:
 
 
 def platform(**overrides: Any) -> Platform:
-    base = {"id": 1, "name": "Linux", "category": "host", "protocols": '["ssh"]', "is_active": True}
+    base = {
+        "id": 1,
+        "name": "Linux",
+        "category": "host",
+        "asset_type": "host",
+        "protocols": '["ssh"]',
+        "is_active": True,
+    }
     base.update(overrides)
     return Platform(**base)
 
 
 def test_asset_crud_api_contract(monkeypatch: pytest.MonkeyPatch) -> None:
     install_auth_and_db()
+    monkeypatch.setattr(assets_api, "ensure_builtin_protocols", async_value([]))
+    monkeypatch.setattr(assets_api, "validate_asset_protocol_binding", async_value(None))
     monkeypatch.setattr(assets_api, "_visible_assets", async_value([asset(id=1)]))
     monkeypatch.setattr(AssetService, "create_asset", async_call(lambda _db, data: asset(id=2, **data)))
     monkeypatch.setattr(AssetService, "delete_asset", async_call(lambda _db, asset_id: asset_id == 1))
@@ -153,8 +162,10 @@ def test_asset_test_connection_api_rejects_unregistered_direct_targets() -> None
     assert response.json()["detail"] == "连接测试目标必须是已登记资产或显式 allowlist"
 
 
-def test_platform_api_create_and_list_contract() -> None:
+def test_platform_api_create_and_list_contract(monkeypatch: pytest.MonkeyPatch) -> None:
     db = install_auth_and_db(FakeDB(ScalarResult(values=[platform()])))
+    monkeypatch.setattr(assets_api, "ensure_builtin_protocols", async_value([]))
+    monkeypatch.setattr(assets_api, "sync_platform_protocols", async_value(None))
 
     with TestClient(app) as client:
         create_response = client.post(
@@ -179,6 +190,7 @@ def test_platform_list_api_contract_uses_real_route() -> None:
             "id": 1,
             "name": "Linux",
             "category": "host",
+            "asset_type": "host",
             "protocols": '["ssh"]',
             "is_active": True,
         }

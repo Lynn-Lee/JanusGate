@@ -15,6 +15,7 @@ Phase 5 #t59 文档站 foundation 面向安装、运维和 API 集成读者，�
 - [数据脱敏规则](acl-data-masking.md)：#t65 数据脱敏规则的数据模型、full/partial 打码方式，以及统一进 `PolicyDecisionService.mask` 的累计应用语义（#t71 DB 代理联动的前置）。
 - [资产树与 AssetPermission](asset-tree-authorization.md)：#t64 的节点树、资产挂载、用户/用户组授权、账号/协议/动作/有效期/来源工单选择器，以及会话授权 explain 链路。
 - [RBAC 角色与权限](rbac.md)：#t63 的 Role / RoleBinding / 对象级 Permission、system+org 双 scope、内置角色、菜单权限与登录 token 签发接入。
+- [资产类型与协议](asset-types-protocols.md)：#t66 的声明式协议目录、Platform 协议约束、8 种资产类型与 19+1 协议种子。
 
 ## 版本边界
 

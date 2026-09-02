@@ -14,6 +14,7 @@ from app.models.audit import AuditEventModel
 from app.models.automation import AutomationJobRun
 from app.models.connector import Connector
 from app.models.host_key import AssetHostKeyModel
+from app.models.protocol import PlatformProtocolModel, ProtocolModel
 from app.models.rbac import RoleBindingModel, RoleModel, RoleObjectPermissionModel
 from app.models.session import SessionModel
 from app.models.session_recording import SessionCommandEvent, SessionRecording
@@ -48,6 +49,8 @@ __all__ = [
     "NotificationDelivery",
     "Organization",
     "Platform",
+    "PlatformProtocolModel",
+    "ProtocolModel",
     "Project",
     "RoleBindingModel",
     "RoleModel",

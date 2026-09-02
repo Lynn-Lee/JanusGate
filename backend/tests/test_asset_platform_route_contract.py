@@ -26,7 +26,7 @@ class ScalarResult:
 class FakeDB:
     async def execute(self, _statement: Any) -> ScalarResult:
         return ScalarResult([
-            Platform(id=1, name="Linux", category="host", protocols='["ssh"]', is_active=True)
+            Platform(id=1, name="Linux", category="host", asset_type="host", protocols='["ssh"]', is_active=True)
         ])
 
 
@@ -50,6 +50,7 @@ def test_platform_list_api_contract_uses_static_route() -> None:
             "id": 1,
             "name": "Linux",
             "category": "host",
+            "asset_type": "host",
             "protocols": '["ssh"]',
             "is_active": True,
         }
