@@ -99,7 +99,7 @@ Phase 5 #t53 已启动无状态 Core 的前置切片：Session connection token 
 
 ## Phase 6 JumpServer 核心功能对标
 
-Phase 6 的任务分解、验收标准与完成度矩阵以 [`docs/architecture/10-master-evaluation-and-roadmap.md`](docs/architecture/10-master-evaluation-and-roadmap.md)（v2.4）为唯一权威来源。以下为已落地切片的入口索引。
+Phase 6 的任务分解、验收标准与完成度矩阵以 [`docs/architecture/10-master-evaluation-and-roadmap.md`](docs/architecture/10-master-evaluation-and-roadmap.md)（v2.5）为唯一权威来源。以下为已落地切片的入口索引。
 
 ### M0 前置阻塞项（已全部关闭）
 

@@ -33,3 +33,10 @@ PolicyDecisionService 是 JanusGate 的统一授权决策点，所有会话创�
 3. 需要 MFA 但未完成 MFA 一律拒绝。
 4. 需要审批但审批缺失、过期、撤销或拒绝一律拒绝。
 5. 只有显式匹配策略且所有约束满足时才允许。
+
+## 与 RBAC（#t63）的边界
+
+- **RBAC**（`RbacService` / `/api/v1/rbac/*`）负责控制台/API **功能权限**（如 `assets:write`、`audit:read`、`rbac:write`）与 JWT `permissions` 签发。
+- **PolicyDecisionService** 负责 **会话级资源访问**（如 `asset.connect`、`secret.unwrap`）与 #t64 资产授权、#t65 ACL 判定。
+- `admin` JWT 权限可放宽 `scoped_select()` 租户过滤，但**不**绕过 `asset.connect` 的 AssetPermission 判定。
+- 用户组成员通过 JWT `group_ids` 传入策略 `context`，供 #t64 资产授权 `user_group` 主体匹配。
