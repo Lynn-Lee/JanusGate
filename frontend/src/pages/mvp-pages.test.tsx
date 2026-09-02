@@ -538,3 +538,104 @@ describe('MVP pages', () => {
     );
   });
 });
+
+
+describe('#t69 host key overlay and connect list', () => {
+  it('hides k8s protocol from the assets connect list', async () => {
+    const k8sPlatform = { id: 2, name: 'Kubernetes', category: 'cloud', protocols: '["k8s"]', is_active: true };
+    const mixedPlatform = { id: 3, name: 'Mixed', category: 'host', protocols: '["ssh","k8s"]', is_active: true };
+    const k8sAsset = { id: 2, name: 'prod-cluster', address: 'k8s.internal', platform_id: 2, port: 443, username: '', is_active: true, description: '', created_at: '2026-07-01T00:00:00Z' };
+    const mixedAsset = { id: 3, name: 'bastion', address: '10.0.0.11', platform_id: 3, port: 22, username: 'ops', is_active: true, description: '', created_at: '2026-07-01T00:00:00Z' };
+    const fetchMock = installFetch();
+    vi.stubGlobal('fetch', async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      const method = init?.method ?? 'GET';
+      if (url.endsWith('/api/v1/assets/') && method === 'GET') {
+        return Response.json([asset, k8sAsset, mixedAsset]);
+      }
+      if (url.endsWith('/api/v1/assets/platforms')) {
+        return Response.json([platform, k8sPlatform, mixedPlatform]);
+      }
+      return fetchMock(input, init);
+    });
+    history.pushState(null, '', '/assets');
+    render(<App />);
+    await userEvent.click(await screen.findByText('连接'));
+    expect(await screen.findByText('生产 SSH 主机')).toBeInTheDocument();
+    expect(screen.getByText('bastion')).toBeInTheDocument();
+    expect(screen.queryByText('prod-cluster')).not.toBeInTheDocument();
+    expect(screen.queryByText('连接 k8s')).not.toBeInTheDocument();
+    expect(screen.queryByText('k8s')).not.toBeInTheDocument();
+  });
+
+  it('shows 确认这台主机 for unknown host keys and not the change warning', async () => {
+    const unknownRequest = {
+      ...request,
+      id: 'req-unknown',
+      metadata: { host_key: { state: 'unknown', title: '确认这台主机', fingerprint: 'SHA256:unknown' } }
+    };
+    const fetchMock = installFetch();
+    vi.stubGlobal('fetch', async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.endsWith('/api/v1/workflows/requests') && (init?.method ?? 'GET') === 'GET') {
+        return Response.json({ items: [unknownRequest], total: 1 });
+      }
+      return fetchMock(input, init);
+    });
+    history.pushState(null, '', '/workflow');
+    render(<App />);
+    expect(await screen.findByText('确认这台主机')).toBeInTheDocument();
+    expect(screen.queryByText('这台主机的密钥变了')).not.toBeInTheDocument();
+  });
+
+  it('shows 这台主机的密钥变了 as a heavier warning than unknown confirm', async () => {
+    const changedRequest = {
+      ...request,
+      id: 'req-changed',
+      metadata: { host_key: { state: 'changed', title: '这台主机的密钥变了', fingerprint: 'SHA256:new' } }
+    };
+    const fetchMock = installFetch();
+    vi.stubGlobal('fetch', async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.endsWith('/api/v1/workflows/requests') && (init?.method ?? 'GET') === 'GET') {
+        return Response.json({ items: [changedRequest], total: 1 });
+      }
+      return fetchMock(input, init);
+    });
+    history.pushState(null, '', '/workflow');
+    render(<App />);
+    const warning = await screen.findByText('这台主机的密钥变了');
+    expect(warning).toBeInTheDocument();
+    expect(screen.queryByText('确认这台主机')).not.toBeInTheDocument();
+    expect(warning.closest('.jg-hostkey-changed')).not.toBeNull();
+  });
+
+  it('surfaces 无法连接 and never 没有权限 when host key is unapproved', async () => {
+    const fetchMock = installFetch();
+    vi.stubGlobal('fetch', async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      const method = init?.method ?? 'GET';
+      if (url.endsWith('/api/v1/sessions/connection-token') && method === 'POST') {
+        return Response.json({
+          connection_token: 'tok-1',
+          expires_at: '2026-07-01T00:10:00Z',
+          jit_grant_id: grant.id,
+          workflow_request_id: request.id,
+          asset_id: grant.asset_id,
+          account_id: grant.account_id,
+          protocol: grant.protocol,
+          action: grant.action
+        }, { status: 201 });
+      }
+      if (url.endsWith('/api/v1/sessions/') && method === 'POST') {
+        return Response.json({ code: 'HOST_KEY_UNAPPROVED', message: '无法连接', detail: '无法连接', request_id: '' }, { status: 403 });
+      }
+      return fetchMock(input, init);
+    });
+    history.pushState(null, '', '/workflow');
+    render(<App />);
+    await userEvent.click(await screen.findByRole('button', { name: '创建会话' }));
+    expect(await screen.findByText('无法连接')).toBeInTheDocument();
+    expect(screen.queryByText('没有权限')).not.toBeInTheDocument();
+  });
+});

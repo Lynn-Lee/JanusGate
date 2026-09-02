@@ -68,15 +68,24 @@ _OVERLAY_CONNECT_DENY_REASONS = frozenset(
     {
         "LOGIN_ASSET_ACL_REJECTED",
         "CONNECT_METHOD_ACL_REJECTED",
+        "HOST_KEY_UNAPPROVED",
+        "HOST_KEY_REJECTED",
+        "HOST_KEY_CHANGED",
+        "SSH_TRUSTED_HOST_KEY_MISSING",
+        "SSH_HOST_KEY_REJECTED",
+        "CONNECTOR_PROTOCOL_UNSUPPORTED",
+        "CONNECTOR_TARGET_UNRESOLVED",
     }
 )
 
 
-def _raise_connect_denied(exc: PermissionError) -> NoReturn:
-    reason = str(exc)
+def _raise_connect_denied(exc: BaseException) -> NoReturn:
+    reason = getattr(exc, "code", None) or str(exc)
     if reason in _ASSET_CONNECT_DENY_REASONS:
         raise HTTPException(status_code=404, detail="资产不存在") from exc
     if reason in _OVERLAY_CONNECT_DENY_REASONS:
+        raise HTTPException(status_code=403, detail="无法连接") from exc
+    if "没有权限" in str(reason):
         raise HTTPException(status_code=403, detail="无法连接") from exc
     raise HTTPException(status_code=403, detail=reason) from exc
 
@@ -96,9 +105,16 @@ async def _tenant_policy_client(
     return PolicyDecisionServiceClient(service)
 
 
+def _production_connector_scheduler():
+    from app.connectors.session_runtime import build_production_connector_scheduler
+
+    return build_production_connector_scheduler()
+
+
 _session_gateway_service = SessionGatewayService(
     token_store=build_connection_token_store(),
     session_store=SqlAlchemySessionStore(),
+    connector_scheduler=_production_connector_scheduler(),
 )
 _workflow_audit_sink = WorkflowAuditSink(audit_service)
 _fail_closed_policy_client = PolicyDecisionServiceClient(
@@ -217,8 +233,13 @@ async def create_session(
         )
     except PermissionError as exc:
         _raise_connect_denied(exc)
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        code = getattr(exc, "code", "")
+        if code in _OVERLAY_CONNECT_DENY_REASONS or str(exc) in _OVERLAY_CONNECT_DENY_REASONS:
+            _raise_connect_denied(exc)
+        if isinstance(exc, ValueError):
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        raise
     return SessionResponse.from_record(session)
 
 

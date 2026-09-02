@@ -22,7 +22,8 @@ from app.api.workflows.schemas import (
     WorkflowRevokeRequest,
 )
 from app.api.workflows.service import SQLAlchemyWorkflowStore, WorkflowService
-from app.core.database import get_db, get_read_db
+from app.connectors.host_key_trust import HostKeyTrustService
+from app.core.database import AsyncSessionLocal, get_db, get_read_db
 from app.core.deps import current_user
 from app.policy.decision import PolicyDecisionService
 from app.policy.schemas import PolicyDecisionRequest, PolicyDecisionResponse
@@ -32,6 +33,7 @@ from app.workflows.repository import SQLAlchemyWorkflowRepository
 router = APIRouter(prefix="/workflows", tags=["Workflow/JIT"])
 
 _workflow_audit_sink = WorkflowAuditSink(audit_service)
+_host_key_trust = HostKeyTrustService(session_factory=AsyncSessionLocal)
 
 
 def get_workflow_service(db: AsyncSession = Depends(get_db)) -> WorkflowService:
@@ -180,7 +182,15 @@ async def create_workflow_request(
     data: WorkflowRequestCreate,
     user: dict[str, Any] = Depends(current_user),
     service: WorkflowService = Depends(get_workflow_service),
+    db: AsyncSession = Depends(get_db),
 ) -> WorkflowRequestResponse:
+    metadata = await _host_key_trust.overlay_request_metadata(
+        tenant_id=str(user.get("tenant_id", "default")),
+        asset_id=data.asset_id,
+        protocol=data.protocol,
+        metadata=dict(data.metadata),
+        db=db,
+    )
     request = await service.create_request(
         actor=user,
         asset_id=data.asset_id,
@@ -189,7 +199,7 @@ async def create_workflow_request(
         action=data.action,
         reason=data.reason,
         requested_ttl_seconds=data.requested_ttl_seconds,
-        metadata=data.metadata,
+        metadata=metadata,
     )
     return WorkflowRequestResponse.from_record(request)
 
@@ -245,6 +255,7 @@ async def approve_workflow_request(
     data: WorkflowDecisionRequest,
     user: dict[str, Any] = Depends(current_user),
     service: WorkflowService = Depends(get_workflow_service),
+    db: AsyncSession = Depends(get_db),
 ) -> WorkflowRequestResponse:
     try:
         record = await service.approve_request(
@@ -252,6 +263,14 @@ async def approve_workflow_request(
             actor=user,
             decision_reason=data.decision_reason,
             grant_ttl_seconds=data.grant_ttl_seconds,
+        )
+        await _host_key_trust.apply_workflow_decision(
+            tenant_id=record.tenant_id,
+            asset_id=record.asset_id,
+            approved=True,
+            metadata=record.metadata,
+            workflow_request_id=record.id,
+            db=db,
         )
     except PermissionError as exc:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
@@ -266,12 +285,21 @@ async def reject_workflow_request(
     data: WorkflowRejectRequest,
     user: dict[str, Any] = Depends(current_user),
     service: WorkflowService = Depends(get_workflow_service),
+    db: AsyncSession = Depends(get_db),
 ) -> WorkflowRequestResponse:
     try:
         record = await service.reject_request(
             request_id,
             actor=user,
             decision_reason=data.decision_reason,
+        )
+        await _host_key_trust.apply_workflow_decision(
+            tenant_id=record.tenant_id,
+            asset_id=record.asset_id,
+            approved=False,
+            metadata=record.metadata,
+            workflow_request_id=record.id,
+            db=db,
         )
     except PermissionError as exc:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc

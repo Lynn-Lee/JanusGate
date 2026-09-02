@@ -55,6 +55,23 @@ function canManageAssets(isSuperuser: boolean, token: string | null): boolean {
   return isSuperuser || permissions.includes('admin');
 }
 
+const HIDDEN_CONNECT_PROTOCOLS = new Set(['k8s', 'kubernetes']);
+
+export function connectProtocolsForPlatform(platform?: Platform | null): string[] {
+  let raw = ['ssh'];
+  if (platform?.protocols) {
+    try {
+      const parsed = JSON.parse(platform.protocols) as unknown;
+      if (Array.isArray(parsed) && parsed.length) {
+        raw = parsed.map(String);
+      }
+    } catch {
+      raw = ['ssh'];
+    }
+  }
+  return raw.filter((protocol) => !HIDDEN_CONNECT_PROTOCOLS.has(protocol.toLowerCase()));
+}
+
 function impactCopy(impact: ConnectImpact): string {
   if (!impact.lost.length) {
     return '没有人会因此失去连接。';
@@ -107,7 +124,10 @@ function AssetConnectPanel() {
   const assets = useApiData(() => api.get<Asset[]>('/api/v1/assets/'), []);
   const platforms = useApiData(() => api.get<Platform[]>('/api/v1/assets/platforms'), []);
   const platformMap = new Map((platforms.data ?? []).map((item) => [item.id, item]));
-  const rows = assets.data ?? [];
+  const rows = (assets.data ?? []).filter((asset) => {
+    const protocols = connectProtocolsForPlatform(platformMap.get(asset.platform_id));
+    return protocols.length > 0;
+  });
 
   return (
     <Card>
@@ -139,18 +159,26 @@ function AssetConnectPanel() {
             },
             {
               title: '操作',
-              render: (_: unknown, record: Asset) => (
-                <Link
-                  to="/workflow"
-                  state={{
-                    assetId: String(record.id),
-                    accountId: record.username || 'default',
-                    protocol: 'ssh'
-                  }}
-                >
-                  <Button type="link">连接</Button>
-                </Link>
-              )
+              render: (_: unknown, record: Asset) => {
+                const protocols = connectProtocolsForPlatform(platformMap.get(record.platform_id));
+                return (
+                  <Space>
+                    {protocols.map((protocol) => (
+                      <Link
+                        key={protocol}
+                        to="/workflow"
+                        state={{
+                          assetId: String(record.id),
+                          accountId: record.username || 'default',
+                          protocol
+                        }}
+                      >
+                        <Button type="link">{protocols.length === 1 ? '连接' : `连接 ${protocol}`}</Button>
+                      </Link>
+                    ))}
+                  </Space>
+                );
+              }
             }
           ]}
         />

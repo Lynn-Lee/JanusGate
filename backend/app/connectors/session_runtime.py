@@ -9,9 +9,9 @@
 连接器侧）经 :class:`SessionConnectionResolver` 解析后出现。要换成远端形态，只需另写一个
 实现 ``ConnectorScheduler`` 的传输类，网关无需改动。
 
-注意：路由默认仍使用 :class:`~app.api.sessions.service.NoopConnectorScheduler`；本运行时
-在生产接线需要一个把资产注册表 + 凭据保险库桥接进来的 :class:`SessionConnectionResolver`
-实现（尚未落地），故此处先交付机制与测试，待 resolver 就绪再在装配层启用。
+生产装配用资产注册表 + Vault 的 :class:`~app.connectors.asset_vault_resolver.AssetVaultSessionConnectionResolver`
+替换 :class:`~app.api.sessions.service.NoopConnectorScheduler`。测试可继续注入
+:class:`InMemorySessionConnectionResolver` 或 Noop。主机密钥 fail-closed，须有已批准公钥，绝不 TOFU。
 """
 
 from __future__ import annotations
@@ -25,6 +25,7 @@ from uuid import uuid4
 from app.api.sessions.service import ConnectorDispatchRequest
 from app.connectors.command_policy import CommandPolicyGuard, default_command_policy_guard
 from app.connectors.ssh_channel import (
+    CommandEvent,
     CommandEventSink,
     SshChannel,
     SshChannelError,
@@ -243,3 +244,74 @@ class ConnectorRuntimeScheduler:
 
     async def release(self, connector_session_id: str) -> None:
         await self._runtime.close(connector_session_id)
+
+
+class _NoopCommandEventSink:
+    async def emit(self, event: CommandEvent) -> None:
+        return None
+
+
+class _NoopFileTransferEventSink:
+    async def emit(self, event: object) -> None:
+        return None
+
+
+def build_production_connector_scheduler(
+    *,
+    session_factory=None,
+    secrets=None,
+    host_keys=None,
+    scanner=None,
+):
+    """装配生产连接器调度器：资产注册表 + Vault + 已批准主机密钥。"""
+
+    from hashlib import sha256
+
+    from app.connectors.asset_vault_resolver import (
+        AssetVaultSessionConnectionResolver,
+        CallableSecretUnwrapper,
+    )
+    from app.connectors.host_key_trust import AsyncScanAdapter, HostKeyTrustStore
+    from app.core.config import settings
+    from app.core.database import AsyncSessionLocal
+    from app.vault.provider import (
+        AsyncEnvelopeEncryptedSecretProvider,
+        LocalKmsEnvelopeKeyProvider,
+        SqlAlchemySecretRecordStore,
+    )
+
+    factory = session_factory or AsyncSessionLocal
+    trust_store = host_keys or HostKeyTrustStore(factory)
+    scan = scanner or AsyncScanAdapter()
+
+    if secrets is None:
+        master_key = settings.VAULT_LOCAL_KMS_MASTER_KEY.strip()
+        if master_key:
+            kms = LocalKmsEnvelopeKeyProvider.from_base64_master_key(master_key)
+        else:
+            kms = LocalKmsEnvelopeKeyProvider(master_key=sha256(settings.SECRET_KEY.encode()).digest())
+
+        async def _unwrap(secret_id: str) -> str:
+            async with factory() as session:
+                provider = AsyncEnvelopeEncryptedSecretProvider(
+                    kms_provider=kms,
+                    record_store=SqlAlchemySecretRecordStore(session),
+                )
+                return await provider.unwrap(secret_id)
+
+        secrets = CallableSecretUnwrapper(_unwrap)
+
+    resolver = AssetVaultSessionConnectionResolver(
+        session_factory=factory,
+        secrets=secrets,
+        host_keys=trust_store,
+        scanner=scan,
+    )
+    runtime = ConnectorSessionRuntime(
+        resolver,
+        command_sink=_NoopCommandEventSink(),
+        transfer_sink=_NoopFileTransferEventSink(),
+        session_factory=factory,
+    )
+    return ConnectorRuntimeScheduler(runtime)
+

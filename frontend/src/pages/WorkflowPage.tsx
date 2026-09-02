@@ -1,4 +1,4 @@
-import { Button, Card, Form, Input, InputNumber, Space, Table, Tag, Typography } from 'antd';
+import { Alert, Button, Card, Form, Input, InputNumber, Modal, Space, Table, Tag, Typography } from 'antd';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { createSessionWithConnectionToken } from '../api/sessionTokens';
 import { useAuth } from '../auth/AuthContext';
@@ -15,6 +15,25 @@ type WorkflowFormValues = {
 };
 
 type LocationState = { assetId?: string; accountId?: string; protocol?: string } | null;
+
+const HOST_KEY_UNKNOWN_TITLE = '确认这台主机';
+const HOST_KEY_CHANGED_TITLE = '这台主机的密钥变了';
+
+type HostKeyMeta = {
+  state?: string;
+  title?: string;
+  fingerprint?: string;
+  public_key?: string;
+  previous_fingerprint?: string;
+};
+
+function hostKeyMeta(request: WorkflowRequest): HostKeyMeta | null {
+  const raw = request.metadata?.host_key;
+  if (!raw || typeof raw !== 'object') {
+    return null;
+  }
+  return raw as HostKeyMeta;
+}
 
 export function WorkflowPage() {
   const { api } = useAuth();
@@ -47,6 +66,47 @@ export function WorkflowPage() {
   };
 
   const decide = async (request: WorkflowRequest, action: 'approve' | 'reject') => {
+    const hostKey = hostKeyMeta(request);
+    if (action === 'approve' && hostKey?.state === 'changed') {
+      const confirmed = await new Promise<boolean>((resolve) => {
+        Modal.warning({
+          title: HOST_KEY_CHANGED_TITLE,
+          className: 'jg-hostkey-changed',
+          okText: '仍然批准',
+          cancelText: '取消',
+          okCancel: true,
+          okButtonProps: { danger: true },
+          content: (
+            <Alert
+              type="warning"
+              showIcon
+              message={HOST_KEY_CHANGED_TITLE}
+              description={hostKey.fingerprint ? `新指纹 ${hostKey.fingerprint}` : undefined}
+            />
+          ),
+          onOk: () => resolve(true),
+          onCancel: () => resolve(false)
+        });
+      });
+      if (!confirmed) {
+        return;
+      }
+    } else if (action === 'approve' && hostKey?.state === 'unknown') {
+      const confirmed = await new Promise<boolean>((resolve) => {
+        Modal.confirm({
+          title: HOST_KEY_UNKNOWN_TITLE,
+          className: 'jg-hostkey-unknown',
+          okText: '确认',
+          cancelText: '取消',
+          content: hostKey.fingerprint ? `指纹 ${hostKey.fingerprint}` : '请确认这是预期的主机。',
+          onOk: () => resolve(true),
+          onCancel: () => resolve(false)
+        });
+      });
+      if (!confirmed) {
+        return;
+      }
+    }
     try {
       await api.post<WorkflowRequest>(`/api/v1/workflows/requests/${request.id}/${action}`, action === 'approve' ? { decision_reason: 'MVP 控制台审批通过', grant_ttl_seconds: 1800 } : { decision_reason: 'MVP 控制台拒绝' });
       msg.success(action === 'approve' ? '申请已批准' : '申请已拒绝');
@@ -131,6 +191,23 @@ export function WorkflowPage() {
               { title: '资产', dataIndex: 'asset_id' },
               { title: '账号', dataIndex: 'account_id' },
               { title: '理由', dataIndex: 'reason', ellipsis: true },
+              {
+                title: '主机密钥',
+                render: (_: unknown, record: WorkflowRequest) => {
+                  const hostKey = hostKeyMeta(record);
+                  if (!hostKey?.state || hostKey.state === 'approved') {
+                    return '-';
+                  }
+                  if (hostKey.state === 'changed') {
+                    return (
+                      <div className="jg-hostkey-changed">
+                        <Alert type="error" showIcon message={HOST_KEY_CHANGED_TITLE} />
+                      </div>
+                    );
+                  }
+                  return <div className="jg-hostkey-unknown">{HOST_KEY_UNKNOWN_TITLE}</div>;
+                }
+              },
               { title: '状态', dataIndex: 'status', render: (status: string) => <Tag color={status === 'approved' ? 'green' : status === 'rejected' ? 'red' : 'blue'}>{status}</Tag> },
               { title: 'Grant', dataIndex: 'grant_id', ellipsis: true, render: (value: string) => value || '-' },
               { title: '操作', render: (_: unknown, record: WorkflowRequest) => <Space><Button disabled={record.status !== 'pending'} onClick={() => void decide(record, 'approve')}>批准</Button><Button disabled={record.status !== 'pending'} onClick={() => void decide(record, 'reject')}>拒绝</Button><Button disabled={!['approved', 'pending'].includes(record.status)} danger onClick={() => void revoke(record)}>撤销</Button></Space> }

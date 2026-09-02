@@ -13,6 +13,7 @@ from app.models.asset_tree import AssetPermissionModel, NodeModel
 from app.models.audit import AuditEventModel
 from app.models.automation import AutomationJobRun
 from app.models.connector import Connector
+from app.models.host_key import AssetHostKeyModel
 from app.models.rbac import RoleBindingModel, RoleModel, RoleObjectPermissionModel
 from app.models.session import SessionModel
 from app.models.session_recording import SessionCommandEvent, SessionRecording
@@ -26,6 +27,7 @@ from app.models.workflow import ApprovalPolicyModel, JitGrantModel, WorkflowRequ
 __all__ = [
     "ApiKey",
     "Asset",
+    "AssetHostKeyModel",
     "AssetPermissionModel",
     "ApprovalPolicyModel",
     "Account",
