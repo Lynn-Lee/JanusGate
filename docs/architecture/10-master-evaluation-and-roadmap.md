@@ -828,7 +828,7 @@ User ──┬── WorkflowRequest ──── JitGrant
 
 | 任务 ID | 任务 | Owner | 范围 | 优先级 |
 |---------|------|-------|------|--------|
-| **#t63** | RBAC 角色与权限体系 | architect + backend | `Role` / `RoleBinding` 模型，system / org 双 scope；对象级 `Permission`；内置角色（系统管理员 / 组织管理员 / 审计员 / 普通用户）；菜单权限；与 §4 现有 `admin` / `workflow:admin` 字符串判断的迁移路径。**约束**：单一角色模型，禁止 edition 条件分支（对应关闭 P1#11） | 高 |
+| **#t63** | RBAC 角色与权限体系 | architect + backend | **✅ 已完成**：`RoleModel` / `RoleBindingModel` / `RoleObjectPermissionModel` 单一角色模型，system / organization 双 scope；四个内置角色（系统管理员 / 组织管理员 / 审计员 / 普通用户）按租户幂等种子；`RbacResolver.resolve()` 合并用户与用户组绑定、对象级权限与菜单权限；登录与 refresh token 签发写入 `permissions` / `menu_permissions` / `role_ids`；`is_superuser` 自动绑定 `system_admin` 承接历史迁移路径；管理 CRUD（`rbac:read` / `rbac:manage`）与 `GET /api/v1/rbac/effective`；`scoped_select` 对 RBAC 模型豁免 organization 列误过滤。`admin` 仍作通配符与现有路由守卫兼容。用户组 CRUD 仍由身份层提供 `group_ids` 上下文 | 高 |
 | **#t64** | 资产树与资产授权 | backend | **✅ 已完成**：`NodeModel` 树模型含唯一租户根、祖先链与 `Asset.node_id` 全量挂载映射；`AssetPermissionModel` 覆盖用户/用户组 × 资产/节点 × 账号 × 协议 × 动作 × 生效期 × `from_ticket`；节点继承、未分组资产、过期授权、用户组 `group_ids` 上下文和 `PolicyDecisionService.explain_trace` 已接线。所有授权查询强制走租户 scope helper，根节点不授权/不挂资产/不可删，跨租户管理请求 404。 | 高 |
 | **#t65** | ACL 访问控制体系 | architect + backend + security | ACL 基类：优先级 1-100（小者优先）+ 动作 + 复核人；派生登录 ACL、资产登录 ACL（IP 段 / 时间段规则）、连接方式 ACL、命令过滤 ACL + 命令组（命令 / 正则两类）、数据脱敏规则。动作覆盖 `reject` / `accept` / `review` / `warning` / `notice` / `notify_and_warn` / `change_secret`；`face_verify` / `face_online` 不做。**命令复核触发工单需与 #t74 联调**。**约束**：ACL 判定统一进 PolicyDecisionService，不得旁路。**当前进度（部分完成）**：命令过滤 ACL + 命令组已完成——`CommandGroupModel`（字面命令按词边界 / 正则两类）与 `CommandFilterAclModel`（BaseACL：优先级 1-100 小者优先 + 动作 + 复核人 + subject/asset/account/命令组 JSON 选择器），迁移 `b75f09654bda`；`PolicyDecisionService.evaluate_command` 已落地，语义为**已授权会话之上的 deny-overlay**——与会话级 deny-by-default 相反，无 ACL 命中时默认放行（否则每条命令都需显式 accept，不可运维），按优先级升序取首个命中者，动作映射 reject=deny / review=review（带复核人）/ warning|notice|notify_and_warn=allow（带 obligation），非法正则安全跳过不打断会话。数据脱敏规则已完成——`DataMaskingRuleModel`（regex/keyword 匹配、full/partial 打码、前后缀保留），迁移 `4eb764da4aab`；`PolicyDecisionService.mask` 语义为**转换而非决策**，故**累计应用**全部命中规则而非首个即止，partial 在值过短时整体打码不泄露原值。`app/policy/repository.py` 的 `AclRepository` + `build_tenant_policy_service` 已提供经 `scoped_select` 的租户 scope 持久化加载（同时提前落实 #t64 的 scope helper 约束）。管理 CRUD 已落地（仅命令过滤 ACL 与数据脱敏规则两类，跨租户 404）。执行前守卫已接线：`CommandPolicyGuard` 在 SSH exec / SSH PTY / K8s exec **落到远端之前**调用 `evaluate_command`；生产组装经 `AclRepository` / `build_tenant_policy_service` 按会话租户加载规则；无 ACL overlay 放行；库连不上 fail-closed（`UnavailablePolicyStore` / `COMMAND_POLICY_STORE_UNAVAILABLE`）并写 #t61，命令不落远端。`DENY` 与 `REVIEW`（#t74 前按 DENY）均阻断远程并审计。入库路径同样 evaluate + mask，拒绝不落库。**仍待后续切片**：登录 ACL、资产登录 ACL（IP 段 / 时间段规则，可复用 #t48 DSL 已有的 `context_ip_in_cidr` / `context_time_between`）、连接方式 ACL | 高 |
 
@@ -893,7 +893,7 @@ User ──┬── WorkflowRequest ──── JitGrant
 |--------|------|------|--------------|------|
 | M0：前置阻塞项 | 1-2 周 | #t60 + #t61 + #t62 | ✅ **3/3 完成** | 必须最先完成，否则后续无迁移与回滚路径 |
 | M3-预研：单协议通道验证 | 1-2 周 | #t69 技术切片 | ✅ **完成** | **与 M1 并行启动**，尽早暴露最高技术风险 |
-| M1：授权与访问控制内核 | 4-6 周 | #t63 + #t64 + #t65 | 🟡 #t64 已完成；#t65 命令过滤+脱敏+接线已 SHIP（登录 ACL 未做）；#t63 未开始 | 差距最大，优先级最高 |
+| M1：授权与访问控制内核 | 4-6 周 | #t63 + #t64 + #t65 | 🟡 #t63/#t64 已完成；#t65 命令过滤+脱敏+接线已 SHIP（登录 ACL 未做） | 差距最大，优先级最高 |
 | M2：资产与协议广度 | 3-4 周 | #t66 + #t67 + #t68 | ⬜ 未开始 | 依赖 M1 授权模型 |
 | M3：真实连接通道 | 6-8 周 | #t69 + #t70 + #t71 + #t72 | 🟡 #t69/#t72 完成；#t70/#t71 未开始 | 风险最高，#t70 图形通道为其中最重 |
 | M4：账号自动化 | 3-4 周 | #t73 | ⬜ 未开始 | 依赖 #t69 SSH 通道（前置已满足） |
@@ -904,7 +904,7 @@ User ──┬── WorkflowRequest ──── JitGrant
 
 > **v2.4 排期修订**：M3 预研切片（#t69）已完成并解除全局单点关键路径，M0 三项前置阻塞项全部关闭。
 > M3 剩余两项性质已分化——#t71 的 #t65 脱敏依赖已解除，剩协议实现难度；#t70 需外部图形基建，建议独立立项（见其任务行）。
-> 因此后续排序建议为：**#t63 RBAC → #t65 登录/资产登录/连接方式 ACL**（#t64 资产授权、#t65 命令过滤/脱敏接线已 SHIP），而非按里程碑编号顺序推进。
+> 因此后续排序建议为：**#t65 登录/资产登录/连接方式 ACL**（#t63 RBAC、#t64 资产授权、#t65 命令过滤/脱敏接线已 SHIP），而非按里程碑编号顺序推进。
 
 #### 11.4.5 Phase 6 验收标准
 

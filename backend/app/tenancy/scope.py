@@ -5,6 +5,15 @@ from typing import Any
 
 from sqlalchemy import Select, select
 
+# 这些模型的 organization/team/project 列表示 RBAC 或绑定 scope，不是行归属过滤维度。
+_SCOPE_DIMENSION_EXEMPT_MODELS = frozenset(
+    {
+        "RoleModel",
+        "RoleBindingModel",
+        "RoleObjectPermissionModel",
+    }
+)
+
 
 @dataclass(frozen=True)
 class ActorScope:
@@ -34,6 +43,8 @@ def scoped_select[T](model: type[T], actor_scope: ActorScope) -> Select[tuple[T]
 
     statement = select(model).where(tenant_column == actor_scope.tenant_id)
     if "admin" in actor_scope.permissions:
+        return statement
+    if model.__name__ in _SCOPE_DIMENSION_EXEMPT_MODELS:
         return statement
 
     model_id = getattr(model, "id", None)

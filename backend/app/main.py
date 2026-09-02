@@ -21,6 +21,7 @@ from app.api import (
     connectors,
     notification_deliveries,
     notification_rules,
+    rbac,
     session_recordings,
     sessions,
     ssh_certificate_authorities,
@@ -71,6 +72,7 @@ app.include_router(admin.router, prefix="/api/v1")
 app.include_router(automation.router, prefix="/api/v1")
 app.include_router(assets.router, prefix="/api/v1")
 app.include_router(asset_tree.router, prefix="/api/v1")
+app.include_router(rbac.router, prefix="/api/v1")
 app.include_router(connectors.router, prefix="/api/v1")
 app.include_router(notification_deliveries.router, prefix="/api/v1")
 app.include_router(notification_rules.router, prefix="/api/v1")

@@ -1581,7 +1581,51 @@ template=soc2-access
 
 `subject_type` 支持 `user` / `user_group`；空字符串或 `*` 的账号、协议为通配选择器。会话 `connect` 判定沿资产节点祖先链继承授权，跳过根节点授权和过期授权。策略命中返回 `ASSET_PERMISSION_ALLOWED`，并在 `explain_trace` 和 `obligations.permission_id` 中记录授权来源；无命中返回 `ASSET_PERMISSION_DENIED`。admin 不绕过该判定，跨租户管理请求统一按 404 处理。
 
-用户组成员 ID由身份层放入策略请求上下文 `group_ids`；#t64 提供用户组授权主体和判定接口，不实现 #t63 的 RBAC/用户组管理 CRUD。
+用户组成员 ID由身份层放入策略请求上下文 `group_ids`；#t64 提供用户组授权主体和判定接口。用户组管理与 RBAC 角色绑定 CRUD 由 #t63 提供。
+
+## Phase 6 RBAC（#t63）
+
+### 角色与绑定
+
+RBAC API 使用当前用户的 `tenant_id` 做边界，所有读取经过 `scoped_select()`。首次列出角色时自动种子四个内置角色（系统管理员 / 组织管理员 / 审计员 / 普通用户）；内置角色不可修改或删除。
+
+角色管理路径：
+
+- `GET/POST /api/v1/roles/`
+- `GET/PATCH/DELETE /api/v1/roles/{role_id}`
+- `GET/POST/DELETE /api/v1/role-bindings/`
+- `POST /api/v1/roles/{role_id}/object-permissions`
+- `GET /api/v1/rbac/effective`
+
+创建自定义角色请求示例：
+
+```json
+{
+  "name": "ops",
+  "display_name": "运维",
+  "scope_type": "system",
+  "permissions": ["assets:read", "sessions:connect"],
+  "menu_permissions": ["assets", "sessions"]
+}
+```
+
+绑定请求示例：
+
+```json
+{
+  "role_id": "role_xxx",
+  "subject_type": "user_group",
+  "subject_id": "ops-team",
+  "scope_type": "organization",
+  "organization_id": "org-1"
+}
+```
+
+### 权限解析与登录
+
+`RbacResolver.resolve()` 合并用户与用户组绑定的角色权限与对象级权限。登录与 refresh token 签发时将 `permissions`、`menu_permissions`、`role_ids` 写入 JWT。`is_superuser` 用户自动绑定 `system_admin` 内置角色，承接历史超级用户迁移路径；无绑定的普通用户回退到 `assets:read` + `sessions:connect`。
+
+管理 API 需要 `rbac:read` 或 `rbac:manage`（`admin` 仍可作为通配符）。跨租户管理请求统一按 404 处理。RBAC 不绕过 #t64 资产连接授权判定。
 
 ## Phase 4 Observability Metrics（#t51）
 
