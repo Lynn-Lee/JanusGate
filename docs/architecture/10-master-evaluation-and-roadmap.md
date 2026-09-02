@@ -839,7 +839,7 @@ User ──┬── WorkflowRequest ──── JitGrant
 |---------|------|-------|------|--------|
 | **#t66** | 资产类型与协议模型 | backend | **✅ 已完成**：`ProtocolModel` 全局声明式目录（19 对标 + `gpt` 扩展位共 20 条）、`PlatformProtocolModel` 关联约束、`assets.asset_type` / `platforms.asset_type` 八类资产类型；`GET /api/v1/protocols/`、`GET /api/v1/protocols/by-asset-type/{asset_type}`、`GET /api/v1/assets/platforms/{platform_id}/protocols`；创建资产校验 Platform 资产类型一致；数据库驱动仅 `driver_module` 占位按需加载 | 高 |
 | **#t67** | 网域与网关中转 | backend | **✅ 已完成**：`ZoneModel` + `ZoneGatewayModel`；资产 `zone_id` 挂载；`GET/POST /api/v1/zones/` 与网关登记/探测 API；建连时 `pick_random_active_gateway()` + TCP 探测；`AssetVaultSessionConnectionResolver` 解析 ProxyJump；`SshChannel.open(proxy_jump=)` 走 `asyncssh` tunnel 语义；网关凭据经 Vault 内存传递（关闭 P0#16） | 中 |
-| **#t68** | K8s 容器纳管（对标 + 安全增强） | backend + security | 云资产 + `k8s` 协议（端口 443、凭据类型限定 token、namespace 作用域）；审计化 kubectl 访问。**增强项（超出 JumpServer）**：集群 token 走 envelope encryption + 审批后 unwrap；支持对接 K8s TokenRequest API 签发短期 token 替代长期静态 token（对应关闭 P0#8 在容器场景的放大风险） | 高 |
+| **#t68** | K8s 容器纳管（对标 + 安全增强） | backend + security | **✅ 已完成**：`K8sClusterModel` + 账号 K8s 字段（namespace 作用域、默认 Pod/SA、短期 token 开关）；`GET/PUT /api/v1/k8s/clusters/{asset_id}`；`K8sVaultSessionConnectionResolver` + `RoutingSessionConnectionResolver` 生产装配；集群 token 走 envelope encryption + 审批后 unwrap；可选 K8s TokenRequest API 签发短期 token（关闭 P0#8 在容器场景的放大风险）；namespace 集群层与账号层取交集后在 #t72 exec 通道强制 | 高 |
 
 **M3：真实连接通道**（技术风险最高，建议独立立项并优先做技术验证）
 
@@ -851,7 +851,7 @@ User ──┬── WorkflowRequest ──── JitGrant
 | **#t69** | SSH / SFTP 通道 | backend + security | **✅ 已完成**：Connector 侧真实 SSH 通道（`asyncssh`）；PTY 交互、命令流解析并接入 #t46 命令事件；SFTP 文件传输并接入 #t78 文件传输审计。**约束**：强制现代算法套件、主机密钥强校验、私钥仅内存传递不落盘、凭据不经命令行（对应关闭 P0#7 / P0#15 / P0#16 / P0#17）。**连接器层已收口**：7 个模块全部落地并有进程内端到端测试（asyncssh 进程内 server，无外部依赖）——`ssh_channel`（exec 通道，四条安全约束逐条有断言）、`ssh_session`（会话编排）、`command_event_sink`（命令事件投递 #t46 端点）、`ssh_interactive`（PTY + 从键盘输入流重建命令 + 读超时）、`ssh_sftp`（传输 + 带 sha256 的 `FileTransferEvent`，失败也发事件）、`ssh_hostkey`（scan → 审批 → 固定，闭环补齐 P0#17 前提）、`session_runtime`（接线到会话网关，`ConnectorScheduler` 即连接器进程边界，网关只传身份、凭据在 resolver 侧）。**生产 SessionConnectionResolver 已 QA SHIP**：`AssetVaultSessionConnectionResolver`（资产注册表 + Vault + 已批准主机密钥）为默认 HTTP 装配，测试仍注入 Noop/Fake；仅 SSH（exec / interactive / sftp）。主机密钥 scan-then-compare、fail-closed、无 TOFU。审批留在现有 WorkflowPage：未知密钥轻确认「确认这台主机」，密钥变更加重警告「这台主机的密钥变了」，无 type-to-confirm。未批准/拒绝/不匹配一律「无法连接」，从不「没有权限」。连接列表隐藏 k8s，无新页面。#t78 文件传输日志入库端点未建（属 M6），现以 sink 协议解耦 | 高 |
 | **#t70** | RDP / VNC 图形通道与录像 | backend + devops | 图形协议网关；会话录像采集、转码与回放；录像存储后端抽象（本地 / S3 / OSS）。**注**：本任务是 Windows 资产直连的前提，与 §3.6.2 不做的 Applet 发布层无关。**排期说明（v2.4）**：本任务需 FreeRDP / guacd 等外部二进制与录像转码存储后端，无法沿用 #t69/#t72 已验证的「进程内、无外部依赖端到端」模式，成本结构与 M3 其余任务不同量级，建议独立立项而非排入常规切片队列 | 高 |
 | **#t71** | 数据库协议代理 | backend | 数据库协议代理通道，SQL 语句级审计并接入命令事件；与 #t65 数据脱敏规则联动。**依赖状态（v2.4）**：所依赖的 #t65 数据脱敏规则已就绪（`PolicyDecisionService.mask`），阻塞已解除；剩余难点是 MySQL / PostgreSQL wire protocol 代理需从零实现，端到端验证需自建协议 server | 中 |
-| **#t72** | K8s exec 通道 | backend | `kubectl exec` 语义通道（SPDY / WebSocket），命令审计复用统一管线；namespace 作用域强制生效。**✅ 已完成**：`app/connectors/k8s_exec.py` 走 WebSocket `v4.channel.k8s.io` 子协议（stdin/stdout/stderr/error 单字节通道帧多路复用），每条 exec 命令复用 #t69 已建的 `CommandEvent` 管线；退出码从 error 通道 `metav1.Status` 解析。三条安全约束逐条有测试：**namespace 作用域在建连前强制**（越权抛 `K8S_NAMESPACE_FORBIDDEN`，服务端收不到请求）、**API Server TLS 强校验**（预置 CA + check_hostname，缺 CA 拒绝 TOFU，https-only）、**token 仅内存经 Authorization 头**（绝不进 URL/argv，repr 屏蔽）。端到端测试用 `websockets` 进程内 wss server + 自签证书，无外部集群依赖。**仍待**：交互式 PTY exec（stdin+tty+resize）与 attach；短期 token 签发属 #t68 增强项，归凭据保险库侧 | 中 |
+| **#t72** | K8s exec 通道 | backend | `kubectl exec` 语义通道（SPDY / WebSocket），命令审计复用统一管线；namespace 作用域强制生效。**✅ 已完成**：`app/connectors/k8s_exec.py` 走 WebSocket `v4.channel.k8s.io` 子协议（stdin/stdout/stderr/error 单字节通道帧多路复用），每条 exec 命令复用 #t69 已建的 `CommandEvent` 管线；退出码从 error 通道 `metav1.Status` 解析。三条安全约束逐条有测试：**namespace 作用域在建连前强制**（越权抛 `K8S_NAMESPACE_FORBIDDEN`，服务端收不到请求）、**API Server TLS 强校验**（预置 CA + check_hostname，缺 CA 拒绝 TOFU，https-only）、**token 仅内存经 Authorization 头**（绝不进 URL/argv，repr 屏蔽）。端到端测试用 `websockets` 进程内 wss server + 自签证书，无外部集群依赖。**仍待**：交互式 PTY exec（stdin+tty+resize）与 attach；短期 token 签发已由 #t68 `K8sVaultSessionConnectionResolver` SHIP | 中 |
 
 **M4：账号自动化**
 
@@ -895,7 +895,7 @@ User ──┬── WorkflowRequest ──── JitGrant
 | M0：前置阻塞项 | 1-2 周 | #t60 + #t61 + #t62 | ✅ **3/3 完成** | 必须最先完成，否则后续无迁移与回滚路径 |
 | M3-预研：单协议通道验证 | 1-2 周 | #t69 技术切片 | ✅ **完成** | **与 M1 并行启动**，尽早暴露最高技术风险 |
 | M1：授权与访问控制内核 | 4-6 周 | #t63 + #t64 + #t65 | ✅ **3/3 完成** | 差距最大，优先级最高 |
-| M2：资产与协议广度 | 3-4 周 | #t66 + #t67 + #t68 | 🟡 #t66/#t67 已完成；#t68 未开始 | 依赖 M1 授权模型 |
+| M2：资产与协议广度 | 3-4 周 | #t66 + #t67 + #t68 | ✅ **3/3 完成** | 依赖 M1 授权模型 |
 | M3：真实连接通道 | 6-8 周 | #t69 + #t70 + #t71 + #t72 | 🟡 #t69/#t72 完成；#t70/#t71 未开始 | 风险最高，#t70 图形通道为其中最重 |
 | M4：账号自动化 | 3-4 周 | #t73 | ⬜ 未开始 | 依赖 #t69 SSH 通道（前置已满足） |
 | M5：工单、通知、认证源 | 4-5 周 | #t74 + #t75 + #t76 | ⬜ 未开始 | 可与 M3 并行 |
@@ -905,7 +905,7 @@ User ──┬── WorkflowRequest ──── JitGrant
 
 > **v2.4 排期修订**：M3 预研切片（#t69）已完成并解除全局单点关键路径，M0 三项前置阻塞项全部关闭；**#t69 生产 SessionConnectionResolver 已 QA SHIP**。
 > M3 剩余两项性质已分化——#t71 的 #t65 脱敏依赖已解除，剩协议实现难度；#t70 需外部图形基建，建议独立立项（见其任务行）。
-> 因此后续排序建议为：**#t68 K8s 容器纳管**（#t66 资产类型与协议、#t67 网域与网关中转已 SHIP），而非按里程碑编号顺序推进。
+> 因此后续排序建议为：**#t70 RDP/VNC 图形通道** 或 **#t71 数据库协议代理**（M2 #t68 K8s 容器纳管已 SHIP），而非按里程碑编号顺序推进。
 
 #### 11.4.5 Phase 6 验收标准
 
@@ -1067,7 +1067,7 @@ P1（15 项）/ P2（18 项）：架构性问题（xpack 侵入、common 大杂�
 | 6 | 资产授权 | 🟡 `NodeModel` / `AssetPermissionModel` + 祖先继承 + 使用面过滤 + `scoped_select()` | RBAC 角色/用户组管理、更多资产类型与协议 | 是 | **P6 #t64 已完成，域能力仍为部分实现** |
 | 7 | ACL 访问控制 | 🟡 命令过滤 ACL + 命令组 + 数据脱敏规则 + 登录/资产登录/连接方式 overlay ACL + 租户 CRUD + SSH/K8s/PTY 执行前守卫与登录/连接 overlay，判定统一进 PolicyDecisionService | 弱密码策略（#t79）、命令复核工单（#t74）；人脸核验不做 | 是 | **P6 #t65 已完成，域能力仍为部分实现** |
 | 8 | 账号与凭据 | 🟡 `Account` + `CredentialRotation` + envelope 加密 + 审批后 unwrap | 8 类账号自动化、账号模板、账号风险、真实云 KMS/HSM | 是 | P4 #t43/#t50 → **P6 #t73** |
-| 9 | 会话网关 | 🟡 会话生命周期 + 策略校验 + 短期 connection token + grant 绑定 + **会话已持久化** + SSH/K8s 真实通道 + **生产 `AssetVaultSessionConnectionResolver`（QA SHIP）** | RDP/VNC/DB 通道、会话共享与监控、端点路由；连接列表隐藏 k8s | 是 | P1 已有 → **P6 #t62、#t69-72、#t78** |
+| 9 | 会话网关 | 🟡 会话生命周期 + 策略校验 + 短期 connection token + grant 绑定 + **会话已持久化** + SSH/K8s 真实通道 + **生产 `RoutingSessionConnectionResolver`（SSH + K8s QA SHIP）** | RDP/VNC/DB 通道、会话共享与监控、端点路由；连接列表隐藏 k8s | 是 | P1 已有 → **P6 #t62、#t69-72、#t78** |
 | 10 | 会话录制与命令检索 | 🟡 录制元数据 + 命令事件 + 全文检索 + 只读回放时间线 | 录像本体采集与回放、多存储后端（S3/OSS/ES） | 是 | P4 #t46 → **P6 #t70、#t78** |
 | 11 | 连接组件 / 终端 | 🟡 Connector Registry + 心跳租约 + mTLS 指纹 + attestation + key rotation + SDK + **SSH/SFTP/PTY 与 K8s exec 真实通道** + #t65 执行前守卫 + **生产 `AssetVaultSessionConnectionResolver`** | RDP / VNC / 数据库协议实现；连接列表隐藏 k8s | 是 | P4 #t45 → **P6 #t69-72** |
 | 12 | 工单与审批 | 🟡 JIT 申请/审批/Grant 状态机 + 审批策略 DSL + 灰度 + 版本回滚 | 多级审批流程、审批规则分级、工单类型（命令复核 / 资产登录复核等） | 是 | P2 已有 / P4 #t48 → **P6 #t74** |
@@ -1077,7 +1077,7 @@ P1（15 项）/ P2（18 项）：架构性问题（xpack 侵入、common 大杂�
 | 16 | 标签体系 | ⬜ 无 | 标签模型与资源标注 | 是 | **P6 #t79** |
 | 17 | 报表中心 | 🟡 审计汇总 API + SOC2 合规报表导出 | 通用报表模型与自定义报表 | 是 | P4 #t49 / P5 #t54 → **P6 #t79** |
 | 18 | 系统配置 | 🟡 环境变量 + License 配置持久化 | 数据库驱动的动态系统配置、配置变更审计 | 是 | P5 #t58 → **P6 #t79** |
-| 19 | K8s 容器纳管 | 🟡 exec 通道（WebSocket v4.channel）+ namespace 作用域强制 + API Server TLS 强校验 | 云资产与 k8s 协议模型、短期 token 签发（TokenRequest API）、交互式 PTY exec | 是 | **P6 #t68、#t72** |
+| 19 | K8s 容器纳管 | 🟡 集群模型 + 管理 API + TokenRequest + 生产 K8s resolver + exec 通道 | 交互式 PTY exec | 是 | **P6 #t68、#t72** |
 | 20 | Applet / RemoteApp | ➖ | — | **否**（见 3.6.2） | — |
 | 21 | VirtualApp 容器应用发布 | ➖ | — | **否**（见 3.6.2） | — |
 | 22 | xpack 商业插件 | ➖ | — | **否**（由 P5 #t58 License/Edition 边界替代） | — |
