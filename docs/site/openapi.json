@@ -13036,7 +13036,7 @@
             "title": "Privileged",
             "default": false
           },
-          "shell": {
+          "login_shell": {
             "anyOf": [
               {
                 "type": "string",
@@ -13046,7 +13046,7 @@
                 "type": "null"
               }
             ],
-            "title": "Shell"
+            "title": "Login Shell"
           },
           "home_dir": {
             "anyOf": [
@@ -13169,7 +13169,7 @@
             "type": "boolean",
             "title": "Privileged"
           },
-          "shell": {
+          "login_shell": {
             "anyOf": [
               {
                 "type": "string"
@@ -13178,7 +13178,7 @@
                 "type": "null"
               }
             ],
-            "title": "Shell"
+            "title": "Login Shell"
           },
           "home_dir": {
             "anyOf": [
@@ -13244,7 +13244,7 @@
           "username",
           "protocol",
           "privileged",
-          "shell",
+          "login_shell",
           "home_dir",
           "groups",
           "organization_id",

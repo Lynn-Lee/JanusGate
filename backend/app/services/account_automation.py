@@ -86,7 +86,7 @@ class AccountAutomationTarget:
     port: int
     secret_id: str | None = None
     privileged: bool = False
-    shell: str | None = None
+    login_shell: str | None = None
     home_dir: str | None = None
     groups: tuple[str, ...] = ()
 
@@ -115,7 +115,7 @@ class DiscoveredAccount:
     username: str
     uid: int | None
     home_dir: str | None
-    shell: str | None
+    login_shell: str | None
 
 
 class SecretMaterialStore(Protocol):
@@ -589,7 +589,7 @@ class AccountAutomationWorkerHandler:
                 address=asset.address,
                 port=asset.port,
                 privileged=template.privileged,
-                shell=template.shell,
+                login_shell=template.login_shell,
                 home_dir=template.home_dir,
                 groups=tuple(_parse_groups(template.groups_json)),
             )
@@ -628,7 +628,8 @@ class AccountAutomationWorkerHandler:
             target = await self._with_host_key(target)
             new_password = _generate_password()
             await self._executor.change_secret(target, new_password=new_password)
-            assert target.secret_id is not None
+            if target.secret_id is None:
+                raise ValueError("ACCOUNT_SECRET_ID_MISSING")
             await self._secrets.rotate(target.secret_id, new_password)
             managed = await _get_active_account(
                 session, tenant_id=tenant_id, account_id=account_id
@@ -793,7 +794,7 @@ class AccountAutomationWorkerHandler:
             port=target.port,
             secret_id=target.secret_id,
             privileged=target.privileged,
-            shell=target.shell,
+            login_shell=target.login_shell,
             home_dir=target.home_dir,
             groups=target.groups,
             trusted_host_key=trusted,
@@ -902,8 +903,8 @@ def _credential_from_plaintext(plaintext: str) -> SshCredential:
 
 def _useradd_command(target: AccountAutomationTarget) -> str:
     parts = ["useradd", "--create-home"]
-    if target.shell:
-        parts.extend(["--shell", target.shell])
+    if target.login_shell:
+        parts.extend(["--shell", target.login_shell])
     if target.home_dir:
         parts.extend(["--home-dir", target.home_dir])
     if target.groups:
@@ -928,7 +929,7 @@ def _parse_passwd(stdout: str) -> list[DiscoveredAccount]:
                 username=username,
                 uid=uid,
                 home_dir=parts[5] or None,
-                shell=parts[6] or None,
+                login_shell=parts[6] or None,
             )
         )
     return discovered

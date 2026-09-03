@@ -27,7 +27,7 @@ def upgrade() -> None:
         sa.Column("username", sa.String(length=100), nullable=False),
         sa.Column("protocol", sa.String(length=32), nullable=False, server_default="ssh"),
         sa.Column("privileged", sa.Boolean(), nullable=False, server_default=sa.text("false")),
-        sa.Column("shell", sa.String(length=120), nullable=True),
+        sa.Column("login_shell", sa.String(length=120), nullable=True),
         sa.Column("home_dir", sa.String(length=240), nullable=True),
         sa.Column("groups_json", sa.Text(), nullable=False, server_default="[]"),
         sa.Column("organization_id", sa.String(length=64), nullable=True),

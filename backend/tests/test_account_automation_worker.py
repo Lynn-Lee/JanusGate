@@ -73,7 +73,7 @@ class RecordingExecutor:
     ) -> tuple[AccountAutomationResult, list[DiscoveredAccount]]:
         self.calls.append(("gather", target.username))
         discovered = [
-            DiscoveredAccount(username=name, uid=0 if name == "root" else 1000, home_dir=None, shell=None)
+            DiscoveredAccount(username=name, uid=0 if name == "root" else 1000, home_dir=None, login_shell=None)
             for name in self.gather_usernames
         ]
         risks = tuple(

@@ -10,7 +10,7 @@ class AccountTemplateCreate(BaseModel):
     username: str = Field(min_length=1, max_length=100)
     protocol: str = Field(default="ssh", min_length=1, max_length=32)
     privileged: bool = False
-    shell: str | None = Field(default=None, max_length=120)
+    login_shell: str | None = Field(default=None, max_length=120)
     home_dir: str | None = Field(default=None, max_length=240)
     groups: list[str] = Field(default_factory=list, max_length=32)
     organization_id: str | None = Field(default=None, min_length=1, max_length=64)
@@ -26,7 +26,7 @@ class AccountTemplateResponse(BaseModel):
     username: str
     protocol: str
     privileged: bool
-    shell: str | None
+    login_shell: str | None
     home_dir: str | None
     groups: list[str]
     organization_id: str | None

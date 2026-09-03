@@ -88,7 +88,7 @@ class AccountTemplate(Base):
     username: Mapped[str] = mapped_column(String(100), nullable=False)
     protocol: Mapped[str] = mapped_column(String(32), nullable=False, default="ssh")
     privileged: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
-    shell: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    login_shell: Mapped[str | None] = mapped_column(String(120), nullable=True)
     home_dir: Mapped[str | None] = mapped_column(String(240), nullable=True)
     groups_json: Mapped[str] = mapped_column(Text, nullable=False, default="[]")
     organization_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
