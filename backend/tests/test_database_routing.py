@@ -5,6 +5,7 @@ from typing import Any
 
 from fastapi.routing import APIRoute
 
+from app.api.account_automation import router as account_automation_router
 from app.api.accounts import router as accounts_router
 from app.api.acl import router as acl_router
 from app.api.admin import router as admin_router
@@ -31,8 +32,17 @@ DB_BACKED_GET_ROUTE_ROUTING_INVENTORY = {
     ("GET", "/command-filter-acls/{acl_id}"),
     ("GET", "/data-masking-rules/"),
     ("GET", "/data-masking-rules/{rule_id}"),
+    ("GET", "/login-acls/"),
+    ("GET", "/login-acls/{acl_id}"),
+    ("GET", "/login-asset-acls/"),
+    ("GET", "/login-asset-acls/{acl_id}"),
+    ("GET", "/connect-method-acls/"),
+    ("GET", "/connect-method-acls/{acl_id}"),
     ("GET", "/admin/license-summary"),
     ("GET", "/accounts/{account_id}/rotations"),
+    ("GET", "/account-templates/"),
+    ("GET", "/account-risks/"),
+    ("GET", "/account-automation/runs"),
     ("GET", "/assets/"),
     ("GET", "/assets/platforms"),
     ("GET", "/assets/{asset_id}"),
@@ -70,6 +80,7 @@ GET_ROUTE_ROUTING_INVENTORY = (
 )
 
 ROUTERS_WITH_GET_ROUTES = [
+    account_automation_router,
     accounts_router,
     acl_router,
     admin_router,
@@ -191,6 +202,18 @@ def test_account_read_routes_use_read_database_dependency() -> None:
         assert get_read_db in dependencies
         assert get_db not in dependencies
 
+    automation_reads = [
+        ("GET", "/account-templates/"),
+        ("GET", "/account-risks/"),
+        ("GET", "/account-automation/runs"),
+    ]
+    for method, path in automation_reads:
+        dependencies = _route_dependency_calls(
+            router=account_automation_router, method=method, path=path
+        )
+        assert get_read_db in dependencies
+        assert get_db not in dependencies
+
 
 def test_account_write_routes_keep_writer_database_dependency() -> None:
     write_routes = [
@@ -202,6 +225,19 @@ def test_account_write_routes_keep_writer_database_dependency() -> None:
         dependencies = _route_dependency_calls(router=accounts_router, method=method, path=path)
         assert get_db in dependencies
         assert get_read_db not in dependencies
+
+    template_write = _route_dependency_calls(
+        router=account_automation_router, method="POST", path="/account-templates/"
+    )
+    assert get_db in template_write
+    assert get_read_db not in template_write
+    resolve_write = _route_dependency_calls(
+        router=account_automation_router,
+        method="POST",
+        path="/account-risks/{risk_id}/resolve",
+    )
+    assert get_db in resolve_write
+    assert get_read_db not in resolve_write
 
 
 def test_admin_license_routes_use_expected_database_dependencies() -> None:

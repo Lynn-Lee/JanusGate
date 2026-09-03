@@ -11,6 +11,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 
 from app.api import (
+    account_automation,
     accounts,
     acl,
     admin,
@@ -21,8 +22,8 @@ from app.api import (
     connectors,
     notification_deliveries,
     notification_rules,
-    rbac,
     protocols,
+    rbac,
     session_recordings,
     sessions,
     ssh_certificate_authorities,
@@ -69,6 +70,7 @@ register_exception_handlers(app)
 app.include_router(auth.router, prefix="/api/v1")
 app.include_router(auth.users_router, prefix="/api/v1")
 app.include_router(accounts.router, prefix="/api/v1")
+app.include_router(account_automation.router, prefix="/api/v1")
 app.include_router(acl.router, prefix="/api/v1")
 app.include_router(admin.router, prefix="/api/v1")
 app.include_router(automation.router, prefix="/api/v1")

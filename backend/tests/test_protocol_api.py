@@ -11,7 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 from app.core.database import Base, get_db, get_read_db
 from app.core.deps import current_user
 from app.main import app
-from app.models.asset import Asset, Platform
+from app.models.asset import Platform
 from app.protocols.catalog import PROTOCOL_CATALOG, validate_protocol_for_asset
 from app.protocols.repository import ensure_builtin_protocols, sync_platform_protocols
 from app.protocols.validation import ProtocolValidationError, validate_asset_protocol_binding

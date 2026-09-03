@@ -113,6 +113,14 @@ Approval policy DSL 当前支持 `context_equals`、`context_in`、`context_numb
 - `asset.scan`
 - `credential.rotate`
 - `ansible.playbook`
+- `account.push`
+- `account.change_secret`
+- `account.verify`
+- `account.remove`
+- `account.gather`
+- `account.verify_gateway`
+- `account.check`
+- `account.backup`
 
 ### POST `/api/v1/automation/jobs/asset-scans`
 
@@ -238,6 +246,50 @@ Approval policy DSL 当前支持 `context_equals`、`context_in`、`context_numb
 
 - 响应只返回 job run 状态元数据，不返回 queue payload、inventory、stdout、stderr、secret 引用、凭据明文或下游执行输出。
 - 租户隔离以当前认证用户为准，跨租户 run 不参与列表或 total。
+
+## Phase 6 Account Automation API（#t73）
+
+8 类账号自动化复用 #t52 JSON-only 队列；payload 只含 id / reason，改密密码不进队列、不进命令行。调度接口需 `accounts:automate`、`automation:write` 或 `admin`。
+
+### POST `/api/v1/automation/jobs/account-push`
+
+请求体：`{"asset_id": 1, "template_id": 1}`。响应 `202`：`job_type=account.push`。
+
+### POST `/api/v1/automation/jobs/account-change-secret`
+
+请求体：`{"account_id": 1, "reason": "quarterly"}`。响应 `202`：`job_type=account.change_secret`。Worker 经 asyncssh `chpasswd` stdin 改密并写 `CredentialRotation`。
+
+### POST `/api/v1/automation/jobs/account-verify`
+
+### POST `/api/v1/automation/jobs/account-remove`
+
+### POST `/api/v1/automation/jobs/account-gather`
+
+### POST `/api/v1/automation/jobs/account-verify-gateway`
+
+### POST `/api/v1/automation/jobs/account-check`
+
+### POST `/api/v1/automation/jobs/account-backup`
+
+以上六个接口请求体均为 `{"account_id": 1}`（gather 使用该账号登录后发现主机账号）。响应 `202`，`job_type` 对应 `account.verify` / `account.remove` / `account.gather` / `account.verify_gateway` / `account.check` / `account.backup`。
+
+### GET `/api/v1/account-templates/` / POST `/api/v1/account-templates/`
+
+账号模板列表与创建。创建需 `accounts:write`；列表需 `accounts:read`。响应不含密码。
+
+### GET `/api/v1/account-risks/` / POST `/api/v1/account-risks/{risk_id}/resolve`
+
+账号风险（`privileged` / `weak_password` / `zombie`）。列表需 `accounts:read`；解决需 `accounts:automate`。
+
+### GET `/api/v1/account-automation/runs`
+
+当前租户账号自动化执行摘要；不含凭据明文。需 `accounts:automate`。
+
+安全语义：
+
+- 改密执行器命令字符串固定为 `chpasswd`，密码仅经 stdin（关闭 P0#16）。
+- 结构化日志递归脱敏 password / secret / private_key 等键（关闭 P2#13）。
+- 入队前按 `scoped_select()` 确认账号/资产/模板可见；跨租户返回 404。
 
 安全语义：
 

@@ -16,6 +16,7 @@ Phase 5 #t59 文档站 foundation 面向安装、运维和 API 集成读者，�
 - [资产树与 AssetPermission](asset-tree-authorization.md)：#t64 的节点树、资产挂载、用户/用户组授权、账号/协议/动作/有效期/来源工单选择器，以及会话授权 explain 链路。
 - [RBAC 角色与权限](rbac.md)：#t63 的 Role / RoleBinding / 对象级 Permission、system+org 双 scope、内置角色、菜单权限与登录 token 签发接入。
 - [资产类型与协议](asset-types-protocols.md)：#t66 的声明式协议目录、Platform 协议约束、8 种资产类型与 19+1 协议种子。
+- [账号自动化与账号治理](account-automation.md)：#t73 的 8 类账号自动化、账号模板、账号风险，以及改密不经 shell / 结构化日志约束。
 
 ## 版本边界
 

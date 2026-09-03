@@ -1,4 +1,11 @@
-from app.models.account import Account, CredentialRotation
+from app.models.account import (
+    Account,
+    AccountAutomationRun,
+    AccountBackup,
+    AccountRisk,
+    AccountTemplate,
+    CredentialRotation,
+)
 from app.models.acl import (
     CommandFilterAclModel,
     CommandGroupModel,
@@ -32,6 +39,10 @@ __all__ = [
     "AssetPermissionModel",
     "ApprovalPolicyModel",
     "Account",
+    "AccountAutomationRun",
+    "AccountBackup",
+    "AccountRisk",
+    "AccountTemplate",
     "AuditEventModel",
     "AutomationJobRun",
     "CommandFilterAclModel",

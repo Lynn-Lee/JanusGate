@@ -7,6 +7,7 @@ from typing import Protocol
 
 from sqlalchemy import Select, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+from sqlalchemy.orm import selectinload
 
 from app.models.account import Account, CredentialRotation
 from app.services.automation_worker import JsonValue
@@ -137,6 +138,7 @@ def _due_rotation_query(
     return (
         select(CredentialRotation, Account)
         .join(Account, CredentialRotation.account_id == Account.id)
+        .options(selectinload(Account.asset))
         .where(CredentialRotation.status == "scheduled")
         .where(
             or_(
@@ -157,6 +159,7 @@ async def _get_active_account(
 ) -> Account | None:
     result = await session.execute(
         select(Account)
+        .options(selectinload(Account.asset))
         .where(Account.id == account_id)
         .where(Account.tenant_id == tenant_id)
         .where(Account.status == "active")
