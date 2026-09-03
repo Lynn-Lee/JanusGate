@@ -213,9 +213,13 @@ class ConnectorSessionRuntime:
         self, spec: SessionConnectionSpec, request: ConnectorDispatchRequest
     ) -> OpenChannel:
         policy = await self._policy_for(request)
-        proxy_kw = {"proxy_jump": spec.proxy_jump} if spec.proxy_jump is not None else {}
         if spec.mode is ConnectorSessionMode.EXEC:
-            return await SshChannel.open(spec.target, spec.credential, policy=policy, **proxy_kw)
+            return await SshChannel.open(
+                spec.target,
+                spec.credential,
+                policy=policy,
+                proxy_jump=spec.proxy_jump,
+            )
         if spec.mode is ConnectorSessionMode.INTERACTIVE:
             if self._command_sink is None:
                 raise SshChannelError(
@@ -227,7 +231,7 @@ class ConnectorSessionRuntime:
                 spec.credential,
                 self._command_sink,
                 policy=policy,
-                **proxy_kw,
+                proxy_jump=spec.proxy_jump,
             )
         if spec.mode is ConnectorSessionMode.SFTP:
             if self._transfer_sink is None:
@@ -236,7 +240,10 @@ class ConnectorSessionRuntime:
                     "sftp mode requires a transfer_sink",
                 )
             return await SftpChannel.open(
-                spec.target, spec.credential, self._transfer_sink, **proxy_kw
+                spec.target,
+                spec.credential,
+                self._transfer_sink,
+                proxy_jump=spec.proxy_jump,
             )
         raise SshChannelError("CONNECTOR_UNSUPPORTED_MODE", str(spec.mode))
 
