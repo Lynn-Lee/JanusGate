@@ -271,3 +271,30 @@ async def test_asset_service_test_connection_blocks_internal_ips_and_handles_soc
     failure = await AssetService.test_connection("8.8.8.8", 443, timeout=0.1)
     assert failure["reachable"] is False
     assert "timed out" in failure["error"]
+
+
+@pytest.mark.asyncio
+async def test_probe_registered_host_allows_private_jump_hosts(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """#t67：已登记网关可探测 RFC1918；任意目标的 test_connection 仍 fail-closed。"""
+
+    class FakeSocket:
+        def close(self) -> None:
+            return None
+
+    monkeypatch.setattr(
+        asset_service_module.socket,
+        "getaddrinfo",
+        lambda *_a, **_k: [(None, None, None, None, ("10.0.0.1", 22))],
+    )
+    monkeypatch.setattr(
+        asset_service_module.socket,
+        "create_connection",
+        lambda target, timeout: FakeSocket(),
+    )
+    probed = await AssetService.probe_registered_host("10.0.0.1", 22, timeout=0.1)
+    assert probed == {"reachable": True, "error": ""}
+    blocked = await AssetService.test_connection("10.0.0.1", 22)
+    assert blocked["reachable"] is False
+    assert "SSRF" in blocked["error"]

@@ -21,9 +21,13 @@ cp "$repo_root/docs/site/api.md" "$output_abs/api.md"
 cp "$repo_root/docs/site/runbooks.md" "$output_abs/runbooks.md"
 cp "$repo_root/docs/site/connectors-ssh.md" "$output_abs/connectors-ssh.md"
 cp "$repo_root/docs/site/connectors-k8s.md" "$output_abs/connectors-k8s.md"
+cp "$repo_root/docs/site/k8s-management.md" "$output_abs/k8s-management.md"
 cp "$repo_root/docs/site/acl-command-filter.md" "$output_abs/acl-command-filter.md"
 cp "$repo_root/docs/site/acl-data-masking.md" "$output_abs/acl-data-masking.md"
 cp "$repo_root/docs/site/asset-tree-authorization.md" "$output_abs/asset-tree-authorization.md"
+cp "$repo_root/docs/site/rbac.md" "$output_abs/rbac.md"
+cp "$repo_root/docs/site/asset-types-protocols.md" "$output_abs/asset-types-protocols.md"
+cp "$repo_root/docs/site/zones-gateways.md" "$output_abs/zones-gateways.md"
 mkdir -p "$output_abs/assets"
 cp -R "$repo_root/docs/site/assets/screenshots" "$output_abs/assets/screenshots"
 mkdir -p "$output_abs/fixtures"
@@ -96,9 +100,13 @@ cat > "$output_abs/manifest.json" <<'JSON'
     "runbooks.md",
     "connectors-ssh.md",
     "connectors-k8s.md",
+    "k8s-management.md",
     "acl-command-filter.md",
     "acl-data-masking.md",
-    "asset-tree-authorization.md"
+    "asset-tree-authorization.md",
+    "rbac.md",
+    "asset-types-protocols.md",
+    "zones-gateways.md"
   ]
 }
 JSON

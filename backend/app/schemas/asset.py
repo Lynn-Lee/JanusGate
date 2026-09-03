@@ -39,6 +39,13 @@ class AssetCreate(BaseModel):
     port: int = 22
     username: str = ""
     description: str = ""
+    zone_id: str | None = Field(default=None, max_length=64)
+
+
+class AssetUpdate(BaseModel):
+    """部分更新；当前主要用于挂载/解绑网域（#t67）。"""
+
+    zone_id: str | None = Field(default=None, max_length=64)
 
 
 class AssetResponse(BaseModel):
@@ -52,3 +59,4 @@ class AssetResponse(BaseModel):
     is_active: bool
     description: str
     created_at: str
+    zone_id: str | None = None
