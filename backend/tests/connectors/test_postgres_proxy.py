@@ -144,7 +144,11 @@ async def _pg_handler(
                 writer.write(
                     _pack_message(
                         b"T",
-                        struct.pack("!h", 1) + b"col\x00" + struct.pack("!h", 0) + struct.pack("!I", 25) + b"\x00",
+                        struct.pack("!h", 1)
+                        + b"col\x00"
+                        + struct.pack("!h", 0)
+                        + struct.pack("!I", 25)
+                        + b"\x00",
                     )
                 )
                 await writer.drain()

@@ -259,7 +259,9 @@ class ConnectorSessionRuntime:
             )
         if spec.mode is ConnectorSessionMode.DB_POSTGRESQL:
             if spec.db is None or spec.db.engine != "postgresql":
-                raise SshChannelError("DB_SPEC_MISSING", "postgresql mode requires postgresql db bundle")
+                raise SshChannelError(
+                    "DB_SPEC_MISSING", "postgresql mode requires postgresql db bundle"
+                )
             if self._command_sink is None:
                 raise SshChannelError(
                     "CONNECTOR_COMMAND_SINK_MISSING",
@@ -374,11 +376,11 @@ def build_production_connector_scheduler(
         AssetVaultSessionConnectionResolver,
         CallableSecretUnwrapper,
     )
-    from app.connectors.host_key_trust import AsyncScanAdapter, HostKeyTrustStore
     from app.connectors.db_vault_resolver import (
         CallableDbSecretUnwrapper,
         DatabaseVaultSessionConnectionResolver,
     )
+    from app.connectors.host_key_trust import AsyncScanAdapter, HostKeyTrustStore
     from app.connectors.k8s_vault_resolver import (
         CallableK8sSecretUnwrapper,
         K8sVaultSessionConnectionResolver,

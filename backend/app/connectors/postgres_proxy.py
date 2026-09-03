@@ -148,7 +148,11 @@ def _parse_command_complete(payload: bytes) -> tuple[int | None, str]:
     match = re.search(r"(\d+)\s*$", tag)
     if match:
         return 0, tag
-    if tag.upper().startswith("INSERT") or tag.upper().startswith("UPDATE") or tag.upper().startswith("DELETE"):
+    if (
+        tag.upper().startswith("INSERT")
+        or tag.upper().startswith("UPDATE")
+        or tag.upper().startswith("DELETE")
+    ):
         return 0, tag
     return 0, tag
 
@@ -327,7 +331,9 @@ class PostgresQueryChannel:
             if msg_type == _MSG_READY:
                 return
 
-    async def _read_query_results(self, reader: asyncio.StreamReader) -> tuple[str, str, int | None]:
+    async def _read_query_results(
+        self, reader: asyncio.StreamReader
+    ) -> tuple[str, str, int | None]:
         rows: list[str] = []
         stderr = ""
         exit_code: int | None = 0

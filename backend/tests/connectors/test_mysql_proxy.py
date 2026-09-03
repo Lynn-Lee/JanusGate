@@ -117,7 +117,7 @@ async def _mysql_handler(reader: asyncio.StreamReader, writer: asyncio.StreamWri
         writer.close()
         return
     username_end = auth_payload.index(b"\x00", 32)
-    username = auth_payload[32:username_end].decode("utf-8")
+    _ = auth_payload[32:username_end].decode("utf-8")
     auth_len = auth_payload[username_end + 1]
     auth_start = username_end + 2
     client_scramble = auth_payload[auth_start : auth_start + auth_len]

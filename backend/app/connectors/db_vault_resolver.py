@@ -12,7 +12,11 @@ from app.api.sessions.service import ConnectorDispatchRequest
 from app.connectors.db_channel_errors import DbChannelError
 from app.connectors.mysql_proxy import MysqlCredential, MysqlTarget
 from app.connectors.postgres_proxy import PostgresCredential, PostgresTarget
-from app.connectors.session_runtime import ConnectorSessionMode, DbConnectionBundle, SessionConnectionSpec
+from app.connectors.session_runtime import (
+    ConnectorSessionMode,
+    DbConnectionBundle,
+    SessionConnectionSpec,
+)
 from app.models.account import Account
 from app.models.asset import Asset
 from app.protocols.catalog import CRED_PASSWORD, PROTOCOL_BY_ID
@@ -62,7 +66,9 @@ class DatabaseVaultSessionConnectionResolver:
             )
 
         async with self._session_factory() as session:
-            asset = await _load_asset(session, tenant_id=request.tenant_id, asset_id=request.asset_id)
+            asset = await _load_asset(
+                session, tenant_id=request.tenant_id, asset_id=request.asset_id
+            )
             if asset is None or not asset.is_active or asset.asset_type != "database":
                 raise DbChannelError(
                     "DB_TARGET_UNRESOLVED",
@@ -129,9 +135,7 @@ def _validate_database_account(*, protocol: str, account: Account) -> None:
         raise DbChannelError("DB_USERNAME_REQUIRED", "database account requires username")
 
 
-async def _load_asset(
-    session: AsyncSession, *, tenant_id: str, asset_id: str
-) -> Asset | None:
+async def _load_asset(session: AsyncSession, *, tenant_id: str, asset_id: str) -> Asset | None:
     try:
         numeric_id = int(asset_id)
     except ValueError:

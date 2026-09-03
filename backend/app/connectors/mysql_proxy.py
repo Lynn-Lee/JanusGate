@@ -64,7 +64,7 @@ def _mysql_native_password_scramble(password: str, salt: bytes) -> bytes:
     stage1 = hashlib.sha1(password.encode("utf-8")).digest()
     stage2 = hashlib.sha1(stage1).digest()
     stage3 = hashlib.sha1(stage2 + salt).digest()
-    return bytes(s1 ^ s3 for s1, s3 in zip(stage1, stage3))
+    return bytes(s1 ^ s3 for s1, s3 in zip(stage1, stage3, strict=True))
 
 
 async def _read_packet(reader: asyncio.StreamReader) -> tuple[int, bytes]:
@@ -293,7 +293,9 @@ class MysqlQueryChannel:
                 "unsupported auth switch request",
             )
 
-    async def _read_query_results(self, reader: asyncio.StreamReader) -> tuple[str, str, int | None]:
+    async def _read_query_results(
+        self, reader: asyncio.StreamReader
+    ) -> tuple[str, str, int | None]:
         _, payload = await _read_packet(reader)
         if not payload:
             raise MysqlChannelError("MYSQL_PROTOCOL_INVALID", "empty query response")
