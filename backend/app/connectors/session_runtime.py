@@ -19,8 +19,10 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import dataclass
 from enum import StrEnum
-from typing import Any, Protocol
+from typing import TYPE_CHECKING, Any, Protocol
 from uuid import uuid4
+
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.api.sessions.service import ConnectorDispatchRequest
 from app.connectors.command_policy import CommandPolicyGuard, default_command_policy_guard
@@ -30,11 +32,16 @@ from app.connectors.ssh_channel import (
     SshChannel,
     SshChannelError,
     SshCredential,
+    SshProxyJump,
     SshTarget,
 )
 from app.connectors.ssh_interactive import SshInteractiveSession
 from app.connectors.ssh_sftp import FileTransferEventSink, SftpChannel
 from app.policy.schemas import ResourceRef, SubjectRef
+
+if TYPE_CHECKING:
+    from app.connectors.asset_vault_resolver import SessionSecretUnwrapper
+    from app.connectors.host_key_trust import HostKeyScanner, HostKeyTrustStore
 
 
 class ConnectorSessionMode(StrEnum):
@@ -52,11 +59,13 @@ class SessionConnectionSpec:
     :param mode: 通道形态。
     :param target: SSH 目标与可信主机公钥。
     :param credential: 内存凭据（私钥或密码）。
+    :param proxy_jump: 可选 ProxyJump 网关跳（#t67 网域中转）。
     """
 
     mode: ConnectorSessionMode
     target: SshTarget
     credential: SshCredential
+    proxy_jump: SshProxyJump | None = None
 
 
 # 已打开通道的联合类型：三者均提供 async close()，故运行时可统一关闭。
@@ -205,7 +214,12 @@ class ConnectorSessionRuntime:
     ) -> OpenChannel:
         policy = await self._policy_for(request)
         if spec.mode is ConnectorSessionMode.EXEC:
-            return await SshChannel.open(spec.target, spec.credential, policy=policy)
+            return await SshChannel.open(
+                spec.target,
+                spec.credential,
+                policy=policy,
+                proxy_jump=spec.proxy_jump,
+            )
         if spec.mode is ConnectorSessionMode.INTERACTIVE:
             if self._command_sink is None:
                 raise SshChannelError(
@@ -213,7 +227,11 @@ class ConnectorSessionRuntime:
                     "interactive mode requires a command_sink",
                 )
             return await SshInteractiveSession.open(
-                spec.target, spec.credential, self._command_sink, policy=policy
+                spec.target,
+                spec.credential,
+                self._command_sink,
+                policy=policy,
+                proxy_jump=spec.proxy_jump,
             )
         if spec.mode is ConnectorSessionMode.SFTP:
             if self._transfer_sink is None:
@@ -221,7 +239,12 @@ class ConnectorSessionRuntime:
                     "CONNECTOR_TRANSFER_SINK_MISSING",
                     "sftp mode requires a transfer_sink",
                 )
-            return await SftpChannel.open(spec.target, spec.credential, self._transfer_sink)
+            return await SftpChannel.open(
+                spec.target,
+                spec.credential,
+                self._transfer_sink,
+                proxy_jump=spec.proxy_jump,
+            )
         raise SshChannelError("CONNECTOR_UNSUPPORTED_MODE", str(spec.mode))
 
 
@@ -258,11 +281,11 @@ class _NoopFileTransferEventSink:
 
 def build_production_connector_scheduler(
     *,
-    session_factory=None,
-    secrets=None,
-    host_keys=None,
-    scanner=None,
-):
+    session_factory: async_sessionmaker[AsyncSession] | None = None,
+    secrets: SessionSecretUnwrapper | None = None,
+    host_keys: HostKeyTrustStore | None = None,
+    scanner: HostKeyScanner | None = None,
+) -> ConnectorRuntimeScheduler:
     """装配生产连接器调度器：资产注册表 + Vault + 已批准主机密钥。"""
 
     from hashlib import sha256

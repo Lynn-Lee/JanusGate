@@ -55,7 +55,8 @@
 ## Phase 3 核心 API 分组
 
 - Auth：`/api/v1/auth/*`，登录、2FA、refresh、当前用户、密码/API key。
-- Assets：`/api/v1/assets/*`，资产、平台、受控连接测试。
+- Assets：`/api/v1/assets/*`，资产、平台、受控连接测试；`zone_id` 挂载网域（#t67），`PATCH /api/v1/assets/{id}` 可更新。
+- Zones：`/api/v1/zones/*`，网域与网关登记/探测（#t67）。
 - Accounts：`/api/v1/accounts/*`，Phase 4 资产账号托管与 Vault secret 引用。
 - Sessions：`/api/v1/sessions/*`，会话创建/关闭，JIT grant 绑定。
 - Workflow/JIT：`/api/v1/workflows/*`，申请、提交、审批、拒绝、撤销、active grant。

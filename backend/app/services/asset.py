@@ -81,8 +81,12 @@ class AssetService:
         if not asset:
             return None
         for key, value in data.items():
-            if hasattr(asset, key) and value is not None:
-                setattr(asset, key, value)
+            if not hasattr(asset, key):
+                continue
+            # ``zone_id=None`` 表示解绑网域，必须写入；其它字段仍忽略 None。
+            if value is None and key != "zone_id":
+                continue
+            setattr(asset, key, value)
         await db.commit()
         await db.refresh(asset)
         return asset
@@ -101,6 +105,12 @@ class AssetService:
     async def test_connection(
         address: str, port: int, timeout: float = 5.0
     ) -> dict[str, Any]:
+        """Arbitrary-target connectivity check with SSRF private-IP blocking.
+
+        Use only for untrusted / allowlisted addresses. For inventory-registered
+        jump hosts (incl. RFC1918), call :meth:`probe_registered_host` instead.
+        """
+
         if _is_private_ip(address):
             return {"reachable": False, "error": "SSRF protection: private/internal IP blocked"}
         try:
@@ -110,5 +120,29 @@ class AssetService:
             return {"reachable": True, "error": ""}
         except ValueError as e:
             return {"reachable": False, "error": str(e)}
+        except Exception as e:
+            return {"reachable": False, "error": str(e)}
+
+    @staticmethod
+    async def probe_registered_host(
+        address: str, port: int, timeout: float = 5.0
+    ) -> dict[str, Any]:
+        """TCP probe for inventory-registered hosts, including private jump hosts.
+
+        Unlike ``test_connection``, this does **not** apply SSRF private-IP
+        blocking: the address must already be an approved inventory asset (e.g.
+        a zone gateway), not an arbitrary caller-supplied URL.
+        """
+
+        try:
+            infos = await asyncio.to_thread(
+                socket.getaddrinfo, address, port, type=socket.SOCK_STREAM
+            )
+            targets = [(str(info[4][0]), int(info[4][1])) for info in infos]
+            if not targets:
+                return {"reachable": False, "error": "no address resolved"}
+            sock = await asyncio.to_thread(_connect_to_any_target, targets, timeout)
+            sock.close()
+            return {"reachable": True, "error": ""}
         except Exception as e:
             return {"reachable": False, "error": str(e)}

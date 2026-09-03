@@ -29,6 +29,7 @@ from app.connectors.ssh_channel import (
     SshChannel,
     SshChannelError,
     SshCredential,
+    SshProxyJump,
     SshTarget,
 )
 from app.policy.schemas import ResourceRef, SubjectRef
@@ -174,6 +175,7 @@ class SshInteractiveSession:
         term_type: str = "xterm",
         start_sequence: int = 0,
         connect_timeout: float = 10.0,
+        proxy_jump: SshProxyJump | None = None,
         read_chunk: int = 1024,
         read_timeout: float = 30.0,
         policy: CommandPolicyGuard | None = None,
@@ -199,7 +201,11 @@ class SshInteractiveSession:
             db=db,
         )
         channel = await SshChannel.open(
-            target, credential, connect_timeout=connect_timeout, policy=resolved
+            target,
+            credential,
+            connect_timeout=connect_timeout,
+            proxy_jump=proxy_jump,
+            policy=resolved,
         )
         try:
             process = await channel.start_interactive(term_type=term_type)
