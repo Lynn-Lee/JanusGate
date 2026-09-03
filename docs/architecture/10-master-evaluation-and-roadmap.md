@@ -857,7 +857,7 @@ User ──┬── WorkflowRequest ──── JitGrant
 
 | 任务 ID | 任务 | Owner | 范围 | 优先级 |
 |---------|------|-------|------|--------|
-| **#t73** | 账号自动化与账号治理 | backend + security | 8 类自动化对标：账号推送 / 改密 / 校验 / 删除 / 账号发现 / 网关账号校验 / 弱密码检测 / 账号备份；`AccountTemplate` 账号模板；`AccountRisk` 账号风险（发现的特权账号、弱密码、僵尸账号）。复用 #t52 已建立的 JSON-only 队列与 #t43 轮换记录。**约束**：改密执行器不经 shell 传递密码，统一结构化日志（对应关闭 P0#16 / P2#13） | 高 |
+| **#t73** | 账号自动化与账号治理 | backend + security | **✅ 已完成**：8 类自动化对标：账号推送 / 改密 / 校验 / 删除 / 账号发现 / 网关账号校验 / 弱密码检测 / 账号备份；`AccountTemplate` 账号模板；`AccountRisk` 账号风险（特权 / 弱密码 / 僵尸）。复用 #t52 JSON-only 队列与 #t43 轮换记录。**约束已关闭**：改密经 asyncssh `chpasswd` stdin，不经 shell / sshpass（P0#16）；结构化日志递归脱敏，禁止 print（P2#13）。进程内 asyncssh 端到端测试无外部依赖 | 高 |
 
 **M5：工单、通知与认证源**
 
@@ -897,7 +897,7 @@ User ──┬── WorkflowRequest ──── JitGrant
 | M1：授权与访问控制内核 | 4-6 周 | #t63 + #t64 + #t65 | ✅ **3/3 完成** | 差距最大，优先级最高 |
 | M2：资产与协议广度 | 3-4 周 | #t66 + #t67 + #t68 | 🟡 #t66 已完成；#t67/#t68 未开始 | 依赖 M1 授权模型 |
 | M3：真实连接通道 | 6-8 周 | #t69 + #t70 + #t71 + #t72 | 🟡 #t69/#t72 完成；#t70/#t71 未开始 | 风险最高，#t70 图形通道为其中最重 |
-| M4：账号自动化 | 3-4 周 | #t73 | ⬜ 未开始 | 依赖 #t69 SSH 通道（前置已满足） |
+| M4：账号自动化 | 3-4 周 | #t73 | ✅ **完成** | 依赖 #t69 SSH 通道（前置已满足） |
 | M5：工单、通知、认证源 | 4-5 周 | #t74 + #t75 + #t76 | ⬜ 未开始 | 可与 M3 并行 |
 | M6：运维与平台治理 | 3-4 周 | #t77 + #t78 + #t79 | ⬜ 未开始 | 收口阶段 |
 
@@ -1066,7 +1066,7 @@ P1（15 项）/ P2（18 项）：架构性问题（xpack 侵入、common 大杂�
 | 5 | 资产管理 | 🟡 `Asset` + `Platform` 基础模型 + SSRF 防护 | 资产类型分化、协议模型、资产树、网域网关、收藏、标签 | 是 | P1 已有 → **P6 #t66、#t67** |
 | 6 | 资产授权 | 🟡 `NodeModel` / `AssetPermissionModel` + 祖先继承 + 使用面过滤 + `scoped_select()` | RBAC 角色/用户组管理、更多资产类型与协议 | 是 | **P6 #t64 已完成，域能力仍为部分实现** |
 | 7 | ACL 访问控制 | 🟡 命令过滤 ACL + 命令组 + 数据脱敏规则 + 登录/资产登录/连接方式 overlay ACL + 租户 CRUD + SSH/K8s/PTY 执行前守卫与登录/连接 overlay，判定统一进 PolicyDecisionService | 弱密码策略（#t79）、命令复核工单（#t74）；人脸核验不做 | 是 | **P6 #t65 已完成，域能力仍为部分实现** |
-| 8 | 账号与凭据 | 🟡 `Account` + `CredentialRotation` + envelope 加密 + 审批后 unwrap | 8 类账号自动化、账号模板、账号风险、真实云 KMS/HSM | 是 | P4 #t43/#t50 → **P6 #t73** |
+| 8 | 账号与凭据 | 🟡 `Account` + `CredentialRotation` + 8 类账号自动化 + `AccountTemplate` / `AccountRisk` + envelope 加密 + 审批后 unwrap | 真实云 KMS/HSM | 是 | P4 #t43/#t50 → **P6 #t73 已完成，域能力仍为部分实现** |
 | 9 | 会话网关 | 🟡 会话生命周期 + 策略校验 + 短期 connection token + grant 绑定 + **会话已持久化** + SSH/K8s 真实通道 + **生产 `AssetVaultSessionConnectionResolver`（QA SHIP）** | RDP/VNC/DB 通道、会话共享与监控、端点路由；连接列表隐藏 k8s | 是 | P1 已有 → **P6 #t62、#t69-72、#t78** |
 | 10 | 会话录制与命令检索 | 🟡 录制元数据 + 命令事件 + 全文检索 + 只读回放时间线 | 录像本体采集与回放、多存储后端（S3/OSS/ES） | 是 | P4 #t46 → **P6 #t70、#t78** |
 | 11 | 连接组件 / 终端 | 🟡 Connector Registry + 心跳租约 + mTLS 指纹 + attestation + key rotation + SDK + **SSH/SFTP/PTY 与 K8s exec 真实通道** + #t65 执行前守卫 + **生产 `AssetVaultSessionConnectionResolver`** | RDP / VNC / 数据库协议实现；连接列表隐藏 k8s | 是 | P4 #t45 → **P6 #t69-72** |

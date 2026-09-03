@@ -33,7 +33,8 @@ scripts/build-docs-site.sh dist/docs-site
 - Tenancy：`/api/v1/tenancy/organizations`、teams、projects。
 - SSH CA：`/api/v1/ssh-certificate-authorities/`、trust bundle 和 `/api/v1/ssh-certificates/`。
 - Audit：`/api/v1/audits/events`、`/api/v1/audits/reports/summary`、`/api/v1/audits/reports/compliance`。
-- Automation：`/api/v1/automation/jobs/asset-scans`、credential rotations、playbooks 和 job runs。
+- Automation：`/api/v1/automation/jobs/asset-scans`、credential rotations、playbooks、8 类 `account-*` 账号自动化和 job runs。
+- 账号模板 / 风险：`/api/v1/account-templates/`、`/api/v1/account-risks/`、`/api/v1/account-automation/runs`；详见[账号自动化与账号治理](account-automation.md)。
 - Admin：`/api/v1/admin/license-summary` 与 admin-only `POST /api/v1/admin/license-config`。
 - ACL：`/api/v1/command-filter-acls/` 与 `/api/v1/data-masking-rules/`（租户隔离 CRUD，仅这两类；SSH/K8s/PTY 执行前与命令事件入库均走 PolicyDecisionService）。
 - Asset tree / AssetPermission：`/api/v1/asset-nodes/`、`/api/v1/asset-nodes/{node_id}/assets`、`/api/v1/asset-nodes/{node_id}/permissions`、`/api/v1/asset-permissions/by-asset/{asset_id}` 和 `/api/v1/asset-permissions/{permission_id}`；详见[资产树与 AssetPermission](asset-tree-authorization.md)。

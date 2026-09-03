@@ -123,6 +123,35 @@ async def test_automation_job_queue_rejects_sensitive_payload_fields() -> None:
 
 
 @pytest.mark.asyncio
+async def test_account_change_secret_queue_rejects_password_payload() -> None:
+    queue = AutomationJobQueue(redis=RecordingRedisStream())
+    with pytest.raises(ValueError, match="AUTOMATION_JOB_PAYLOAD_CONTAINS_SECRET"):
+        await queue.enqueue(
+            tenant_id="tenant-a",
+            job_type="account.change_secret",
+            requested_by="user-1",
+            payload={"account_id": 1, "password": "plain-secret"},
+        )
+
+
+@pytest.mark.asyncio
+async def test_account_job_types_enqueue_json_ids_only() -> None:
+    stream = RecordingRedisStream()
+    queue = AutomationJobQueue(redis=stream)
+    job_id = await queue.enqueue(
+        tenant_id="tenant-a",
+        job_type="account.verify",
+        requested_by="user-1",
+        payload={"account_id": 1},
+    )
+    assert job_id == "1700000000000-0"
+    _name, fields, _maxlen = stream.calls[0]
+    assert fields["job_type"] == "account.verify"
+    assert json.loads(fields["payload_json"]) == {"account_id": 1}
+    assert fields["payload_format"] == "json"
+
+
+@pytest.mark.asyncio
 async def test_automation_worker_dispatches_json_stream_message_and_acks() -> None:
     stream = RecordingRedisConsumer()
     handled: list[dict[str, Any]] = []
