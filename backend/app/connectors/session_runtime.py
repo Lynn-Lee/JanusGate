@@ -420,10 +420,6 @@ def build_production_connector_scheduler(
         session_factory=factory,
         secrets=k8s_secrets,
     )
-<<<<<<< HEAD
-    resolver = RoutingSessionConnectionResolver(
-        ssh_resolver=ssh_resolver, k8s_resolver=k8s_resolver
-=======
     db_resolver = DatabaseVaultSessionConnectionResolver(
         session_factory=factory,
         secrets=db_secrets,
@@ -432,7 +428,6 @@ def build_production_connector_scheduler(
         ssh_resolver=ssh_resolver,
         k8s_resolver=k8s_resolver,
         db_resolver=db_resolver,
->>>>>>> 587367d5a (feat(db): implement #t71 PostgreSQL Simple Query proxy channel)
     )
     runtime = ConnectorSessionRuntime(
         resolver,
