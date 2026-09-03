@@ -282,8 +282,8 @@ async def delete_asset_node(
             ConnectMethodAclModel.resource_id == node.id,
         )
     )
-    for overlay in method_result.scalars().all():
-        await db.delete(overlay)
+    for method_acl in method_result.scalars().all():
+        await db.delete(method_acl)
     await db.delete(node)
     await db.commit()
     return Response(status_code=status.HTTP_204_NO_CONTENT)

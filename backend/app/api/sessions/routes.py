@@ -105,7 +105,7 @@ async def _tenant_policy_client(
     return PolicyDecisionServiceClient(service)
 
 
-def _production_connector_scheduler():
+def _production_connector_scheduler() -> Any:
     from app.connectors.session_runtime import build_production_connector_scheduler
 
     return build_production_connector_scheduler()
