@@ -14,6 +14,7 @@ from app.models.audit import AuditEventModel
 from app.models.automation import AutomationJobRun
 from app.models.connector import Connector
 from app.models.host_key import AssetHostKeyModel
+from app.models.k8s_cluster import K8sClusterModel
 from app.models.protocol import PlatformProtocolModel, ProtocolModel
 from app.models.rbac import RoleBindingModel, RoleModel, RoleObjectPermissionModel
 from app.models.session import SessionModel
@@ -24,6 +25,7 @@ from app.models.user import ApiKey, User
 from app.models.vault import SecretRecordModel
 from app.models.webhook import NotificationDelivery, NotificationRule, WebhookEndpoint
 from app.models.workflow import ApprovalPolicyModel, JitGrantModel, WorkflowRequestModel
+from app.models.zone import ZoneGatewayModel, ZoneModel
 
 __all__ = [
     "ApiKey",
@@ -41,6 +43,7 @@ __all__ = [
     "DataMaskingRuleModel",
     "CredentialRotation",
     "JitGrantModel",
+    "K8sClusterModel",
     "LicenseConfigurationModel",
     "LoginAclModel",
     "LoginAssetAclModel",
@@ -66,4 +69,6 @@ __all__ = [
     "User",
     "WebhookEndpoint",
     "WorkflowRequestModel",
+    "ZoneGatewayModel",
+    "ZoneModel",
 ]

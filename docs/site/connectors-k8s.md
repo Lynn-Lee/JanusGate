@@ -35,5 +35,5 @@ POST /api/v1/connectors/{connector_id}/session-recordings/{recording_id}/command
 ## 已知边界
 
 - 本切片聚焦一次性命令 exec + 命令审计 + namespace 作用域 + TLS 强校验，暂不实现交互式 PTY（`stdin=true` + `tty=true` + resize 通道）与 `attach`；后续可在同一 `v4.channel.k8s.io` 帧协议上扩展。
-- 短期 token 签发（K8s TokenRequest API，对应 #t68 安全增强项）由凭据保险库侧负责，本通道只消费传入的 token，不负责其签发与轮换。
-- 与会话网关的接线（`session_runtime.py` 的 `ConnectorSessionMode`）沿用 SSH 通道已建立的 `SessionConnectionResolver` + `ConnectorScheduler` 边界。**#t69 生产 resolver 已 QA SHIP**，但仅覆盖 SSH（exec / interactive / sftp）；连接列表隐藏 k8s，本通道不在本次生产装配范围。
+- 短期 token 签发（K8s TokenRequest API，对应 #t68 安全增强项）由 `K8sVaultSessionConnectionResolver` 负责；本 exec 通道只消费传入的 token。
+- 与会话网关的接线（`session_runtime.py` 的 `ConnectorSessionMode`）沿用 SSH 通道已建立的 `SessionConnectionResolver` + `ConnectorScheduler` 边界。**#t68 生产装配已 SHIP**：`RoutingSessionConnectionResolver` 将 `k8s` 协议路由至 `K8sVaultSessionConnectionResolver`，SSH 家族仍走 `AssetVaultSessionConnectionResolver`；连接列表仍隐藏 k8s。

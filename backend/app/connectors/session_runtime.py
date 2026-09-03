@@ -19,22 +19,32 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import dataclass
 from enum import StrEnum
-from typing import Any, Protocol
+from typing import TYPE_CHECKING, Any, Protocol
 from uuid import uuid4
+
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.api.sessions.service import ConnectorDispatchRequest
 from app.connectors.command_policy import CommandPolicyGuard, default_command_policy_guard
+from app.connectors.k8s_exec import K8sCredential, K8sExecChannel, K8sTarget, NamespaceScope
+from app.connectors.mysql_proxy import MysqlCredential, MysqlQueryChannel, MysqlTarget
+from app.connectors.postgres_proxy import PostgresCredential, PostgresQueryChannel, PostgresTarget
 from app.connectors.ssh_channel import (
     CommandEvent,
     CommandEventSink,
     SshChannel,
     SshChannelError,
     SshCredential,
+    SshProxyJump,
     SshTarget,
 )
 from app.connectors.ssh_interactive import SshInteractiveSession
 from app.connectors.ssh_sftp import FileTransferEventSink, SftpChannel
 from app.policy.schemas import ResourceRef, SubjectRef
+
+if TYPE_CHECKING:
+    from app.connectors.asset_vault_resolver import SessionSecretUnwrapper
+    from app.connectors.host_key_trust import HostKeyScanner, HostKeyTrustStore
 
 
 class ConnectorSessionMode(StrEnum):
@@ -43,24 +53,53 @@ class ConnectorSessionMode(StrEnum):
     EXEC = "exec"
     INTERACTIVE = "interactive"
     SFTP = "sftp"
+    K8S_EXEC = "k8s"
+    DB_POSTGRESQL = "db_postgresql"
+    DB_MYSQL = "db_mysql"
+
+
+@dataclass(frozen=True)
+class K8sConnectionBundle:
+    """K8s exec 通道参数（#t68）。"""
+
+    target: K8sTarget
+    credential: K8sCredential
+    scope: NamespaceScope
+
+
+@dataclass(frozen=True)
+class DbConnectionBundle:
+    """数据库 COM_QUERY / Simple Query 通道参数（#t71）。"""
+
+    engine: str
+    target: PostgresTarget | MysqlTarget
+    credential: PostgresCredential | MysqlCredential
 
 
 @dataclass(frozen=True)
 class SessionConnectionSpec:
     """打开一个连接器通道所需的完整参数（含凭据，仅存在于连接器侧）。
 
-    :param mode: 通道形态。
-    :param target: SSH 目标与可信主机公钥。
-    :param credential: 内存凭据（私钥或密码）。
+    SSH 与 K8s 与 DB 三选一：SSH 填 ``target``/``credential``；K8s 填 ``k8s``；DB 填 ``db``。
     """
 
     mode: ConnectorSessionMode
-    target: SshTarget
-    credential: SshCredential
+    target: SshTarget | None = None
+    credential: SshCredential | None = None
+    proxy_jump: SshProxyJump | None = None
+    k8s: K8sConnectionBundle | None = None
+    db: DbConnectionBundle | None = None
 
 
-# 已打开通道的联合类型：三者均提供 async close()，故运行时可统一关闭。
-OpenChannel = SshChannel | SshInteractiveSession | SftpChannel
+# 已打开通道的联合类型：均提供 async close()。
+OpenChannel = (
+    SshChannel
+    | SshInteractiveSession
+    | SftpChannel
+    | K8sExecChannel
+    | PostgresQueryChannel
+    | MysqlQueryChannel
+)
 
 
 @dataclass
@@ -204,8 +243,65 @@ class ConnectorSessionRuntime:
         self, spec: SessionConnectionSpec, request: ConnectorDispatchRequest
     ) -> OpenChannel:
         policy = await self._policy_for(request)
+        if spec.mode is ConnectorSessionMode.K8S_EXEC:
+            if spec.k8s is None:
+                raise SshChannelError("K8S_SPEC_MISSING", "k8s mode requires k8s bundle")
+            if self._command_sink is None:
+                raise SshChannelError(
+                    "CONNECTOR_COMMAND_SINK_MISSING",
+                    "k8s exec mode requires a command_sink",
+                )
+            return await K8sExecChannel.open(
+                spec.k8s.target,
+                spec.k8s.credential,
+                spec.k8s.scope,
+                policy=policy,
+            )
+        if spec.mode is ConnectorSessionMode.DB_POSTGRESQL:
+            if spec.db is None or spec.db.engine != "postgresql":
+                raise SshChannelError(
+                    "DB_SPEC_MISSING", "postgresql mode requires postgresql db bundle"
+                )
+            if self._command_sink is None:
+                raise SshChannelError(
+                    "CONNECTOR_COMMAND_SINK_MISSING",
+                    "db postgresql mode requires a command_sink",
+                )
+            if not isinstance(spec.db.target, PostgresTarget) or not isinstance(
+                spec.db.credential, PostgresCredential
+            ):
+                raise SshChannelError("DB_SPEC_INVALID", "postgresql bundle type mismatch")
+            return await PostgresQueryChannel.open(
+                spec.db.target,
+                spec.db.credential,
+                policy=policy,
+            )
+        if spec.mode is ConnectorSessionMode.DB_MYSQL:
+            if spec.db is None or spec.db.engine != "mysql":
+                raise SshChannelError("DB_SPEC_MISSING", "mysql mode requires mysql db bundle")
+            if self._command_sink is None:
+                raise SshChannelError(
+                    "CONNECTOR_COMMAND_SINK_MISSING",
+                    "db mysql mode requires a command_sink",
+                )
+            if not isinstance(spec.db.target, MysqlTarget) or not isinstance(
+                spec.db.credential, MysqlCredential
+            ):
+                raise SshChannelError("DB_SPEC_INVALID", "mysql bundle type mismatch")
+            return await MysqlQueryChannel.open(
+                spec.db.target,
+                spec.db.credential,
+                policy=policy,
+            )
+        if spec.target is None or spec.credential is None:
+            raise SshChannelError("SSH_SPEC_MISSING", "ssh mode requires target and credential")
         if spec.mode is ConnectorSessionMode.EXEC:
-            return await SshChannel.open(spec.target, spec.credential, policy=policy)
+            return await SshChannel.open(
+                spec.target,
+                spec.credential,
+                policy=policy,
+                proxy_jump=spec.proxy_jump,
+            )
         if spec.mode is ConnectorSessionMode.INTERACTIVE:
             if self._command_sink is None:
                 raise SshChannelError(
@@ -213,7 +309,11 @@ class ConnectorSessionRuntime:
                     "interactive mode requires a command_sink",
                 )
             return await SshInteractiveSession.open(
-                spec.target, spec.credential, self._command_sink, policy=policy
+                spec.target,
+                spec.credential,
+                self._command_sink,
+                policy=policy,
+                proxy_jump=spec.proxy_jump,
             )
         if spec.mode is ConnectorSessionMode.SFTP:
             if self._transfer_sink is None:
@@ -221,7 +321,12 @@ class ConnectorSessionRuntime:
                     "CONNECTOR_TRANSFER_SINK_MISSING",
                     "sftp mode requires a transfer_sink",
                 )
-            return await SftpChannel.open(spec.target, spec.credential, self._transfer_sink)
+            return await SftpChannel.open(
+                spec.target,
+                spec.credential,
+                self._transfer_sink,
+                proxy_jump=spec.proxy_jump,
+            )
         raise SshChannelError("CONNECTOR_UNSUPPORTED_MODE", str(spec.mode))
 
 
@@ -258,11 +363,11 @@ class _NoopFileTransferEventSink:
 
 def build_production_connector_scheduler(
     *,
-    session_factory=None,
-    secrets=None,
-    host_keys=None,
-    scanner=None,
-):
+    session_factory: async_sessionmaker[AsyncSession] | None = None,
+    secrets: SessionSecretUnwrapper | None = None,
+    host_keys: HostKeyTrustStore | None = None,
+    scanner: HostKeyScanner | None = None,
+) -> ConnectorRuntimeScheduler:
     """装配生产连接器调度器：资产注册表 + Vault + 已批准主机密钥。"""
 
     from hashlib import sha256
@@ -271,9 +376,19 @@ def build_production_connector_scheduler(
         AssetVaultSessionConnectionResolver,
         CallableSecretUnwrapper,
     )
+    from app.connectors.db_vault_resolver import (
+        CallableDbSecretUnwrapper,
+        DatabaseVaultSessionConnectionResolver,
+    )
     from app.connectors.host_key_trust import AsyncScanAdapter, HostKeyTrustStore
+    from app.connectors.k8s_vault_resolver import (
+        CallableK8sSecretUnwrapper,
+        K8sVaultSessionConnectionResolver,
+    )
+    from app.connectors.routing_resolver import RoutingSessionConnectionResolver
     from app.core.config import settings
     from app.core.database import AsyncSessionLocal
+    from app.policy.schemas import ApprovalState
     from app.vault.provider import (
         AsyncEnvelopeEncryptedSecretProvider,
         LocalKmsEnvelopeKeyProvider,
@@ -289,7 +404,9 @@ def build_production_connector_scheduler(
         if master_key:
             kms = LocalKmsEnvelopeKeyProvider.from_base64_master_key(master_key)
         else:
-            kms = LocalKmsEnvelopeKeyProvider(master_key=sha256(settings.SECRET_KEY.encode()).digest())
+            kms = LocalKmsEnvelopeKeyProvider(
+                master_key=sha256(settings.SECRET_KEY.encode()).digest()
+            )
 
         async def _unwrap(secret_id: str) -> str:
             async with factory() as session:
@@ -301,11 +418,49 @@ def build_production_connector_scheduler(
 
         secrets = CallableSecretUnwrapper(_unwrap)
 
-    resolver = AssetVaultSessionConnectionResolver(
+        async def _unwrap_k8s(secret_id: str, approval: ApprovalState | None) -> str:
+            async with factory() as session:
+                provider = AsyncEnvelopeEncryptedSecretProvider(
+                    kms_provider=kms,
+                    record_store=SqlAlchemySecretRecordStore(session),
+                )
+                return await provider.unwrap_after_approval(secret_id, approval)
+
+        k8s_secrets = CallableK8sSecretUnwrapper(_unwrap, _unwrap_k8s)
+        db_secrets = CallableDbSecretUnwrapper(_unwrap)
+    else:
+
+        async def _unwrap_injected(secret_id: str) -> str:
+            return await secrets.unwrap(secret_id)
+
+        async def _unwrap_injected_after_approval(
+            secret_id: str, approval: ApprovalState | None
+        ) -> str:
+            if approval is not None and not approval.is_approved_now():
+                raise ValueError("SECRET_UNWRAP_APPROVAL_REQUIRED")
+            return await secrets.unwrap(secret_id)
+
+        k8s_secrets = CallableK8sSecretUnwrapper(_unwrap_injected, _unwrap_injected_after_approval)
+        db_secrets = CallableDbSecretUnwrapper(_unwrap_injected)
+
+    ssh_resolver = AssetVaultSessionConnectionResolver(
         session_factory=factory,
         secrets=secrets,
         host_keys=trust_store,
         scanner=scan,
+    )
+    k8s_resolver = K8sVaultSessionConnectionResolver(
+        session_factory=factory,
+        secrets=k8s_secrets,
+    )
+    db_resolver = DatabaseVaultSessionConnectionResolver(
+        session_factory=factory,
+        secrets=db_secrets,
+    )
+    resolver = RoutingSessionConnectionResolver(
+        ssh_resolver=ssh_resolver,
+        k8s_resolver=k8s_resolver,
+        db_resolver=db_resolver,
     )
     runtime = ConnectorSessionRuntime(
         resolver,
@@ -314,4 +469,3 @@ def build_production_connector_scheduler(
         session_factory=factory,
     )
     return ConnectorRuntimeScheduler(runtime)
-

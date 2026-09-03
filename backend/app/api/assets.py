@@ -14,9 +14,16 @@ from app.policy.asset_tree_ops import list_assets as list_scoped_assets
 from app.policy.asset_tree_ops import list_nodes, list_permissions, nodes_by_id
 from app.protocols.repository import ensure_builtin_protocols, sync_platform_protocols
 from app.protocols.validation import ProtocolValidationError, validate_asset_protocol_binding
-from app.schemas.asset import AssetCreate, AssetResponse, PlatformCreate, PlatformResponse
+from app.schemas.asset import (
+    AssetCreate,
+    AssetResponse,
+    AssetUpdate,
+    PlatformCreate,
+    PlatformResponse,
+)
 from app.services.asset import AssetService
 from app.tenancy.scope import actor_scope_from_user
+from app.zones import service as zone_service
 
 router = APIRouter(prefix="/assets", tags=["资产管理"])
 
@@ -37,7 +44,9 @@ async def list_assets(
 
 @router.post("/", response_model=AssetResponse)
 async def create_asset(
-    data: AssetCreate, db: AsyncSession = Depends(get_db), _user: dict[str, Any] = Depends(require_permission("assets:write"))
+    data: AssetCreate,
+    db: AsyncSession = Depends(get_db),
+    user: dict[str, Any] = Depends(require_permission("assets:write")),
 ) -> AssetResponse:
     await ensure_builtin_protocols(db)
     try:
@@ -46,7 +55,37 @@ async def create_asset(
         )
     except ProtocolValidationError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-    asset = await AssetService.create_asset(db, data.model_dump())
+    payload = data.model_dump()
+    if payload.get("zone_id"):
+        scope = actor_scope_from_user(user)
+        zone = await zone_service.get_zone(db, scope, str(payload["zone_id"]))
+        if zone is None:
+            raise HTTPException(status_code=400, detail="ZONE_NOT_FOUND")
+    asset = await AssetService.create_asset(db, payload)
+    return _asset_response(asset)
+
+
+@router.patch("/{asset_id}", response_model=AssetResponse)
+async def update_asset(
+    asset_id: int,
+    data: AssetUpdate,
+    db: AsyncSession = Depends(get_db),
+    user: dict[str, Any] = Depends(require_permission("assets:write")),
+) -> AssetResponse:
+    """更新资产字段；目前支持挂载/解绑网域（``zone_id``）。
+
+    传 ``zone_id: null`` 解绑；传具体 ID 时校验网域属于当前租户。
+    """
+
+    updates = data.model_dump(exclude_unset=True)
+    if "zone_id" in updates and updates["zone_id"] is not None:
+        scope = actor_scope_from_user(user)
+        zone = await zone_service.get_zone(db, scope, str(updates["zone_id"]))
+        if zone is None:
+            raise HTTPException(status_code=400, detail="ZONE_NOT_FOUND")
+    asset = await AssetService.update_asset(db, asset_id, updates)
+    if asset is None:
+        raise HTTPException(404, "资产不存在")
     return _asset_response(asset)
 
 
@@ -129,6 +168,7 @@ def _asset_response(asset: Asset) -> AssetResponse:
         is_active=asset.is_active,
         description=asset.description,
         created_at=asset.created_at.isoformat() if asset.created_at else "",
+        zone_id=getattr(asset, "zone_id", None),
     )
 
 @router.get("/{asset_id}", response_model=AssetResponse)

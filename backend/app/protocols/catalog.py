@@ -28,9 +28,10 @@ ALL_ASSET_TYPES: Final[tuple[str, ...]] = (
     ASSET_TYPE_GPT,
 )
 
-CRED_PASSWORD = "password"
+# Credential *type identifiers* for protocol catalogs — not secret values.
+CRED_PASSWORD = "password"  # nosec B105
 CRED_PRIVATE_KEY = "private_key"
-CRED_TOKEN = "token"
+CRED_TOKEN = "token"  # nosec B105
 CRED_CERTIFICATE = "certificate"
 
 

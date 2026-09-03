@@ -31,12 +31,20 @@ async def ensure_builtin_roles(db: AsyncSession, tenant_id: str) -> list[RoleMod
             name=str(definition["name"]),
             display_name=str(definition["display_name"]),
             scope_type=str(definition["scope_type"]),
-            organization_id=definition.get("organization_id"),  # type: ignore[arg-type]
+            organization_id=(
+                str(definition["organization_id"])
+                if definition.get("organization_id") is not None
+                else None
+            ),
             is_builtin=True,
             builtin_key=builtin_key,
             description=str(definition["description"]),
-            permissions_json=dump_json_list([str(p) for p in definition["permissions"]]),  # type: ignore[arg-type]
-            menu_permissions_json=dump_json_list([str(m) for m in definition["menus"]]),  # type: ignore[arg-type]
+            permissions_json=dump_json_list(
+                [str(p) for p in _as_str_sequence(definition["permissions"])]
+            ),
+            menu_permissions_json=dump_json_list(
+                [str(m) for m in _as_str_sequence(definition["menus"])]
+            ),
         )
         db.add(role)
         created.append(role)
@@ -155,6 +163,12 @@ def role_permissions(role: RoleModel) -> list[str]:
 
 def role_menu_permissions(role: RoleModel) -> list[str]:
     return load_json_list(role.menu_permissions_json)
+
+
+def _as_str_sequence(value: object) -> list[object]:
+    if isinstance(value, (list, tuple)):
+        return list(value)
+    raise TypeError("EXPECTED_STR_SEQUENCE")
 
 
 def validate_scope(
