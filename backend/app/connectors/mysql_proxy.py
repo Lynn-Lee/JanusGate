@@ -61,9 +61,10 @@ class MysqlCredential:
 
 
 def _mysql_native_password_scramble(password: str, salt: bytes) -> bytes:
-    stage1 = hashlib.sha1(password.encode("utf-8")).digest()
-    stage2 = hashlib.sha1(stage1).digest()
-    stage3 = hashlib.sha1(stage2 + salt).digest()
+    # SHA-1 is mandated by MySQL mysql_native_password wire auth, not a local KDF.
+    stage1 = hashlib.sha1(password.encode("utf-8"), usedforsecurity=False).digest()
+    stage2 = hashlib.sha1(stage1, usedforsecurity=False).digest()
+    stage3 = hashlib.sha1(stage2 + salt, usedforsecurity=False).digest()
     return bytes(s1 ^ s3 for s1, s3 in zip(stage1, stage3, strict=True))
 
 
