@@ -154,7 +154,9 @@ class AssetVaultSessionConnectionResolver:
             )
         gateway_row, gateway_asset = picked
 
-        probe = await AssetService.test_connection(gateway_asset.address, gateway_asset.port)
+        probe = await AssetService.probe_registered_host(
+            gateway_asset.address, gateway_asset.port
+        )
         gateway_row.last_probe_at = datetime.now(UTC)
         if probe.get("reachable"):
             gateway_row.probe_status = "reachable"

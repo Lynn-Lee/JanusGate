@@ -18,7 +18,8 @@ from app.api.zone_schemas import (
 )
 from app.core.database import get_db, get_read_db
 from app.core.deps import current_user
-from app.tenancy.scope import ActorScope, actor_scope_from_user
+from app.models.zone import ZoneGatewayModel, ZoneModel
+from app.tenancy.scope import actor_scope_from_user
 from app.zones import service as zone_service
 
 router = APIRouter(prefix="/zones", tags=["网域与网关"])
@@ -31,7 +32,7 @@ def _require_assets_permission(user: dict[str, Any], permission: str) -> None:
     raise HTTPException(status_code=403, detail=f"缺少权限: {permission}")
 
 
-def _zone_response(zone, *, gateway_count: int = 0) -> ZoneResponse:
+def _zone_response(zone: ZoneModel, *, gateway_count: int = 0) -> ZoneResponse:
     return ZoneResponse(
         id=zone.id,
         tenant_id=zone.tenant_id,
@@ -41,7 +42,7 @@ def _zone_response(zone, *, gateway_count: int = 0) -> ZoneResponse:
     )
 
 
-def _gateway_response(row) -> ZoneGatewayResponse:
+def _gateway_response(row: ZoneGatewayModel) -> ZoneGatewayResponse:
     last_probe = row.last_probe_at.isoformat() if row.last_probe_at is not None else None
     return ZoneGatewayResponse(
         id=row.id,
@@ -58,7 +59,7 @@ def _gateway_response(row) -> ZoneGatewayResponse:
 @router.get("/", response_model=ZoneListResponse)
 async def list_zones(
     db: AsyncSession = Depends(get_read_db),
-    user: dict = Depends(current_user),
+    user: dict[str, Any] = Depends(current_user),
 ) -> ZoneListResponse:
     _require_assets_permission(user, "assets:read")
     scope = actor_scope_from_user(user)
@@ -74,7 +75,7 @@ async def list_zones(
 async def create_zone(
     body: ZoneCreate,
     db: AsyncSession = Depends(get_db),
-    user: dict = Depends(current_user),
+    user: dict[str, Any] = Depends(current_user),
 ) -> ZoneResponse:
     _require_assets_permission(user, "assets:write")
     scope = actor_scope_from_user(user)
@@ -86,7 +87,7 @@ async def create_zone(
 async def get_zone(
     zone_id: str,
     db: AsyncSession = Depends(get_read_db),
-    user: dict = Depends(current_user),
+    user: dict[str, Any] = Depends(current_user),
 ) -> ZoneResponse:
     _require_assets_permission(user, "assets:read")
     scope = actor_scope_from_user(user)
@@ -101,7 +102,7 @@ async def get_zone(
 async def delete_zone(
     zone_id: str,
     db: AsyncSession = Depends(get_db),
-    user: dict = Depends(current_user),
+    user: dict[str, Any] = Depends(current_user),
 ) -> None:
     _require_assets_permission(user, "assets:write")
     scope = actor_scope_from_user(user)
@@ -119,7 +120,7 @@ async def delete_zone(
 async def list_zone_gateways(
     zone_id: str,
     db: AsyncSession = Depends(get_read_db),
-    user: dict = Depends(current_user),
+    user: dict[str, Any] = Depends(current_user),
 ) -> ZoneGatewayListResponse:
     _require_assets_permission(user, "assets:read")
     scope = actor_scope_from_user(user)
@@ -138,7 +139,7 @@ async def add_zone_gateway(
     zone_id: str,
     body: ZoneGatewayCreate,
     db: AsyncSession = Depends(get_db),
-    user: dict = Depends(current_user),
+    user: dict[str, Any] = Depends(current_user),
 ) -> ZoneGatewayResponse:
     _require_assets_permission(user, "assets:write")
     scope = actor_scope_from_user(user)
@@ -164,7 +165,7 @@ async def remove_zone_gateway(
     zone_id: str,
     gateway_asset_id: int,
     db: AsyncSession = Depends(get_db),
-    user: dict = Depends(current_user),
+    user: dict[str, Any] = Depends(current_user),
 ) -> None:
     _require_assets_permission(user, "assets:write")
     scope = actor_scope_from_user(user)
@@ -183,7 +184,7 @@ async def probe_zone_gateway(
     zone_id: str,
     gateway_asset_id: int,
     db: AsyncSession = Depends(get_db),
-    user: dict = Depends(current_user),
+    user: dict[str, Any] = Depends(current_user),
 ) -> ZoneGatewayProbeResponse:
     _require_assets_permission(user, "assets:test")
     scope = actor_scope_from_user(user)

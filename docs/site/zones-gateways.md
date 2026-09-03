@@ -21,16 +21,16 @@ JanusGate 对标 JumpServer 的 **Zone + Gateway** 网域中转能力：资产�
 | GET | `/api/v1/zones/{zone_id}/gateways` | `assets:read` | 列出网关 |
 | POST | `/api/v1/zones/{zone_id}/gateways` | `assets:write` | 登记网关资产 |
 | DELETE | `/api/v1/zones/{zone_id}/gateways/{gateway_asset_id}` | `assets:write` | 移除网关 |
-| POST | `/api/v1/zones/{zone_id}/gateways/{gateway_asset_id}/probe` | `assets:test` | TCP 连通性探测 |
+| POST | `/api/v1/zones/{zone_id}/gateways/{gateway_asset_id}/probe` | `assets:test` | TCP 连通性探测（已登记资产，允许内网地址） |
 
-资产创建/更新时可设置 `zone_id`，将资产挂载到网域。连接器侧由 `AssetVaultSessionConnectionResolver` 在解析连接参数时自动选取网关并探测可达性。
+资产可通过创建时的 `zone_id` 或 `PATCH /api/v1/assets/{id}` 挂载到网域。连接器侧由 `AssetVaultSessionConnectionResolver` 在解析连接参数时自动选取网关并探测可达性。
 
 ## 安全约束
 
 - 网关与目标主机密钥均须 **已审批**（fail-closed，禁止 TOFU）
 - 内网目标（有 `zone_id`）可跳过直连扫描，但必须已有 approved 公钥
-- 网关选取前做 TCP 探测，不可达则 `ZONE_GATEWAY_UNREACHABLE`
-- 凭据仅经 Vault `unwrap` 进入内存，走 `asyncssh` 库调用，无 `sshpass`/子进程
+- 网关选取前做 TCP 探测（`probe_registered_host`，不对已登记跳板机做 SSRF 私网封锁），不可达则 `ZONE_GATEWAY_UNREACHABLE`
+- 凭据仅经 Vault `unwrap` 进入内存，走 `asyncssh` 库调用，无 `sshpass`/子进程；网关 hop 与目标 hop 同一约束（P0#16）
 
 ## 测试
 

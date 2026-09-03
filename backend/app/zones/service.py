@@ -2,15 +2,14 @@
 
 from __future__ import annotations
 
-import random
+import secrets
 from datetime import UTC, datetime
 from uuid import uuid4
 
-from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.asset import Asset
 from app.models.account import Account
+from app.models.asset import Asset
 from app.models.zone import ZoneGatewayModel, ZoneModel
 from app.services.asset import AssetService
 from app.tenancy.scope import ActorScope, scoped_select
@@ -183,7 +182,9 @@ async def probe_gateway(
     if gateway_asset is None:
         raise LookupError("GATEWAY_ASSET_NOT_FOUND")
 
-    probe = await AssetService.test_connection(gateway_asset.address, gateway_asset.port)
+    probe = await AssetService.probe_registered_host(
+        gateway_asset.address, gateway_asset.port
+    )
     row.last_probe_at = datetime.now(UTC)
     if probe.get("reachable"):
         row.probe_status = "reachable"
@@ -233,7 +234,7 @@ async def pick_random_active_gateway(
 
     if not candidates:
         return None
-    return random.choice(candidates)
+    return secrets.choice(candidates)
 
 
 async def resolve_gateway_account(
@@ -258,10 +259,11 @@ async def resolve_gateway_account(
         scoped_select(Account, scope)
         .where(Account.asset_id == gateway_asset.id)
         .where(Account.status == "active")
+        .order_by(Account.id)
     )
     if protocol:
         typed = await db.execute(stmt.where(Account.protocol == protocol))
-        account = typed.scalar_one_or_none()
+        account = typed.scalars().first()
         if account is not None:
             return account
     result = await db.execute(stmt)

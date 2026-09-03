@@ -22,6 +22,7 @@ from app.api.ssh_certificates import router as ssh_certificates_router
 from app.api.tenancy.routes import router as tenancy_router
 from app.api.webhook_endpoints import router as webhook_endpoints_router
 from app.api.workflows.routes import router as workflows_router
+from app.api.zones import router as zones_router
 from app.core.config import Settings
 from app.core.database import create_database_engines, get_db, get_read_db
 
@@ -29,8 +30,14 @@ DB_BACKED_GET_ROUTE_ROUTING_INVENTORY = {
     ("GET", "/accounts/"),
     ("GET", "/command-filter-acls/"),
     ("GET", "/command-filter-acls/{acl_id}"),
+    ("GET", "/connect-method-acls/"),
+    ("GET", "/connect-method-acls/{acl_id}"),
     ("GET", "/data-masking-rules/"),
     ("GET", "/data-masking-rules/{rule_id}"),
+    ("GET", "/login-acls/"),
+    ("GET", "/login-acls/{acl_id}"),
+    ("GET", "/login-asset-acls/"),
+    ("GET", "/login-asset-acls/{acl_id}"),
     ("GET", "/admin/license-summary"),
     ("GET", "/accounts/{account_id}/rotations"),
     ("GET", "/assets/"),
@@ -55,6 +62,9 @@ DB_BACKED_GET_ROUTE_ROUTING_INVENTORY = {
     ("GET", "/workflows/grants/active"),
     ("GET", "/workflows/requests"),
     ("GET", "/workflows/requests/{request_id}"),
+    ("GET", "/zones/"),
+    ("GET", "/zones/{zone_id}"),
+    ("GET", "/zones/{zone_id}/gateways"),
 }
 
 # #t61：审计已持久化，但 AuditService 自管读写会话（独立 append-only 账本），故审计
@@ -87,6 +97,7 @@ ROUTERS_WITH_GET_ROUTES = [
     tenancy_router,
     webhook_endpoints_router,
     workflows_router,
+    zones_router,
 ]
 
 
@@ -170,12 +181,41 @@ def test_asset_read_routes_use_read_database_dependency() -> None:
 def test_asset_write_routes_keep_writer_database_dependency() -> None:
     write_routes = [
         ("POST", "/assets/"),
+        ("PATCH", "/assets/{asset_id}"),
         ("DELETE", "/assets/{asset_id}"),
         ("POST", "/assets/platforms"),
     ]
 
     for method, path in write_routes:
         dependencies = _route_dependency_calls(method=method, path=path)
+        assert get_db in dependencies
+        assert get_read_db not in dependencies
+
+
+def test_zone_read_routes_use_read_database_dependency() -> None:
+    read_routes = [
+        ("GET", "/zones/"),
+        ("GET", "/zones/{zone_id}"),
+        ("GET", "/zones/{zone_id}/gateways"),
+    ]
+
+    for method, path in read_routes:
+        dependencies = _route_dependency_calls(router=zones_router, method=method, path=path)
+        assert get_read_db in dependencies
+        assert get_db not in dependencies
+
+
+def test_zone_write_routes_keep_writer_database_dependency() -> None:
+    write_routes = [
+        ("POST", "/zones/"),
+        ("DELETE", "/zones/{zone_id}"),
+        ("POST", "/zones/{zone_id}/gateways"),
+        ("DELETE", "/zones/{zone_id}/gateways/{gateway_asset_id}"),
+        ("POST", "/zones/{zone_id}/gateways/{gateway_asset_id}/probe"),
+    ]
+
+    for method, path in write_routes:
+        dependencies = _route_dependency_calls(router=zones_router, method=method, path=path)
         assert get_db in dependencies
         assert get_read_db not in dependencies
 

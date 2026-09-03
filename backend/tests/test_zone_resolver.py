@@ -10,7 +10,10 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 from sqlalchemy.pool import StaticPool
 
 from app.api.sessions.service import ConnectorDispatchRequest
-from app.connectors.asset_vault_resolver import AssetVaultSessionConnectionResolver, MappingSecretUnwrapper
+from app.connectors.asset_vault_resolver import (
+    AssetVaultSessionConnectionResolver,
+    MappingSecretUnwrapper,
+)
 from app.connectors.host_key_trust import HostKeyTrustStore
 from app.connectors.ssh_channel import SshChannelError
 from app.connectors.ssh_hostkey import HostKeyScan
@@ -139,7 +142,7 @@ async def test_resolver_builds_proxy_jump_when_asset_in_zone(
         return {"reachable": True, "error": ""}
 
     monkeypatch.setattr(
-        "app.connectors.asset_vault_resolver.AssetService.test_connection",
+        "app.connectors.asset_vault_resolver.AssetService.probe_registered_host",
         _reachable_probe,
     )
     gw_key = "ssh-ed25519 AAAAGWKEY"
@@ -189,6 +192,8 @@ async def test_resolver_builds_proxy_jump_when_asset_in_zone(
     assert spec.proxy_jump is not None
     assert spec.proxy_jump.target.host == gateway.address
     assert spec.proxy_jump.target.username == "gw"
+    # P0#16：网关凭据同样经 Vault unwrap 进入内存，不得明文旁路。
+    assert spec.proxy_jump.credential.password == "gw-pass"
     assert spec.target.host == target.address
     assert spec.credential.password == "root-pass"
 
