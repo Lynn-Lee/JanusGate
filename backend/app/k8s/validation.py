@@ -39,12 +39,16 @@ def validate_server_ca(server_ca_pem: str) -> None:
         raise ValueError("K8S_SERVER_CA_INVALID")
 
 
-def intersect_namespaces(cluster_namespaces: list[str], account_namespaces: list[str]) -> frozenset[str]:
+def intersect_namespaces(
+    cluster_namespaces: list[str], account_namespaces: list[str]
+) -> frozenset[str]:
     """计算账号与集群两层 namespace 授权的交集。"""
 
     if not account_namespaces:
         raise ValueError("K8S_ACCOUNT_NAMESPACES_REQUIRED")
-    cluster_set = frozenset(cluster_namespaces) if cluster_namespaces else frozenset(account_namespaces)
+    cluster_set = (
+        frozenset(cluster_namespaces) if cluster_namespaces else frozenset(account_namespaces)
+    )
     allowed = cluster_set.intersection(account_namespaces)
     if not allowed:
         raise ValueError("K8S_NAMESPACE_SCOPE_EMPTY")

@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import json
 
-from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.k8s.validation import (
@@ -45,9 +44,7 @@ async def upsert_cluster(
     for ns in namespaces:
         validate_k8s_name(ns, field="namespace")
 
-    asset = await db.execute(
-        scoped_select(Asset, scope).where(Asset.id == asset_id)
-    )
+    asset = await db.execute(scoped_select(Asset, scope).where(Asset.id == asset_id))
     row_asset = asset.scalar_one_or_none()
     if row_asset is None or row_asset.asset_type != "cloud":
         raise LookupError("K8S_ASSET_NOT_FOUND")
@@ -93,9 +90,7 @@ def validate_k8s_account_fields(
     validate_token_ttl(k8s_token_ttl_seconds)
 
 
-def resolve_namespace_scope(
-    cluster: K8sClusterModel, account: Account
-) -> frozenset[str]:
+def resolve_namespace_scope(cluster: K8sClusterModel, account: Account) -> frozenset[str]:
     cluster_ns = load_namespaces(cluster.namespaces_json)
     account_ns = load_namespaces(account.k8s_namespaces_json)
     return intersect_namespaces(cluster_ns, account_ns)

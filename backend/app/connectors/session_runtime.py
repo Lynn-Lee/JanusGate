@@ -343,7 +343,9 @@ def build_production_connector_scheduler(
         if master_key:
             kms = LocalKmsEnvelopeKeyProvider.from_base64_master_key(master_key)
         else:
-            kms = LocalKmsEnvelopeKeyProvider(master_key=sha256(settings.SECRET_KEY.encode()).digest())
+            kms = LocalKmsEnvelopeKeyProvider(
+                master_key=sha256(settings.SECRET_KEY.encode()).digest()
+            )
 
         async def _unwrap(secret_id: str) -> str:
             async with factory() as session:
@@ -388,7 +390,9 @@ def build_production_connector_scheduler(
         session_factory=factory,
         secrets=k8s_secrets,
     )
-    resolver = RoutingSessionConnectionResolver(ssh_resolver=ssh_resolver, k8s_resolver=k8s_resolver)
+    resolver = RoutingSessionConnectionResolver(
+        ssh_resolver=ssh_resolver, k8s_resolver=k8s_resolver
+    )
     runtime = ConnectorSessionRuntime(
         resolver,
         command_sink=_NoopCommandEventSink(),
@@ -396,4 +400,3 @@ def build_production_connector_scheduler(
         session_factory=factory,
     )
     return ConnectorRuntimeScheduler(runtime)
-

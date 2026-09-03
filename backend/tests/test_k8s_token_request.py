@@ -60,12 +60,12 @@ async def test_request_service_account_token_maps_api_error() -> None:
     with (
         patch("app.k8s.token_request._ssl_context_from_ca", return_value=True),
         patch("app.k8s.token_request.httpx.AsyncClient", return_value=mock_client),
+        pytest.raises(K8sTokenRequestError, match="K8S_TOKEN_REQUEST_REJECTED"),
     ):
-        with pytest.raises(K8sTokenRequestError, match="K8S_TOKEN_REQUEST_REJECTED"):
-            await request_service_account_token(
-                api_server="https://k8s.example:6443",
-                server_ca_pem=_FAKE_CA,
-                bootstrap_token="bootstrap-token",
-                namespace="default",
-                service_account="default",
-            )
+        await request_service_account_token(
+            api_server="https://k8s.example:6443",
+            server_ca_pem=_FAKE_CA,
+            bootstrap_token="bootstrap-token",
+            namespace="default",
+            service_account="default",
+        )

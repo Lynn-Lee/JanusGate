@@ -11,7 +11,10 @@ from sqlalchemy.pool import StaticPool
 
 from app.api.sessions.service import ConnectorDispatchRequest
 from app.connectors.k8s_exec import K8sChannelError
-from app.connectors.k8s_vault_resolver import CallableK8sSecretUnwrapper, K8sVaultSessionConnectionResolver
+from app.connectors.k8s_vault_resolver import (
+    CallableK8sSecretUnwrapper,
+    K8sVaultSessionConnectionResolver,
+)
 from app.connectors.routing_resolver import RoutingSessionConnectionResolver
 from app.connectors.session_runtime import ConnectorSessionMode
 from app.core.database import Base

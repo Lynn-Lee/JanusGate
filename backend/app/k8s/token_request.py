@@ -46,10 +46,7 @@ async def request_service_account_token(
     """
 
     base = api_server.rstrip("/")
-    url = (
-        f"{base}/api/v1/namespaces/{namespace}/serviceaccounts/"
-        f"{service_account}/token"
-    )
+    url = f"{base}/api/v1/namespaces/{namespace}/serviceaccounts/{service_account}/token"
     payload: dict[str, Any] = {
         "apiVersion": "authentication.k8s.io/v1",
         "kind": "TokenRequest",
@@ -85,5 +82,4 @@ async def request_service_account_token(
     token = status.get("token")
     if not isinstance(token, str) or not token:
         raise K8sTokenRequestError("K8S_TOKEN_REQUEST_INVALID", "missing token in response")
-    ttl = status.get("expirationTimestamp")
     return TokenRequestResult(token=token, expiration_seconds=expiration_seconds)

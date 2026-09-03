@@ -19,6 +19,7 @@ from app.api import (
     auth,
     automation,
     connectors,
+    k8s,
     notification_deliveries,
     notification_rules,
     protocols,
@@ -28,7 +29,6 @@ from app.api import (
     ssh_certificate_authorities,
     ssh_certificates,
     webhook_endpoints,
-    k8s,
     zones,
 )
 from app.api.audits.routes import router as audits_router

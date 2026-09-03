@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.k8s_schemas import K8sClusterResponse, K8sClusterUpsert
@@ -28,7 +28,7 @@ def _require_assets_permission(user: dict[str, Any], permission: str) -> None:
 async def get_k8s_cluster(
     asset_id: int,
     db: AsyncSession = Depends(get_read_db),
-    user: dict = Depends(current_user),
+    user: dict[str, Any] = Depends(current_user),
 ) -> K8sClusterResponse:
     _require_assets_permission(user, "assets:read")
     scope = actor_scope_from_user(user)
@@ -49,7 +49,7 @@ async def upsert_k8s_cluster(
     asset_id: int,
     body: K8sClusterUpsert,
     db: AsyncSession = Depends(get_db),
-    user: dict = Depends(current_user),
+    user: dict[str, Any] = Depends(current_user),
 ) -> K8sClusterResponse:
     _require_assets_permission(user, "assets:write")
     scope = actor_scope_from_user(user)

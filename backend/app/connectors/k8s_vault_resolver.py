@@ -11,7 +11,11 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.api.sessions.service import ConnectorDispatchRequest
 from app.connectors.k8s_exec import K8sChannelError, K8sCredential, K8sTarget, NamespaceScope
-from app.connectors.session_runtime import ConnectorSessionMode, K8sConnectionBundle, SessionConnectionSpec
+from app.connectors.session_runtime import (
+    ConnectorSessionMode,
+    K8sConnectionBundle,
+    SessionConnectionSpec,
+)
 from app.k8s.service import get_cluster_by_asset, pick_namespace, resolve_namespace_scope
 from app.k8s.token_request import K8sTokenRequestError, request_service_account_token
 from app.models.account import Account
@@ -25,9 +29,7 @@ class K8sSecretUnwrapper(Protocol):
     async def unwrap(self, secret_id: str) -> str:
         """直接解包（仅用于无 JIT grant 的非生产/测试路径）。"""
 
-    async def unwrap_after_approval(
-        self, secret_id: str, approval: ApprovalState | None
-    ) -> str:
+    async def unwrap_after_approval(self, secret_id: str, approval: ApprovalState | None) -> str:
         """审批后解包 K8s 集群 token（envelope + grant 绑定）。"""
 
 
@@ -39,6 +41,7 @@ class CallableK8sSecretUnwrapper:
         | None = None,
     ) -> None:
         self._unwrap = unwrap
+        after: Callable[[str, ApprovalState | None], Awaitable[str] | str]
         if unwrap_after_approval is None:
 
             async def _require_not_approved(secret_id: str, approval: ApprovalState | None) -> str:
@@ -49,9 +52,10 @@ class CallableK8sSecretUnwrapper:
                     return value
                 return await value
 
-            self._unwrap_after_approval = _require_not_approved
+            after = _require_not_approved
         else:
-            self._unwrap_after_approval = unwrap_after_approval
+            after = unwrap_after_approval
+        self._unwrap_after_approval = after
 
     async def unwrap(self, secret_id: str) -> str:
         value = self._unwrap(secret_id)
@@ -59,9 +63,7 @@ class CallableK8sSecretUnwrapper:
             return value
         return await value
 
-    async def unwrap_after_approval(
-        self, secret_id: str, approval: ApprovalState | None
-    ) -> str:
+    async def unwrap_after_approval(self, secret_id: str, approval: ApprovalState | None) -> str:
         value = self._unwrap_after_approval(secret_id, approval)
         if isinstance(value, str):
             return value
@@ -82,7 +84,9 @@ class K8sVaultSessionConnectionResolver:
 
     async def resolve(self, request: ConnectorDispatchRequest) -> SessionConnectionSpec:
         async with self._session_factory() as session:
-            asset = await _load_asset(session, tenant_id=request.tenant_id, asset_id=request.asset_id)
+            asset = await _load_asset(
+                session, tenant_id=request.tenant_id, asset_id=request.asset_id
+            )
             if asset is None or not asset.is_active or asset.asset_type != "cloud":
                 raise K8sChannelError(
                     "K8S_TARGET_UNRESOLVED",
@@ -188,9 +192,7 @@ async def _approval_from_session(
     )
 
 
-async def _load_asset(
-    session: AsyncSession, *, tenant_id: str, asset_id: str
-) -> Asset | None:
+async def _load_asset(session: AsyncSession, *, tenant_id: str, asset_id: str) -> Asset | None:
     try:
         numeric_id = int(asset_id)
     except ValueError:
