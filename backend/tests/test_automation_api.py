@@ -305,6 +305,7 @@ async def test_job_runs_api_lists_only_current_tenant_runs_without_payload(
                 "check_mode": True,
                 "target_count": 2,
                 "error_code": None,
+                "reason": None,
             }
         ],
         "total": 1,

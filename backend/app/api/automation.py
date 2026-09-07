@@ -40,6 +40,10 @@ class AutomationJobResponse(BaseModel):
     status: str
 
 
+class AccountVerifyJobCreate(BaseModel):
+    account_id: int = Field(gt=0)
+
+
 class AutomationJobRunResponse(BaseModel):
     message_id: str
     job_type: str
@@ -49,6 +53,7 @@ class AutomationJobRunResponse(BaseModel):
     check_mode: bool | None
     target_count: int | None
     error_code: str | None
+    reason: str | None = None
 
 
 class AutomationJobRunListResponse(BaseModel):
@@ -92,6 +97,7 @@ async def list_automation_job_runs(
                 check_mode=run.check_mode,
                 target_count=run.target_count,
                 error_code=run.error_code,
+                reason=getattr(run, "reason", None),
             )
             for run in runs
         ],
@@ -145,6 +151,33 @@ async def enqueue_credential_rotation_job(
         payload=payload,
     )
     return AutomationJobResponse(job_id=job_id, job_type="credential.rotate", status="queued")
+
+
+
+@router.post(
+    "/account-verifies",
+    response_model=AutomationJobResponse,
+    status_code=status.HTTP_202_ACCEPTED,
+)
+async def enqueue_account_verify_job(
+    data: AccountVerifyJobCreate,
+    db: AsyncSession = Depends(get_db),
+    queue: AutomationJobQueue = Depends(get_automation_job_queue),
+    user: dict[str, Any] = Depends(current_user),
+) -> AutomationJobResponse:
+    """手动触发 account.verify；权限 automation:write；载荷仅 account_id。"""
+
+    _require_automation_permission(user, "automation:write")
+    account = await _get_scoped_account(db=db, user=user, account_id=data.account_id)
+    if account.protocol.lower() != "ssh":
+        raise HTTPException(status_code=400, detail="仅支持 SSH 账号校验")
+    job_id = await queue.enqueue(
+        tenant_id=account.tenant_id,
+        requested_by=str(user["id"]),
+        job_type="account.verify",
+        payload={"account_id": account.id},
+    )
+    return AutomationJobResponse(job_id=job_id, job_type="account.verify", status="queued")
 
 
 @router.post(

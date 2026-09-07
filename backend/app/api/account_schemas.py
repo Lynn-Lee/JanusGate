@@ -21,6 +21,7 @@ class AccountCreate(BaseModel):
     rotation_policy: str = Field(default="manual", min_length=1, max_length=40)
     use_token_request: bool = False
     token_ttl_seconds: int = Field(default=TOKEN_TTL_DEFAULT, ge=TOKEN_TTL_MIN, le=TOKEN_TTL_MAX)
+    template_id: int | None = None
 
 
 class AccountUpdate(BaseModel):
@@ -32,6 +33,8 @@ class AccountUpdate(BaseModel):
     project_id: str | None = Field(default=None, min_length=1, max_length=64)
     use_token_request: bool | None = None
     token_ttl_seconds: int | None = Field(default=None, ge=TOKEN_TTL_MIN, le=TOKEN_TTL_MAX)
+    template_id: int | None = None
+    username: str | None = Field(default=None, min_length=1, max_length=100)
 
 
 class AccountResponse(BaseModel):
@@ -48,6 +51,9 @@ class AccountResponse(BaseModel):
     rotation_policy: str
     use_token_request: bool = False
     token_ttl_seconds: int = TOKEN_TTL_DEFAULT
+    template_id: int | None = None
+    verify_status: str = "unverified"
+    last_verify_message_id: str | None = None
 
 
 class AccountListResponse(BaseModel):
@@ -73,3 +79,11 @@ class CredentialRotationResponse(BaseModel):
 class CredentialRotationListResponse(BaseModel):
     items: list[CredentialRotationResponse]
     total: int
+
+
+class AccountVerifyJobResponse(BaseModel):
+    job_id: str
+    job_type: str
+    status: str
+    account_id: int
+    verify_status: str

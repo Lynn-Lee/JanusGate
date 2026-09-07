@@ -183,6 +183,13 @@ export type Project = {
   status: string;
 };
 
+export type AccountTemplate = {
+  id: number;
+  name: string;
+  protocol: string;
+  default_username: string;
+};
+
 export type Account = {
   id: number;
   tenant_id: string;
@@ -197,6 +204,21 @@ export type Account = {
   rotation_policy: string;
   use_token_request?: boolean;
   token_ttl_seconds?: number;
+  template_id?: number | null;
+  verify_status?: string;
+  last_verify_message_id?: string | null;
+};
+
+export type AutomationJobRun = {
+  message_id: string;
+  job_type: string;
+  status: string;
+  requested_by: string;
+  playbook_name: string | null;
+  check_mode: boolean | null;
+  target_count: number | null;
+  error_code: string | null;
+  reason?: string | null;
 };
 
 export type CredentialRotation = {

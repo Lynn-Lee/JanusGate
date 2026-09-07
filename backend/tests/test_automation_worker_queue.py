@@ -165,3 +165,18 @@ async def test_automation_worker_dispatches_json_stream_message_and_acks() -> No
     assert stream.acked == [
         ("janusgate:automation", "janusgate-workers", "1700000000000-0")
     ]
+
+
+@pytest.mark.asyncio
+async def test_automation_job_queue_allows_account_verify() -> None:
+    stream = RecordingRedisStream()
+    queue = AutomationJobQueue(redis=stream, stream_name="janusgate:automation")
+    job_id = await queue.enqueue(
+        tenant_id="tenant-a",
+        job_type="account.verify",
+        requested_by="user-1",
+        payload={"account_id": 42},
+    )
+    assert job_id == "1700000000000-0"
+    assert stream.calls[0][1]["job_type"] == "account.verify"
+    assert json.loads(stream.calls[0][1]["payload_json"]) == {"account_id": 42}

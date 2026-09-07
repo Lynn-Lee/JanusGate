@@ -200,6 +200,10 @@ function installFetch() {
     if (url.endsWith('/api/v1/login-acls/')) return Response.json({ items: [], total: 0 });
     if (url.endsWith('/api/v1/login-asset-acls/')) return Response.json({ items: [], total: 0 });
     if (url.endsWith('/api/v1/connect-method-acls/')) return Response.json({ items: [], total: 0 });
+    if (url.endsWith('/api/v1/account-templates/') || url.includes('/api/v1/account-templates')) {
+      return Response.json({ items: [], total: 0 });
+    }
+    if (url.endsWith('/api/v1/automation/jobs/runs')) return Response.json({ items: [], total: 0 });
     if (url.endsWith('/api/v1/zones/')) return Response.json({ items: [], total: 0 });
     if (url.endsWith('/api/v1/zones/gateway-candidates/')) return Response.json([]);
     return Response.json(session);
@@ -378,6 +382,8 @@ describe('MVP pages', () => {
     await waitFor(() =>
       expect(fetchMock).toHaveBeenCalledWith('/api/v1/admin/license-summary', expect.any(Object))
     );
+    expect(await screen.findByText('账号模板')).toBeInTheDocument();
+    expect(screen.getByText('还没有账号模板')).toBeInTheDocument();
     expect(await screen.findByText('网域')).toBeInTheDocument();
     expect(screen.getByText('还没有网域')).toBeInTheDocument();
     expect(await screen.findByText('登录 ACL')).toBeInTheDocument();
@@ -436,6 +442,7 @@ describe('MVP pages', () => {
     history.pushState(null, '', '/settings');
     render(<App />);
 
+    expect(screen.queryByText('账号模板')).not.toBeInTheDocument();
     expect(await screen.findByText('网域')).toBeInTheDocument();
     expect(screen.getByText('还没有网域')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: '创建网域' })).not.toBeInTheDocument();

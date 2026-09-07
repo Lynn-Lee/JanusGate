@@ -857,7 +857,7 @@ User ──┬── WorkflowRequest ──── JitGrant
 
 | 任务 ID | 任务 | Owner | 范围 | 优先级 |
 |---------|------|-------|------|--------|
-| **#t73** | 账号自动化与账号治理 | backend + security | 8 类自动化对标：账号推送 / 改密 / 校验 / 删除 / 账号发现 / 网关账号校验 / 弱密码检测 / 账号备份；`AccountTemplate` 账号模板；`AccountRisk` 账号风险（发现的特权账号、弱密码、僵尸账号）。复用 #t52 已建立的 JSON-only 队列与 #t43 轮换记录。**约束**：改密执行器不经 shell 传递密码，统一结构化日志（对应关闭 P0#16 / P2#13） | 高 |
+| **#t73** | 账号自动化与账号治理 | backend + security | **✅ 已完成**：`AccountTemplate`（固定 ssh + 默认用户名，租户内唯一名；删模板仅 unlink）；Account `template_id` / `verify_status` / `last_verify_*`；`AccountRisk`（本切片 `verify_failed`）；迁移 `c3d4e5f6a7b8`；`AutomationJobRun.reason`。`account.verify` 入 `ALLOWED_JOB_TYPES`；`AccountVerifyWorkerHandler` Vault unwrap → SSH probe（载荷仅 `account_id`，无凭据经 shell）；`POST /api/v1/account-templates/` CRUD + `POST /api/v1/accounts/{id}/verify` / automation enqueue。设置页「账号模板」、账号页模板选填与校验状态/触发。测试 `test_account_template_api.py` + `test_account_verify_worker.py` + 相关 API/队列/mvp-pages。**AccountTemplate / account.verify 已 QA SHIP**（对应约束：凭据不经 shell / 结构化作业记录）；其余 7 类自动化作业与更广 `AccountRisk` 类型可后续切片 | 高 |
 
 **M5：工单、通知与认证源**
 
@@ -897,7 +897,7 @@ User ──┬── WorkflowRequest ──── JitGrant
 | M1：授权与访问控制内核 | 4-6 周 | #t63 + #t64 + #t65 | ✅ **3/3 完成** | 差距最大，优先级最高 |
 | M2：资产与协议广度 | 3-4 周 | #t66 + #t67 + #t68 | ✅ **3/3 完成** | 依赖 M1 授权模型 |
 | M3：真实连接通道 | 6-8 周 | #t69 + #t70 + #t71 + #t72 | 🟡 #t69/#t72 完成；#t70/#t71 未开始 | 风险最高，#t70 图形通道为其中最重 |
-| M4：账号自动化 | 3-4 周 | #t73 | ⬜ 未开始 | 依赖 #t69 SSH 通道（前置已满足） |
+| M4：账号自动化 | 3-4 周 | #t73 | ✅ **完成** | 依赖 #t69 SSH 通道（前置已满足） |
 | M5：工单、通知、认证源 | 4-5 周 | #t74 + #t75 + #t76 | ⬜ 未开始 | 可与 M3 并行 |
 | M6：运维与平台治理 | 3-4 周 | #t77 + #t78 + #t79 | ⬜ 未开始 | 收口阶段 |
 
@@ -905,7 +905,7 @@ User ──┬── WorkflowRequest ──── JitGrant
 
 > **v2.4 排期修订**：M3 预研切片（#t69）已完成并解除全局单点关键路径，M0 三项前置阻塞项全部关闭；**#t69 / #t72 生产 SessionConnectionResolver 已 QA SHIP**。
 > M3 剩余两项性质已分化——#t71 的 #t65 脱敏依赖已解除，剩协议实现难度；#t70 需外部图形基建，建议独立立项（见其任务行）。
-> 因此后续排序建议为：**#t73 账号自动化** 或 **M5 工单/通知/认证源**（#t66/#t67/#t68 与 #t69/#t72 已 QA SHIP；#t70 建议独立立项），而非按里程碑编号顺序推进。
+> 因此后续排序建议为：**M5 工单/通知/认证源**（#t66/#t67/#t68、#t69/#t72 与 **#t73 AccountTemplate / account.verify** 已 QA SHIP；#t70 建议独立立项），而非按里程碑编号顺序推进。
 
 #### 11.4.5 Phase 6 验收标准
 
@@ -1066,7 +1066,7 @@ P1（15 项）/ P2（18 项）：架构性问题（xpack 侵入、common 大杂�
 | 5 | 资产管理 | 🟡 `Asset` + `Platform` + 八类资产类型/协议目录（#t66）+ **网域/网关 ProxyJump（#t67 QA SHIP）** + **K8s TokenRequest（#t68 QA SHIP）** + 资产树授权 | 收藏、标签 | 是 | P1 已有 → **P6 #t66、#t67、#t68** |
 | 6 | 资产授权 | 🟡 `NodeModel` / `AssetPermissionModel` + 祖先继承 + 使用面过滤 + `scoped_select()` | RBAC 角色/用户组管理、更多资产类型与协议 | 是 | **P6 #t64 已完成，域能力仍为部分实现** |
 | 7 | ACL 访问控制 | 🟡 命令过滤 ACL + 命令组 + 数据脱敏规则 + 登录/资产登录/连接方式 overlay ACL + 租户 CRUD + SSH/K8s/PTY 执行前守卫与登录/连接 overlay，判定统一进 PolicyDecisionService | 弱密码策略（#t79）、命令复核工单（#t74）；人脸核验不做 | 是 | **P6 #t65 已完成，域能力仍为部分实现** |
-| 8 | 账号与凭据 | 🟡 `Account` + `CredentialRotation` + envelope 加密 + 审批后 unwrap | 8 类账号自动化、账号模板、账号风险、真实云 KMS/HSM | 是 | P4 #t43/#t50 → **P6 #t73** |
+| 8 | 账号与凭据 | 🟡 `Account` + `CredentialRotation` + envelope 加密 + 审批后 unwrap + **`AccountTemplate` / `account.verify`（#t73 QA SHIP）** + `AccountRisk(verify_failed)` | 其余 7 类账号自动化作业、更广账号风险类型、真实云 KMS/HSM | 是 | P4 #t43/#t50 → **P6 #t73** |
 | 9 | 会话网关 | 🟡 会话生命周期 + 策略校验 + 短期 connection token + grant 绑定 + **会话已持久化** + SSH/K8s 真实通道 + **生产 `AssetVaultSessionConnectionResolver`（QA SHIP）** | RDP/VNC/DB 通道、会话共享与监控、端点路由；连接列表展示 k8s（#t72 建连弹层选 Pod） | 是 | P1 已有 → **P6 #t62、#t69-72、#t78** |
 | 10 | 会话录制与命令检索 | 🟡 录制元数据 + 命令事件 + 全文检索 + 只读回放时间线 | 录像本体采集与回放、多存储后端（S3/OSS/ES） | 是 | P4 #t46 → **P6 #t70、#t78** |
 | 11 | 连接组件 / 终端 | 🟡 Connector Registry + 心跳租约 + mTLS 指纹 + attestation + key rotation + SDK + **SSH/SFTP/PTY 与 K8s exec 真实通道** + #t65 执行前守卫 + **生产 `AssetVaultSessionConnectionResolver`** | RDP / VNC / 数据库协议实现；连接列表展示 k8s（#t72 建连弹层选 Pod） | 是 | P4 #t45 → **P6 #t69-72** |
@@ -1113,7 +1113,7 @@ P1（15 项）/ P2（18 项）：架构性问题（xpack 侵入、common 大杂�
 | 原交汇点 | ~~**#t69 真实连接通道**~~——**已于 v2.4 解除**，4 项 P0 已关闭，SSH / K8s 运行时已走通 | |
 
 **结论（v2.4 修订）**：v2.3 判定的全局单点关键路径 #t69 **已解除**。两条路线不再强耦合于同一任务——
-安全侧剩余 2 项 P0 全部收敛到 #t76 SSO；#t65 判定已接到 SSH/K8s/PTY 执行前与交互式登录/资产连接 overlay。功能侧 #t63 RBAC、#t64 资产树与 AssetPermission、#t65 overlay ACL、#t66 资产类型与协议、**#t67 网域与网关 ProxyJump 已 QA SHIP**、**#t68 TokenRequest 已 QA SHIP**、**#t69 / #t72 生产 SessionConnectionResolver 已 QA SHIP**；下一刀是 #t73 账号自动化或 M5 工单/通知/认证源。
+安全侧剩余 2 项 P0 全部收敛到 #t76 SSO；#t65 判定已接到 SSH/K8s/PTY 执行前与交互式登录/资产连接 overlay。功能侧 #t63 RBAC、#t64 资产树与 AssetPermission、#t65 overlay ACL、#t66 资产类型与协议、**#t67 网域与网关 ProxyJump 已 QA SHIP**、**#t68 TokenRequest 已 QA SHIP**、**#t69 / #t72 生产 SessionConnectionResolver 已 QA SHIP**、**#t73 AccountTemplate / account.verify 已 QA SHIP**；下一刀是 M5 工单/通知/认证源。
 
 **表述边界仍然有效**：#t69 的走通只解除了运行时前提，功能替代完成度仍为 **0/19 等价**。
 在 §14.2 矩阵出现第一个 ✅ 之前，「功能替代进度过半」的表述依然不成立；

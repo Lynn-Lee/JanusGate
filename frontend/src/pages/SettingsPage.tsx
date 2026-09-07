@@ -6,7 +6,7 @@ import { useAuth } from '../auth/AuthContext';
 import { ErrorState, LoadingState } from '../components/StatusView';
 import { UserSelect, type DirectoryUser } from '../components/UserSelect';
 import { getErrorMessage, useApiData, useApiMessage } from './pageUtils';
-import type { Asset, AssetNode, GatewayCandidate, ListResponse, Zone } from './types';
+import type { AccountTemplate, Asset, AssetNode, GatewayCandidate, ListResponse, Zone } from './types';
 
 type Health = { status: string; version?: string };
 type LicenseSummary = {
@@ -95,6 +95,14 @@ function effectivePermissions(userPermissions: string[] | undefined, token: stri
   return tokenPermissions(token);
 }
 
+function canReadAccountTemplates(isSuperuser: boolean, permissions: string[]): boolean {
+  return isSuperuser || permissions.includes('admin') || permissions.includes('accounts:read') || permissions.includes('accounts:write');
+}
+
+function canWriteAccountTemplates(isSuperuser: boolean, permissions: string[]): boolean {
+  return isSuperuser || permissions.includes('admin') || permissions.includes('accounts:write');
+}
+
 function canReadAcls(isSuperuser: boolean, permissions: string[]): boolean {
   return isSuperuser || permissions.includes('admin') || permissions.includes('acl:read');
 }
@@ -139,6 +147,8 @@ export function SettingsPage() {
   const permissions = effectivePermissions(user?.permissions, token);
   const showOverlayAcls = canReadAcls(Boolean(user?.is_superuser), permissions);
   const writeOverlayAcls = canWriteAcls(Boolean(user?.is_superuser), permissions);
+  const showAccountTemplates = canReadAccountTemplates(Boolean(user?.is_superuser), permissions);
+  const writeAccountTemplates = canWriteAccountTemplates(Boolean(user?.is_superuser), permissions);
 
   const saveLicenseConfig = async (values: LicenseConfigForm) => {
     setLicenseSubmitting(true);
@@ -278,10 +288,144 @@ export function SettingsPage() {
             <Descriptions.Item label="边界">不展示或编辑真实密钥、Token、连接串</Descriptions.Item>
           </Descriptions>
         </Card>
+        {showAccountTemplates ? <AccountTemplatePanels canWrite={writeAccountTemplates} /> : null}
         {showOverlayAcls ? <ZonePanels canWrite={writeOverlayAcls} /> : null}
         {showOverlayAcls ? <OverlayAclPanels canWrite={writeOverlayAcls} /> : null}
       </div>
     </section>
+  );
+}
+
+
+function AccountTemplatePanels({ canWrite }: { canWrite: boolean }) {
+  const { api } = useAuth();
+  const messages = useApiMessage();
+  const templates = useApiData(() => api.get<ListResponse<AccountTemplate>>('/api/v1/account-templates/'), []);
+  const [open, setOpen] = useState(false);
+  const [editing, setEditing] = useState<AccountTemplate | null>(null);
+  const [form] = Form.useForm<{ name: string; default_username: string }>();
+
+  const openCreate = () => {
+    setEditing(null);
+    form.resetFields();
+    form.setFieldsValue({ name: '', default_username: '' });
+    setOpen(true);
+  };
+
+  const openEdit = (row: AccountTemplate) => {
+    setEditing(row);
+    form.setFieldsValue({ name: row.name, default_username: row.default_username });
+    setOpen(true);
+  };
+
+  const confirmDelete = (row: AccountTemplate) => {
+    Modal.confirm({
+      title: '确定删除这个模板？',
+      okText: '删除',
+      okType: 'danger',
+      cancelText: '取消',
+      onOk: async () => {
+        await api.delete(`/api/v1/account-templates/${row.id}`);
+        messages.success('已删除');
+        templates.reload();
+      }
+    });
+  };
+
+  const columns: ColumnsType<AccountTemplate> = [
+    { title: '名称', dataIndex: 'name' },
+    { title: '协议', dataIndex: 'protocol' },
+    { title: '默认用户名', dataIndex: 'default_username' },
+    ...(canWrite
+      ? [
+          {
+            title: '操作',
+            render: (_: unknown, record: AccountTemplate) => (
+              <Space>
+                <Button type="link" onClick={() => openEdit(record)}>
+                  编辑
+                </Button>
+                <Button type="link" danger onClick={() => confirmDelete(record)}>
+                  删除
+                </Button>
+              </Space>
+            )
+          } as ColumnsType<AccountTemplate>[number]
+        ]
+      : [])
+  ];
+
+  const items = templates.data?.items ?? [];
+
+  return (
+    <>
+      <Card
+        title="账号模板"
+        extra={
+          canWrite ? (
+            <Button type="primary" onClick={openCreate}>
+              创建模板
+            </Button>
+          ) : null
+        }
+      >
+        {templates.loading ? <LoadingState /> : null}
+        {templates.error ? <ErrorState message={templates.error} onRetry={templates.reload} /> : null}
+        {!templates.loading && !templates.error && items.length === 0 ? (
+          <Empty description="还没有账号模板">
+            {canWrite ? (
+              <Button type="primary" onClick={openCreate}>
+                创建模板
+              </Button>
+            ) : null}
+          </Empty>
+        ) : null}
+        {!templates.loading && !templates.error && items.length > 0 ? (
+          <Table rowKey="id" pagination={false} dataSource={items} columns={columns} />
+        ) : null}
+      </Card>
+
+      <Modal
+        title={editing ? '编辑账号模板' : '创建账号模板'}
+        open={open}
+        onCancel={() => setOpen(false)}
+        onOk={() => form.submit()}
+        destroyOnHidden
+      >
+        <Form
+          form={form}
+          layout="vertical"
+          onFinish={async (values) => {
+            const payload = {
+              name: values.name,
+              default_username: values.default_username
+            };
+            if (editing) {
+              await api.patch(`/api/v1/account-templates/${editing.id}`, payload);
+            } else {
+              await api.post('/api/v1/account-templates/', payload);
+            }
+            setOpen(false);
+            messages.success('已保存');
+            templates.reload();
+          }}
+        >
+          <Form.Item label="名称" name="name" rules={[{ required: true, message: '请输入名称' }]}>
+            <Input />
+          </Form.Item>
+          <Form.Item label="协议">
+            <Input value="ssh" disabled />
+          </Form.Item>
+          <Form.Item
+            label="默认用户名"
+            name="default_username"
+            rules={[{ required: true, message: '请输入默认用户名' }]}
+          >
+            <Input />
+          </Form.Item>
+        </Form>
+      </Modal>
+    </>
   );
 }
 

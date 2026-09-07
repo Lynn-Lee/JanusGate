@@ -1,4 +1,4 @@
-"""Phase 4 account custody API routes."""
+"""Phase 4 account custody API routes (+ #t73 template / verify)."""
 from datetime import UTC, datetime
 from typing import Any
 
@@ -11,18 +11,27 @@ from app.api.account_schemas import (
     AccountListResponse,
     AccountResponse,
     AccountUpdate,
+    AccountVerifyJobResponse,
     CredentialRotationCreate,
     CredentialRotationListResponse,
     CredentialRotationResponse,
 )
 from app.core.database import get_db, get_read_db
-from app.core.deps import current_user
-from app.models.account import Account, CredentialRotation
+from app.core.deps import current_user, get_redis
+from app.models.account import Account, AccountTemplate, CredentialRotation
 from app.models.asset import Asset
 from app.models.tenancy import Organization, Project, Team
+from app.services.account_verify import VERIFY_STATUS_VERIFYING
+from app.services.automation_worker import AutomationJobQueue, RedisStreamClient
 from app.tenancy.scope import actor_scope_from_user, scoped_select
 
 router = APIRouter(prefix="/accounts", tags=["账号托管"])
+
+
+def get_automation_job_queue(
+    redis: RedisStreamClient = Depends(get_redis),
+) -> AutomationJobQueue:
+    return AutomationJobQueue(redis=redis)
 
 
 @router.get("/", response_model=AccountListResponse)
@@ -57,6 +66,9 @@ async def create_account(
         team_id=data.team_id,
         project_id=data.project_id,
     )
+    template_id = await _validate_template_id(
+        db=db, tenant_id=tenant_id, template_id=data.template_id
+    )
 
     account = Account(
         tenant_id=tenant_id,
@@ -71,6 +83,7 @@ async def create_account(
         rotation_policy=data.rotation_policy,
         use_token_request=bool(data.use_token_request),
         token_ttl_seconds=int(data.token_ttl_seconds),
+        template_id=template_id,
     )
     db.add(account)
     await db.commit()
@@ -97,6 +110,10 @@ async def update_account(
             team_id=payload.get("team_id", account.team_id),
             project_id=payload.get("project_id", account.project_id),
         )
+    if "template_id" in payload:
+        payload["template_id"] = await _validate_template_id(
+            db=db, tenant_id=account.tenant_id, template_id=payload.get("template_id")
+        )
     for field in (
         "secret_id",
         "status",
@@ -106,12 +123,53 @@ async def update_account(
         "project_id",
         "use_token_request",
         "token_ttl_seconds",
+        "template_id",
+        "username",
     ):
         if field in payload:
             setattr(account, field, payload[field])
     await db.commit()
     await db.refresh(account)
     return _account_response(account)
+
+
+@router.post(
+    "/{account_id}/verify",
+    response_model=AccountVerifyJobResponse,
+    status_code=status.HTTP_202_ACCEPTED,
+)
+async def trigger_account_verify(
+    account_id: int,
+    db: AsyncSession = Depends(get_db),
+    queue: AutomationJobQueue = Depends(get_automation_job_queue),
+    user: dict[str, Any] = Depends(current_user),
+) -> AccountVerifyJobResponse:
+    """手动触发 account.verify（仅 SSH）；载荷不含凭据。"""
+
+    _require_account_permission(user, "accounts:write")
+    account = await _get_scoped_account(db=db, user=user, account_id=account_id)
+    if account.protocol.lower() != "ssh":
+        raise HTTPException(status_code=400, detail="仅支持 SSH 账号校验")
+
+    account.verify_status = VERIFY_STATUS_VERIFYING
+    await db.commit()
+
+    job_id = await queue.enqueue(
+        tenant_id=account.tenant_id,
+        requested_by=str(user.get("id") or ""),
+        job_type="account.verify",
+        payload={"account_id": account.id},
+    )
+    account.last_verify_message_id = job_id
+    await db.commit()
+    await db.refresh(account)
+    return AccountVerifyJobResponse(
+        job_id=job_id,
+        job_type="account.verify",
+        status="queued",
+        account_id=account.id,
+        verify_status=account.verify_status,
+    )
 
 
 @router.get("/{account_id}/rotations", response_model=CredentialRotationListResponse)
@@ -196,6 +254,17 @@ async def _assert_tenant_scope(
             raise HTTPException(status_code=404, detail="PROJECT_NOT_FOUND")
 
 
+async def _validate_template_id(
+    *, db: AsyncSession, tenant_id: str, template_id: int | None
+) -> int | None:
+    if template_id is None:
+        return None
+    template = await db.get(AccountTemplate, template_id)
+    if template is None or template.tenant_id != tenant_id:
+        raise HTTPException(status_code=404, detail="ACCOUNT_TEMPLATE_NOT_FOUND")
+    return template.id
+
+
 def _require_account_permission(user: dict[str, Any], permission: str) -> None:
     permissions = user.get("permissions", [])
     if "admin" in permissions or permission in permissions:
@@ -232,6 +301,9 @@ def _account_response(account: Account) -> AccountResponse:
         token_ttl_seconds=int(
             getattr(account, "token_ttl_seconds", None) or TOKEN_TTL_DEFAULT
         ),
+        template_id=getattr(account, "template_id", None),
+        verify_status=str(getattr(account, "verify_status", None) or "unverified"),
+        last_verify_message_id=getattr(account, "last_verify_message_id", None),
     )
 
 

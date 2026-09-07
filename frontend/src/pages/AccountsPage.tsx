@@ -1,23 +1,40 @@
-import { Button, Card, Form, Input, InputNumber, Modal, Space, Switch, Table, Tag, Typography } from 'antd';
-import { EditOutlined, KeyOutlined } from '@ant-design/icons';
+import { Button, Card, Form, Input, InputNumber, Modal, Select, Space, Switch, Table, Tag, Typography } from 'antd';
+import { EditOutlined, KeyOutlined, PlusOutlined } from '@ant-design/icons';
 import { useEffect, useMemo, useState } from 'react';
 import { useAuth } from '../auth/AuthContext';
 import { ErrorState, LoadingState } from '../components/StatusView';
 import { getErrorMessage, useApiData, useApiMessage } from './pageUtils';
-import type { Account, CredentialRotation, ListResponse } from './types';
+import type { Account, AccountTemplate, AutomationJobRun, CredentialRotation, ListResponse } from './types';
 
 const TOKEN_TTL_DEFAULT = 900;
 const TOKEN_TTL_MIN = 60;
 const TOKEN_TTL_MAX = 3600;
 
 function statusTag(status: string) {
-  const color = status === 'active' || status === 'completed' ? 'green' : status === 'failed' ? 'red' : 'blue';
+  const color = status === 'active' || status === 'completed' || status === 'success' ? 'green' : status === 'failed' ? 'red' : 'blue';
   return <Tag color={color}>{status}</Tag>;
+}
+
+function verifyStatusLabel(status: string | undefined): string {
+  switch (status) {
+    case 'success':
+      return '成功';
+    case 'failed':
+      return '失败';
+    case 'verifying':
+      return '校验中';
+    default:
+      return '未校验';
+  }
 }
 
 function isK8sProtocol(protocol: string): boolean {
   const value = protocol.toLowerCase();
   return value === 'k8s' || value === 'kubernetes';
+}
+
+function isSshProtocol(protocol: string): boolean {
+  return protocol.toLowerCase() === 'ssh';
 }
 
 type AccountEditValues = {
@@ -28,16 +45,30 @@ type AccountEditValues = {
   token_ttl_seconds?: number | null;
 };
 
+type AccountCreateValues = {
+  asset_id: number;
+  username: string;
+  protocol: string;
+  secret_id: string;
+  template_id?: number | null;
+};
+
 export function AccountsPage() {
   const { api } = useAuth();
   const toast = useApiMessage();
   const [selectedAccountId, setSelectedAccountId] = useState<number | null>(null);
   const [scheduling, setScheduling] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
+  const [createOpen, setCreateOpen] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [creating, setCreating] = useState(false);
+  const [verifyingIds, setVerifyingIds] = useState<Set<number>>(new Set());
   const [editForm] = Form.useForm<AccountEditValues>();
+  const [createForm] = Form.useForm<AccountCreateValues>();
   const useTokenRequest = Form.useWatch('use_token_request', editForm);
   const accounts = useApiData(() => api.get<ListResponse<Account>>('/api/v1/accounts/'), []);
+  const templates = useApiData(() => api.get<ListResponse<AccountTemplate>>('/api/v1/account-templates/'), []);
+  const runs = useApiData(() => api.get<ListResponse<AutomationJobRun>>('/api/v1/automation/jobs/runs'), []);
   const rotations = useApiData(
     () =>
       selectedAccountId
@@ -49,6 +80,11 @@ export function AccountsPage() {
   const selectedAccount = useMemo(
     () => accounts.data?.items.find((item) => item.id === selectedAccountId) ?? null,
     [accounts.data, selectedAccountId]
+  );
+
+  const verifyRuns = useMemo(
+    () => (runs.data?.items ?? []).filter((run) => run.job_type === 'account.verify'),
+    [runs.data]
   );
 
   useEffect(() => {
@@ -73,6 +109,25 @@ export function AccountsPage() {
     }
   };
 
+  const triggerVerify = async (account: Account) => {
+    if (!isSshProtocol(account.protocol)) return;
+    setVerifyingIds((prev) => new Set(prev).add(account.id));
+    try {
+      await api.post(`/api/v1/accounts/${account.id}/verify`, {});
+      toast.success('已开始校验');
+      accounts.reload();
+      runs.reload();
+    } catch (error) {
+      toast.error(getErrorMessage(error));
+    } finally {
+      setVerifyingIds((prev) => {
+        const next = new Set(prev);
+        next.delete(account.id);
+        return next;
+      });
+    }
+  };
+
   const openEdit = () => {
     if (!selectedAccount) return;
     editForm.setFieldsValue({
@@ -83,6 +138,30 @@ export function AccountsPage() {
       token_ttl_seconds: selectedAccount.token_ttl_seconds ?? TOKEN_TTL_DEFAULT
     });
     setEditOpen(true);
+  };
+
+  const openCreate = () => {
+    createForm.resetFields();
+    createForm.setFieldsValue({
+      asset_id: undefined as unknown as number,
+      username: '',
+      protocol: 'ssh',
+      secret_id: '',
+      template_id: null
+    });
+    setCreateOpen(true);
+  };
+
+  const onTemplateSelect = (templateId: number | null | undefined) => {
+    if (!templateId) return;
+    const template = templates.data?.items.find((item) => item.id === templateId);
+    if (template) {
+      createForm.setFieldsValue({
+        username: template.default_username,
+        protocol: 'ssh',
+        template_id: template.id
+      });
+    }
   };
 
   const normalizeTtlOnBlur = () => {
@@ -123,6 +202,30 @@ export function AccountsPage() {
     }
   };
 
+  const saveCreate = async (values: AccountCreateValues) => {
+    setCreating(true);
+    try {
+      const payload: Record<string, unknown> = {
+        asset_id: values.asset_id,
+        username: values.username,
+        protocol: values.protocol || 'ssh',
+        secret_id: values.secret_id
+      };
+      if (values.template_id) {
+        payload.template_id = values.template_id;
+      }
+      const created = await api.post<Account>('/api/v1/accounts/', payload);
+      toast.success('账号已创建');
+      setCreateOpen(false);
+      accounts.reload();
+      setSelectedAccountId(created.id);
+    } catch (error) {
+      toast.error(getErrorMessage(error));
+    } finally {
+      setCreating(false);
+    }
+  };
+
   const loading = accounts.loading || rotations.loading;
 
   return (
@@ -137,6 +240,9 @@ export function AccountsPage() {
         <Space>
           <Tag color="blue">{accounts.data?.total ?? 0} Accounts</Tag>
           <Tag color="cyan">{rotations.data?.total ?? 0} Rotations</Tag>
+          <Button icon={<PlusOutlined />} aria-label="创建账号" onClick={openCreate}>
+            创建账号
+          </Button>
           <Button
             icon={<EditOutlined />}
             aria-label="编辑账号"
@@ -181,6 +287,31 @@ export function AccountsPage() {
               { title: 'Secret 引用', dataIndex: 'secret_id' },
               { title: 'Project', dataIndex: 'project_id', render: (value: string | null) => value ?? '未绑定' },
               { title: '状态', dataIndex: 'status', render: statusTag },
+              {
+                title: '校验',
+                dataIndex: 'verify_status',
+                render: (value: string | undefined, record: Account) => (
+                  <Space>
+                    <Tag
+                      color={
+                        value === 'success' ? 'green' : value === 'failed' ? 'red' : value === 'verifying' ? 'blue' : 'default'
+                      }
+                    >
+                      {verifyStatusLabel(value)}
+                    </Tag>
+                    {isSshProtocol(record.protocol) ? (
+                      <Button
+                        type="link"
+                        size="small"
+                        loading={verifyingIds.has(record.id) || record.verify_status === 'verifying'}
+                        onClick={() => void triggerVerify(record)}
+                      >
+                        {verifyingIds.has(record.id) || record.verify_status === 'verifying' ? '校验中' : '校验'}
+                      </Button>
+                    ) : null}
+                  </Space>
+                )
+              },
               { title: '轮换策略', dataIndex: 'rotation_policy' }
             ]}
           />
@@ -201,7 +332,62 @@ export function AccountsPage() {
             ]}
           />
         </Card>
+
+        <Card title="校验任务">
+          <Table
+            rowKey="message_id"
+            dataSource={verifyRuns}
+            pagination={false}
+            size="small"
+            columns={[
+              { title: '类型', dataIndex: 'job_type' },
+              { title: '状态', dataIndex: 'status', render: statusTag },
+              {
+                title: '原因',
+                dataIndex: 'reason',
+                render: (value: string | null | undefined, record: AutomationJobRun) =>
+                  value || record.error_code || '—'
+              },
+              { title: '请求人', dataIndex: 'requested_by' }
+            ]}
+          />
+        </Card>
       </div>
+
+      <Modal
+        title="创建账号"
+        open={createOpen}
+        onCancel={() => setCreateOpen(false)}
+        onOk={() => createForm.submit()}
+        confirmLoading={creating}
+        destroyOnHidden
+      >
+        <Form form={createForm} layout="vertical" onFinish={(values) => void saveCreate(values)}>
+          <Form.Item label="账号模板" name="template_id">
+            <Select
+              allowClear
+              placeholder="空=不套用"
+              options={(templates.data?.items ?? []).map((item) => ({
+                value: item.id,
+                label: `${item.name}（${item.default_username}）`
+              }))}
+              onChange={(value) => onTemplateSelect(value ?? null)}
+            />
+          </Form.Item>
+          <Form.Item label="资产 ID" name="asset_id" rules={[{ required: true, message: '请输入资产 ID' }]}>
+            <InputNumber style={{ width: '100%' }} min={1} />
+          </Form.Item>
+          <Form.Item label="用户名" name="username" rules={[{ required: true, message: '请输入用户名' }]}>
+            <Input />
+          </Form.Item>
+          <Form.Item label="协议" name="protocol" initialValue="ssh" rules={[{ required: true, message: '请输入协议' }]}>
+            <Input />
+          </Form.Item>
+          <Form.Item label="Secret 引用" name="secret_id" rules={[{ required: true, message: '请输入 Secret 引用' }]}>
+            <Input />
+          </Form.Item>
+        </Form>
+      </Modal>
 
       <Modal
         title="编辑账号"

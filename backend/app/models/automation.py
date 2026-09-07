@@ -19,6 +19,7 @@ class AutomationJobRun(Base):
     check_mode: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
     target_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
     error_code: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    reason: Mapped[str | None] = mapped_column(String(240), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )

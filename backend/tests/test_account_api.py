@@ -122,6 +122,9 @@ async def test_account_api_creates_and_lists_accounts_with_tenant_scope(
         "rotation_policy": "manual",
         "use_token_request": False,
         "token_ttl_seconds": 900,
+        "template_id": None,
+        "verify_status": "unverified",
+        "last_verify_message_id": None,
     }
     assert "plaintext" not in created
     assert tenant_a_list.status_code == 200
