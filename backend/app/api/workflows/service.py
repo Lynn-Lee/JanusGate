@@ -27,6 +27,14 @@ from app.models.workflow import (
 from app.models.workflow import (
     WorkflowRequestStatus as SQLAlchemyWorkflowRequestStatus,
 )
+from app.workflows.command_review import (
+    COMMAND_ALLOW_ACTION,
+    COMMAND_REVIEW_ACTION,
+    COMMAND_REVIEW_TTL_SECONDS,
+    build_command_review_metadata,
+    command_from_request,
+    is_command_review_request,
+)
 from app.workflows.ticket_flows import TicketFlowSnapshot, step_to_dict
 
 MAX_GRANT_TTL_SECONDS = 86_400
@@ -674,21 +682,37 @@ class WorkflowService:
         self.ticket_flow_loader = ticket_flow_loader
         self._enabled_flows: dict[str, TicketFlowSnapshot] = {}
 
-    def set_enabled_ticket_flow(self, tenant_id: str, flow: TicketFlowSnapshot | None) -> None:
-        """Test helper: bind an enabled asset_grant flow for a tenant."""
+    def set_enabled_ticket_flow(
+        self, tenant_id: str, flow: TicketFlowSnapshot | None, *, flow_type: str = "asset_grant"
+    ) -> None:
+        """Test helper: bind an enabled TicketFlow for a tenant + type."""
 
+        key = f"{tenant_id}:{flow_type}"
         if flow is None:
-            self._enabled_flows.pop(tenant_id, None)
+            self._enabled_flows.pop(key, None)
+            # legacy key used by older tests
+            if flow_type == "asset_grant":
+                self._enabled_flows.pop(tenant_id, None)
         else:
-            self._enabled_flows[tenant_id] = flow
+            self._enabled_flows[key] = flow
+            if flow_type == "asset_grant":
+                self._enabled_flows[tenant_id] = flow
 
-    async def _resolve_enabled_flow(self, tenant_id: str) -> TicketFlowSnapshot | None:
+    async def _resolve_enabled_flow(
+        self, tenant_id: str, *, flow_type: str = "asset_grant"
+    ) -> TicketFlowSnapshot | None:
         if self.ticket_flow_loader is not None:
-            flow = self.ticket_flow_loader(tenant_id)
+            try:
+                flow = self.ticket_flow_loader(tenant_id, flow_type)
+            except TypeError:
+                # backward-compatible loaders that only accept tenant_id
+                flow = self.ticket_flow_loader(tenant_id)
             if hasattr(flow, "__await__"):
                 flow = await flow
             return flow
-        return self._enabled_flows.get(tenant_id)
+        return self._enabled_flows.get(f"{tenant_id}:{flow_type}") or (
+            self._enabled_flows.get(tenant_id) if flow_type == "asset_grant" else None
+        )
 
     async def create_request(
         self,
@@ -735,7 +759,7 @@ class WorkflowService:
             raise PermissionError("WORKFLOW_REQUESTER_MISMATCH")
         self._transition(request, WorkflowRequestStatus.PENDING)
         request.submitted_at = self.now()
-        flow = await self._resolve_enabled_flow(tenant_id)
+        flow = await self._resolve_enabled_flow(tenant_id, flow_type="asset_grant")
         if flow is not None and flow.levels:
             request.ticket_flow_id = flow.id
             request.total_levels = flow.level_count
@@ -781,6 +805,15 @@ class WorkflowService:
                 actor=actor,
                 decision_reason=decision_reason,
                 grant_ttl_seconds=grant_ttl_seconds,
+            )
+        if is_command_review_request(request):
+            self._require_command_review_approver(request, actor)
+            ttl = min(grant_ttl_seconds, COMMAND_REVIEW_TTL_SECONDS)
+            return await self._finalize_approval(
+                request,
+                actor=actor,
+                decision_reason=decision_reason,
+                grant_ttl_seconds=ttl,
             )
         self._require_approve_permission(actor)
         return await self._finalize_approval(
@@ -846,29 +879,59 @@ class WorkflowService:
     ) -> WorkflowRequestRecord:
         self._transition(request, WorkflowRequestStatus.APPROVED)
         now = self.now()
-        grant = JitGrantRecord(
-            id=self.grant_id_factory(),
-            tenant_id=request.tenant_id,
-            workflow_request_id=request.id,
-            subject_id=request.requester_id,
-            asset_id=request.asset_id,
-            account_id=request.account_id,
-            protocol=request.protocol,
-            action=request.action,
-            issued_at=now,
-            expires_at=now + timedelta(seconds=min(grant_ttl_seconds, request.requested_ttl_seconds)),
-            max_session_ttl_seconds=min(grant_ttl_seconds, request.requested_ttl_seconds),
-            constraints={
-                "subject_id": request.requester_id,
-                "asset_id": request.asset_id,
-                "account_id": request.account_id,
-                "protocol": request.protocol,
-                "action": request.action,
-                "usage": "single-use",
-                "max_uses": 1,
-                "used_count": 0,
-            },
-        )
+        if is_command_review_request(request):
+            command = command_from_request(request)
+            session_id = str((request.metadata or {}).get("session_id") or "")
+            ttl = min(grant_ttl_seconds, request.requested_ttl_seconds, COMMAND_REVIEW_TTL_SECONDS)
+            grant = JitGrantRecord(
+                id=self.grant_id_factory(),
+                tenant_id=request.tenant_id,
+                workflow_request_id=request.id,
+                subject_id=request.requester_id,
+                asset_id=request.asset_id,
+                account_id=request.account_id,
+                protocol=request.protocol,
+                action=COMMAND_ALLOW_ACTION,
+                issued_at=now,
+                expires_at=now + timedelta(seconds=ttl),
+                max_session_ttl_seconds=ttl,
+                constraints={
+                    "subject_id": request.requester_id,
+                    "asset_id": request.asset_id,
+                    "account_id": request.account_id,
+                    "protocol": request.protocol,
+                    "action": COMMAND_ALLOW_ACTION,
+                    "command": command,
+                    "session_id": session_id,
+                    "usage": "single-use",
+                    "max_uses": 1,
+                    "used_count": 0,
+                },
+            )
+        else:
+            grant = JitGrantRecord(
+                id=self.grant_id_factory(),
+                tenant_id=request.tenant_id,
+                workflow_request_id=request.id,
+                subject_id=request.requester_id,
+                asset_id=request.asset_id,
+                account_id=request.account_id,
+                protocol=request.protocol,
+                action=request.action,
+                issued_at=now,
+                expires_at=now + timedelta(seconds=min(grant_ttl_seconds, request.requested_ttl_seconds)),
+                max_session_ttl_seconds=min(grant_ttl_seconds, request.requested_ttl_seconds),
+                constraints={
+                    "subject_id": request.requester_id,
+                    "asset_id": request.asset_id,
+                    "account_id": request.account_id,
+                    "protocol": request.protocol,
+                    "action": request.action,
+                    "usage": "single-use",
+                    "max_uses": 1,
+                    "used_count": 0,
+                },
+            )
         request.decided_at = now
         request.expires_at = grant.expires_at
         request.decision_reason = decision_reason
@@ -920,7 +983,10 @@ class WorkflowService:
                 if step.level > request.current_level and step.status == "not_started":
                     step.status = "not_started"
         else:
-            self._require_approve_permission(actor)
+            if is_command_review_request(request):
+                self._require_command_review_approver(request, actor)
+            else:
+                self._require_approve_permission(actor)
         self._transition(request, WorkflowRequestStatus.REJECTED)
         request.decided_at = self.now()
         request.decision_reason = decision_reason
@@ -1084,6 +1150,153 @@ class WorkflowService:
         if next_status not in WORKFLOW_TRANSITIONS[request.status]:
             raise ValueError(f"INVALID_WORKFLOW_TRANSITION:{request.status}->{next_status}")
         request.status = next_status
+
+    def _require_command_review_approver(
+        self, request: WorkflowRequestRecord, actor: dict[str, Any]
+    ) -> None:
+        """No-flow command_review: ACL reviewers, else admin-only."""
+
+        reviewers = (request.metadata or {}).get("reviewer_subject_ids") or []
+        if not isinstance(reviewers, list):
+            reviewers = []
+        actor_id = str(actor["id"])
+        if reviewers:
+            if actor_id not in {str(uid) for uid in reviewers}:
+                raise PermissionError("COMMAND_REVIEW_APPROVER_MISMATCH")
+            return
+        if not self._has_any_permission(actor, {"workflow:admin", "admin"}):
+            raise PermissionError("COMMAND_REVIEW_ADMIN_REQUIRED")
+
+    async def ensure_command_review_ticket(
+        self,
+        *,
+        actor: dict[str, Any],
+        asset_id: str,
+        account_id: str,
+        protocol: str,
+        command: str,
+        session_id: str | None = None,
+        reviewer_subject_ids: list[str] | None = None,
+    ) -> WorkflowRequestRecord:
+        """Create or reuse in-progress command_review ticket (Design A)."""
+
+        tenant_id = str(actor.get("tenant_id", "default"))
+        subject_id = str(actor["id"])
+        existing = await self.find_pending_command_review(
+            tenant_id=tenant_id,
+            subject_id=subject_id,
+            asset_id=asset_id,
+            command=command,
+        )
+        if existing is not None:
+            return existing
+
+        metadata = build_command_review_metadata(
+            command=command,
+            session_id=session_id,
+            reviewer_subject_ids=reviewer_subject_ids,
+            protocol=protocol,
+            account_id=account_id,
+        )
+        request = await self.create_request(
+            actor=actor,
+            asset_id=asset_id,
+            account_id=account_id or "*",
+            protocol=protocol or "ssh",
+            action=COMMAND_REVIEW_ACTION,
+            reason="命令复核",
+            requested_ttl_seconds=COMMAND_REVIEW_TTL_SECONDS,
+            metadata=metadata,
+        )
+        # inline pending transition with command_review flow (not asset_grant)
+        request = await self._submit_command_review(request, actor=actor)
+        return request
+
+    async def _submit_command_review(
+        self, request: WorkflowRequestRecord, *, actor: dict[str, Any]
+    ) -> WorkflowRequestRecord:
+        if request.status is not WorkflowRequestStatus.DRAFT:
+            raise ValueError(f"INVALID_WORKFLOW_TRANSITION:{request.status}->{WorkflowRequestStatus.PENDING}")
+        self._transition(request, WorkflowRequestStatus.PENDING)
+        request.submitted_at = self.now()
+        flow = await self._resolve_enabled_flow(request.tenant_id, flow_type="command_review")
+        if flow is not None and flow.levels:
+            request.ticket_flow_id = flow.id
+            request.total_levels = flow.level_count
+            request.current_level = 1
+            request.steps = [
+                TicketStepRecord(
+                    id=f"ts_{uuid.uuid4().hex}",
+                    level=level.level,
+                    status="pending" if level.level == 1 else "not_started",
+                    approver_user_ids=list(level.approver_user_ids),
+                )
+                for level in flow.levels
+            ]
+        else:
+            request.ticket_flow_id = ""
+            request.current_level = 0
+            request.total_levels = 0
+            request.steps = []
+        await self.store.save_request(request)
+        await self._publish("workflow.request.submitted", request, actor=actor)
+        await self.store.commit()
+        return request
+
+    async def find_pending_command_review(
+        self,
+        *,
+        tenant_id: str,
+        subject_id: str,
+        asset_id: str,
+        command: str,
+    ) -> WorkflowRequestRecord | None:
+        requests = await self.store.list_requests(tenant_id=tenant_id, requester_id=subject_id)
+        for request in requests:
+            if request.status is not WorkflowRequestStatus.PENDING:
+                continue
+            if request.action != COMMAND_REVIEW_ACTION:
+                continue
+            if request.asset_id != asset_id:
+                continue
+            if command_from_request(request) != command:
+                continue
+            return request
+        return None
+
+    async def consume_command_allow_grant(
+        self,
+        *,
+        tenant_id: str,
+        subject_id: str,
+        asset_id: str,
+        command: str,
+        session_id: str | None = None,
+    ) -> JitGrantRecord | None:
+        """Consume one-shot command allow if present and still valid."""
+
+        now = self.now()
+        grants = await self.store.list_active_grants(
+            tenant_id=tenant_id, now=now, subject_id=subject_id
+        )
+        for grant in grants:
+            if grant.action != COMMAND_ALLOW_ACTION:
+                continue
+            if grant.asset_id != asset_id:
+                continue
+            if str(grant.constraints.get("command") or "") != command:
+                continue
+            grant_session = str(grant.constraints.get("session_id") or "")
+            # session end = grant bound to a session that no longer matches
+            if grant_session and session_id and grant_session != session_id:
+                continue
+            if grant_session and not session_id:
+                continue
+            _consume_grant(grant)
+            await self.store.save_grant(grant)
+            await self.store.commit()
+            return grant
+        return None
 
     def _require_approve_permission(self, actor: dict[str, Any]) -> None:
         if not self._has_any_permission(actor, {"workflow:approve", "workflow:admin", "admin"}):

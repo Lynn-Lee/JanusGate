@@ -1,4 +1,5 @@
 import { Alert, Button, Card, Form, Input, InputNumber, Modal, Space, Table, Tag, Typography } from 'antd';
+import { useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { createSessionWithConnectionToken } from '../api/sessionTokens';
 import { useAuth } from '../auth/AuthContext';
@@ -38,6 +39,21 @@ function hostKeyMeta(request: WorkflowRequest): HostKeyMeta | null {
 function hasTicketFlow(request: WorkflowRequest): boolean {
   return Boolean(request.ticket_flow_id) && (request.total_levels ?? 0) > 0;
 }
+
+function isCommandReview(request: WorkflowRequest): boolean {
+  return request.action === 'command.review' || request.metadata?.ticket_type === 'command_review';
+}
+
+function commandText(request: WorkflowRequest): string {
+  const raw = request.metadata?.command;
+  return typeof raw === 'string' ? raw : '';
+}
+
+function truncateCommand(command: string, max = 80): string {
+  if (command.length <= max) return command;
+  return `${command.slice(0, max)}…`;
+}
+
 
 function stepStatusLabel(status: string): { text: string; color: string } {
   if (status === 'approved') return { text: '通过', color: 'green' };
@@ -85,6 +101,7 @@ export function WorkflowPage() {
   const grants = useApiData(() => api.get<ListResponse<JitGrant>>('/api/v1/workflows/grants/active'), []);
   const msg = useApiMessage();
   const cache = useSessionCache();
+  const [detail, setDetail] = useState<WorkflowRequest | null>(null);
 
   const refresh = () => {
     requests.reload();
@@ -108,10 +125,12 @@ export function WorkflowPage() {
 
   const decide = async (request: WorkflowRequest, action: 'approve' | 'reject') => {
     const hostKey = hostKeyMeta(request);
-    if (action === 'reject' && hasTicketFlow(request)) {
+    if (action === 'reject' && (hasTicketFlow(request) || isCommandReview(request))) {
       const confirmed = await new Promise<boolean>((resolve) => {
         Modal.confirm({
-          title: '确定拒绝？整单将关闭且不签发授权。',
+          title: isCommandReview(request)
+            ? '确定拒绝？该命令将不会执行。'
+            : '确定拒绝？整单将关闭且不签发授权。',
           okText: '拒绝',
           okType: 'danger',
           cancelText: '取消',
@@ -164,13 +183,28 @@ export function WorkflowPage() {
       }
     }
     try {
-      await api.post<WorkflowRequest>(
+      const updated = await api.post<WorkflowRequest>(
         `/api/v1/workflows/requests/${request.id}/${action}`,
         action === 'approve'
-          ? { decision_reason: 'MVP 控制台审批通过', grant_ttl_seconds: 1800 }
+          ? {
+              decision_reason: 'MVP 控制台审批通过',
+              grant_ttl_seconds: isCommandReview(request) ? 600 : 1800
+            }
           : { decision_reason: 'MVP 控制台拒绝' }
       );
-      msg.success(action === 'approve' ? (hasTicketFlow(request) ? '本级已通过' : '申请已批准') : '申请已拒绝');
+      if (action === 'approve') {
+        if (isCommandReview(request) && updated.status === 'approved') {
+          msg.success('已通过，请重新执行该命令');
+        } else if (hasTicketFlow(request) && updated.status === 'pending') {
+          msg.success('本级已通过');
+        } else if (hasTicketFlow(request)) {
+          msg.success(isCommandReview(request) ? '已通过，请重新执行该命令' : '本级已通过');
+        } else {
+          msg.success(isCommandReview(request) ? '已通过，请重新执行该命令' : '申请已批准');
+        }
+      } else {
+        msg.success(isCommandReview(request) ? '命令未通过复核' : '申请已拒绝');
+      }
       refresh();
     } catch (err) {
       msg.error(getErrorMessage(err));
@@ -255,6 +289,23 @@ export function WorkflowPage() {
             columns={[
               { title: '申请 ID', dataIndex: 'id', ellipsis: true },
               { title: '资产', dataIndex: 'asset_id' },
+              {
+                title: '命令',
+                render: (_: unknown, record: WorkflowRequest) => {
+                  const command = commandText(record);
+                  if (!command) return '-';
+                  return (
+                    <Typography.Text
+                      ellipsis={{ tooltip: command }}
+                      style={{ maxWidth: 280, fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace' }}
+                      onClick={() => setDetail(record)}
+                    >
+                      {truncateCommand(command, 80)}
+                    </Typography.Text>
+                  );
+                }
+              },
+              { title: '申请人', dataIndex: 'requester_username', render: (value: string, record: WorkflowRequest) => value || record.requester_id },
               { title: '账号', dataIndex: 'account_id' },
               { title: '理由', dataIndex: 'reason', ellipsis: true },
               {
@@ -306,6 +357,44 @@ export function WorkflowPage() {
           />
         ) : null}
       </Card>
+      <Modal
+        title="工单详情"
+        open={Boolean(detail)}
+        onCancel={() => setDetail(null)}
+        footer={<Button onClick={() => setDetail(null)}>关闭</Button>}
+        destroyOnHidden
+        width={720}
+      >
+        {detail ? (
+          <Space direction="vertical" style={{ width: '100%' }} size="middle">
+            <div>
+              <Typography.Text type="secondary">资产</Typography.Text>
+              <div>{detail.asset_id}</div>
+            </div>
+            <div>
+              <Typography.Text type="secondary">申请人</Typography.Text>
+              <div>{detail.requester_username || detail.requester_id}</div>
+            </div>
+            {commandText(detail) ? (
+              <div>
+                <Typography.Text type="secondary">命令</Typography.Text>
+                <Typography.Paragraph
+                  copyable
+                  style={{
+                    marginBottom: 0,
+                    fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
+                    whiteSpace: 'pre-wrap',
+                    wordBreak: 'break-all'
+                  }}
+                >
+                  {commandText(detail)}
+                </Typography.Paragraph>
+              </div>
+            ) : null}
+            {hasTicketFlow(detail) ? <FlowProgress request={detail} /> : null}
+          </Space>
+        ) : null}
+      </Modal>
     </section>
   );
 }

@@ -156,6 +156,7 @@ class TicketFlowLevelInput(BaseModel):
 
 class TicketFlowCreate(BaseModel):
     name: str = Field(min_length=1, max_length=100)
+    flow_type: str = Field(default="asset_grant", min_length=1, max_length=40)
     enabled: bool = False
     levels: list[TicketFlowLevelInput] = Field(min_length=1, max_length=3)
 

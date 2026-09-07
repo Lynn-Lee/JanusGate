@@ -285,3 +285,59 @@ async def test_ticket_flow_api_crud_and_in_progress_delete_block() -> None:
     finally:
         app.dependency_overrides.clear()
         await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_ticket_flow_api_accepts_command_review_type() -> None:
+    engine = create_async_engine("sqlite+aiosqlite:///:memory:")
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+    session_factory = async_sessionmaker(engine, expire_on_commit=False)
+
+    async def override_db():
+        async with session_factory() as session:
+            try:
+                yield session
+            finally:
+                await session.close()
+
+    app.dependency_overrides[get_db] = override_db
+    app.dependency_overrides[get_read_db] = override_db
+    app.dependency_overrides[current_user] = lambda: {
+        "id": "admin-1",
+        "username": "admin",
+        "tenant_id": "tenant-1",
+        "permissions": ["workflow:admin", "workflow:approve"],
+    }
+    try:
+        with TestClient(app) as client:
+            created = client.post(
+                "/api/v1/workflows/ticket-flows",
+                json={
+                    "name": "命令复核",
+                    "flow_type": "command_review",
+                    "enabled": True,
+                    "levels": [{"approver_user_ids": ["a1"]}],
+                },
+            )
+            assert created.status_code == 201, created.text
+            assert created.json()["flow_type"] == "command_review"
+            # asset_grant can still be enabled independently
+            asset = client.post(
+                "/api/v1/workflows/ticket-flows",
+                json={
+                    "name": "资产授权",
+                    "flow_type": "asset_grant",
+                    "enabled": True,
+                    "levels": [{"approver_user_ids": ["b1"]}],
+                },
+            )
+            assert asset.status_code == 201, asset.text
+            listed = client.get("/api/v1/workflows/ticket-flows")
+            by_id = {item["id"]: item for item in listed.json()["items"]}
+            assert by_id[created.json()["id"]]["enabled"] is True
+            assert by_id[asset.json()["id"]]["enabled"] is True
+    finally:
+        app.dependency_overrides.clear()
+        await engine.dispose()
+

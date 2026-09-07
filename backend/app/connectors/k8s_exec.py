@@ -528,7 +528,7 @@ class K8sExecChannel:
         if not decision.allowed:
             raise K8sChannelError(
                 "K8S_COMMAND_DENIED",
-                decision.reason_code,
+                decision.user_message or decision.reason_code,
                 audit_event_id=decision.audit_event_id,
             )
         url = self._exec_url(command)

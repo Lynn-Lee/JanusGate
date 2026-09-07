@@ -116,6 +116,7 @@ class ApprovalPolicyModel(Base):
 
 class TicketFlowType(StrEnum):
     asset_grant = "asset_grant"
+    command_review = "command_review"
 
 
 class TicketStepStatus(StrEnum):
@@ -126,7 +127,7 @@ class TicketStepStatus(StrEnum):
 
 
 class TicketFlowModel(Base):
-    """#t74 multi-level approval flow definition (asset_grant)."""
+    """#t74 multi-level approval flow definition (asset_grant / command_review)."""
 
     __tablename__ = "ticket_flows"
 

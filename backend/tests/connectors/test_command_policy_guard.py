@@ -99,7 +99,7 @@ async def test_reject_blocks_and_audits_without_plaintext() -> None:
 
 
 @pytest.mark.asyncio
-async def test_review_treated_as_deny_until_t74() -> None:
+async def test_review_returns_pending_copy_without_broker() -> None:
     sink = InMemoryCommandAuditSink()
     decision = await _guard(
         _FakePolicy(
@@ -111,7 +111,9 @@ async def test_review_treated_as_deny_until_t74() -> None:
     ).authorize("sudo su")
     assert decision.allowed is False
     assert decision.effect is CommandFilterEffect.DENY
-    assert sink.events[0]["reason_code"] == "COMMAND_REVIEW"
+    assert decision.reason_code == "command_review_pending"
+    assert decision.user_message == "命令待复核"
+    assert sink.events[0]["reason_code"] == "command_review_pending"
 
 
 @pytest.mark.asyncio

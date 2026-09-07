@@ -938,6 +938,73 @@ describe('#t69 host key overlay and connect list', () => {
     expect(warning.closest('.jg-hostkey-changed')).not.toBeNull();
   });
 
+
+
+  it('shows TicketFlow type column and command review label', async () => {
+    const fetchMock = installFetch();
+    vi.stubGlobal('fetch', async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.includes('/api/v1/workflows/ticket-flows') && (init?.method ?? 'GET') === 'GET') {
+        return Response.json({
+          items: [
+            {
+              id: 'tf-1',
+              name: '命令复核流',
+              flow_type: 'command_review',
+              enabled: true,
+              level_count: 1,
+              levels: [{ level: 1, approver_user_ids: ['u1'] }]
+            }
+          ],
+          total: 1
+        });
+      }
+      return fetchMock(input, init);
+    });
+    history.pushState(null, '', '/settings');
+    render(<App />);
+    expect(await screen.findByText('审批流')).toBeInTheDocument();
+    expect(await screen.findByText('命令复核')).toBeInTheDocument();
+    expect(screen.getByText('命令复核流')).toBeInTheDocument();
+    expect(screen.getByText('类型')).toBeInTheDocument();
+  });
+
+  it('shows Workflow command column with truncated command and locked copy strings on reject confirm path', async () => {
+    const fetchMock = installFetch();
+    vi.stubGlobal('fetch', async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.endsWith('/api/v1/workflows/requests') && (init?.method ?? 'GET') === 'GET') {
+        return Response.json({
+          items: [
+            {
+              ...request,
+              id: 'wr-cmd',
+              action: 'command.review',
+              requester_username: 'alice',
+              metadata: {
+                ticket_type: 'command_review',
+                command: 'rm -rf /very/long/path/that/should/be/truncated/for/the/workflow/table/column/display'
+              },
+              status: 'pending',
+              ticket_flow_id: '',
+              current_level: 0,
+              total_levels: 0,
+              steps: []
+            }
+          ],
+          total: 1
+        });
+      }
+      return fetchMock(input, init);
+    });
+    history.pushState(null, '', '/workflow');
+    render(<App />);
+    expect(await screen.findByRole('heading', { name: 'Workflow/JIT 申请审批' })).toBeInTheDocument();
+    expect(screen.getByText('命令')).toBeInTheDocument();
+    expect(screen.getByText('申请人')).toBeInTheDocument();
+    expect(screen.getByText(/rm -rf \/very\/long\/path/)).toBeInTheDocument();
+  });
+
   it('surfaces 无法连接 and never 没有权限 when host key is unapproved', async () => {
     const fetchMock = installFetch();
     vi.stubGlobal('fetch', async (input: RequestInfo | URL, init?: RequestInit) => {

@@ -242,7 +242,7 @@ class SshInteractiveSession:
         if not decision.allowed:
             raise SshChannelError(
                 "SSH_COMMAND_DENIED",
-                decision.reason_code,
+                decision.user_message or decision.reason_code,
                 audit_event_id=decision.audit_event_id,
             )
         try:

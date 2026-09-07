@@ -63,7 +63,7 @@ class TicketFlowSnapshot:
 
 
 class TicketFlowRepository:
-    """CRUD + enabled-flow lookup for asset_grant TicketFlows."""
+    """CRUD + enabled-flow lookup for TicketFlows (per-type uniqueness)."""
 
     def __init__(self, session: AsyncSession) -> None:
         self._session = session
@@ -83,11 +83,13 @@ class TicketFlowRepository:
             return None
         return await self._snapshot(flow)
 
-    async def get_enabled_asset_grant_flow(self, *, tenant_id: str) -> TicketFlowSnapshot | None:
+    async def get_enabled_flow(
+        self, *, tenant_id: str, flow_type: str
+    ) -> TicketFlowSnapshot | None:
         result = await self._session.execute(
             select(TicketFlowModel).where(
                 TicketFlowModel.tenant_id == tenant_id,
-                TicketFlowModel.flow_type == TicketFlowType.asset_grant,
+                TicketFlowModel.flow_type == flow_type,
                 TicketFlowModel.enabled.is_(True),
             )
         )
@@ -96,6 +98,23 @@ class TicketFlowRepository:
             return None
         return await self._snapshot(flow)
 
+    async def get_enabled_asset_grant_flow(self, *, tenant_id: str) -> TicketFlowSnapshot | None:
+        return await self.get_enabled_flow(
+            tenant_id=tenant_id, flow_type=TicketFlowType.asset_grant
+        )
+
+    async def get_enabled_command_review_flow(self, *, tenant_id: str) -> TicketFlowSnapshot | None:
+        return await self.get_enabled_flow(
+            tenant_id=tenant_id, flow_type=TicketFlowType.command_review
+        )
+
+    def _normalize_flow_type(self, flow_type: str) -> str:
+        value = str(flow_type or TicketFlowType.asset_grant).strip()
+        allowed = {TicketFlowType.asset_grant, TicketFlowType.command_review}
+        if value not in {str(item) for item in allowed}:
+            raise ValueError("TICKET_FLOW_TYPE_INVALID")
+        return value
+
     async def create_flow(
         self,
         *,
@@ -103,15 +122,17 @@ class TicketFlowRepository:
         name: str,
         enabled: bool,
         levels: list[list[str]],
+        flow_type: str = TicketFlowType.asset_grant,
     ) -> TicketFlowSnapshot:
         self._validate_levels(levels)
+        normalized_type = self._normalize_flow_type(flow_type)
         if enabled:
-            await self._disable_enabled_asset_grant_flows(tenant_id=tenant_id)
+            await self._disable_enabled_flows(tenant_id=tenant_id, flow_type=normalized_type)
         flow = TicketFlowModel(
             id=_new_flow_id(),
             tenant_id=tenant_id,
             name=name.strip(),
-            flow_type=TicketFlowType.asset_grant,
+            flow_type=normalized_type,
             enabled=enabled,
         )
         self._session.add(flow)
@@ -133,13 +154,14 @@ class TicketFlowRepository:
         flow = await self._flow_model(flow_id, tenant_id=tenant_id)
         if flow is None:
             raise ValueError("TICKET_FLOW_NOT_FOUND")
-        if enabled and not flow.enabled:
-            await self._disable_enabled_asset_grant_flows(tenant_id=tenant_id, except_id=flow.id)
-        elif enabled:
-            await self._disable_enabled_asset_grant_flows(tenant_id=tenant_id, except_id=flow.id)
+        flow_type = str(getattr(flow.flow_type, "value", flow.flow_type))
+        if enabled:
+            await self._disable_enabled_flows(
+                tenant_id=tenant_id, flow_type=flow_type, except_id=flow.id
+            )
         flow.name = name.strip()
         flow.enabled = enabled
-        flow.flow_type = TicketFlowType.asset_grant
+        # flow_type is immutable after create
         await self._replace_rules(tenant_id=tenant_id, flow_id=flow.id, levels=levels)
         await self._session.flush()
         return await self._snapshot(flow)
@@ -212,13 +234,13 @@ class TicketFlowRepository:
         )
         return result.scalar_one_or_none() is not None
 
-    async def _disable_enabled_asset_grant_flows(
-        self, *, tenant_id: str, except_id: str | None = None
+    async def _disable_enabled_flows(
+        self, *, tenant_id: str, flow_type: str, except_id: str | None = None
     ) -> None:
         result = await self._session.execute(
             select(TicketFlowModel).where(
                 TicketFlowModel.tenant_id == tenant_id,
-                TicketFlowModel.flow_type == TicketFlowType.asset_grant,
+                TicketFlowModel.flow_type == flow_type,
                 TicketFlowModel.enabled.is_(True),
             )
         )
@@ -226,6 +248,15 @@ class TicketFlowRepository:
             if except_id and flow.id == except_id:
                 continue
             flow.enabled = False
+
+    async def _disable_enabled_asset_grant_flows(
+        self, *, tenant_id: str, except_id: str | None = None
+    ) -> None:
+        await self._disable_enabled_flows(
+            tenant_id=tenant_id,
+            flow_type=TicketFlowType.asset_grant,
+            except_id=except_id,
+        )
 
     async def _replace_rules(
         self, *, tenant_id: str, flow_id: str, levels: list[list[str]]

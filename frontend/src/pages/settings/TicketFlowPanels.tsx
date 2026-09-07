@@ -1,4 +1,4 @@
-import { Button, Card, Empty, Form, Input, Modal, Space, Switch, Table, Tag, Typography } from 'antd';
+import { Button, Card, Empty, Form, Input, Modal, Select, Space, Switch, Table, Tag, Typography } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
 import { useState } from 'react';
 import { useAuth } from '../../auth/AuthContext';
@@ -15,6 +15,7 @@ export function TicketFlowPanels({ canWrite }: { canWrite: boolean }) {
   const [editing, setEditing] = useState<TicketFlow | null>(null);
   const [form] = Form.useForm<{
     name: string;
+    flow_type: string;
     enabled: boolean;
     levels: Array<{ approver_user_ids: string[] }>;
   }>();
@@ -24,6 +25,7 @@ export function TicketFlowPanels({ canWrite }: { canWrite: boolean }) {
     form.resetFields();
     form.setFieldsValue({
       name: '',
+      flow_type: 'asset_grant',
       enabled: false,
       levels: [{ approver_user_ids: [] }]
     });
@@ -34,6 +36,7 @@ export function TicketFlowPanels({ canWrite }: { canWrite: boolean }) {
     setEditing(row);
     form.setFieldsValue({
       name: row.name,
+      flow_type: row.flow_type || 'asset_grant',
       enabled: row.enabled,
       levels: (row.levels ?? []).map((level) => ({
         approver_user_ids: level.approver_user_ids ?? []
@@ -61,8 +64,16 @@ export function TicketFlowPanels({ canWrite }: { canWrite: boolean }) {
     });
   };
 
+  const flowTypeLabel = (flowType: string) =>
+    flowType === 'command_review' ? '命令复核' : '资产授权';
+
   const columns: ColumnsType<TicketFlow> = [
     { title: '名称', dataIndex: 'name' },
+    {
+      title: '类型',
+      dataIndex: 'flow_type',
+      render: (flowType: string) => flowTypeLabel(flowType)
+    },
     { title: '级数', dataIndex: 'level_count', render: (count: number) => `${count} 级` },
     {
       title: '状态',
@@ -89,10 +100,10 @@ export function TicketFlowPanels({ canWrite }: { canWrite: boolean }) {
   ];
 
   const items = flows.data?.items ?? [];
-  const enabledOther = items.find((item) => item.enabled && item.id !== editing?.id);
 
   const saveFlow = async (values: {
     name: string;
+    flow_type: string;
     enabled: boolean;
     levels: Array<{ approver_user_ids: string[] }>;
   }) => {
@@ -109,14 +120,23 @@ export function TicketFlowPanels({ canWrite }: { canWrite: boolean }) {
       messages.error('请配置 1–3 级审批，且每级 1–3 名用户');
       return;
     }
+    const flowType = editing?.flow_type || values.flow_type || 'asset_grant';
+    const enabledOther = items.find(
+      (item) => item.enabled && item.id !== editing?.id && (item.flow_type || 'asset_grant') === flowType
+    );
     const payload = {
       name: values.name.trim(),
       enabled: Boolean(values.enabled),
-      levels
+      levels,
+      ...(editing ? {} : { flow_type: flowType })
     };
     const doSave = async () => {
       if (editing) {
-        await api.patch(`/api/v1/workflows/ticket-flows/${editing.id}`, payload);
+        await api.patch(`/api/v1/workflows/ticket-flows/${editing.id}`, {
+          name: payload.name,
+          enabled: payload.enabled,
+          levels: payload.levels
+        });
       } else {
         await api.post('/api/v1/workflows/ticket-flows', payload);
       }
@@ -126,7 +146,7 @@ export function TicketFlowPanels({ canWrite }: { canWrite: boolean }) {
     };
     if (payload.enabled && enabledOther) {
       Modal.confirm({
-        title: '将停用当前启用的审批流',
+        title: '将停用当前启用的同类型审批流',
         okText: '继续',
         cancelText: '取消',
         onOk: () => doSave()
@@ -176,8 +196,19 @@ export function TicketFlowPanels({ canWrite }: { canWrite: boolean }) {
           <Form.Item label="名称" name="name" rules={[{ required: true, message: '请输入名称' }]}>
             <Input />
           </Form.Item>
-          <Form.Item label="类型">
-            <Input value="固定资产授权" disabled />
+          <Form.Item
+            label="类型"
+            name="flow_type"
+            rules={[{ required: true, message: '请选择类型' }]}
+            initialValue="asset_grant"
+          >
+            <Select
+              disabled={Boolean(editing)}
+              options={[
+                { value: 'asset_grant', label: '资产授权' },
+                { value: 'command_review', label: '命令复核' }
+              ]}
+            />
           </Form.Item>
           <Form.Item label="启用" name="enabled" valuePropName="checked">
             <Switch />

@@ -44,8 +44,8 @@ _host_key_trust = HostKeyTrustService(session_factory=AsyncSessionLocal)
 def _ticket_flow_loader(db: AsyncSession):
     repo = TicketFlowRepository(db)
 
-    async def loader(tenant_id: str):
-        return await repo.get_enabled_asset_grant_flow(tenant_id=tenant_id)
+    async def loader(tenant_id: str, flow_type: str = "asset_grant"):
+        return await repo.get_enabled_flow(tenant_id=tenant_id, flow_type=flow_type)
 
     return loader
 
@@ -100,6 +100,7 @@ async def create_ticket_flow(
             name=data.name,
             enabled=data.enabled,
             levels=[level.approver_user_ids for level in data.levels],
+            flow_type=data.flow_type,
         )
     except ValueError as exc:
         raise _ticket_flow_value_error_to_http(exc) from exc
@@ -151,6 +152,8 @@ def _ticket_flow_value_error_to_http(exc: ValueError) -> HTTPException:
         return HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=detail)
     if detail == "TICKET_FLOW_IN_PROGRESS":
         return HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="有进行中的工单")
+    if detail == "TICKET_FLOW_TYPE_INVALID":
+        return HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="不支持的审批流类型")
     return HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=detail)
 
 @router.get("/approval-policies", response_model=ApprovalPolicyListResponse)
