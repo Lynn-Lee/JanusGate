@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Awaitable, Callable
+from random import choice
 from typing import Protocol
 
 from sqlalchemy import select
@@ -31,10 +32,19 @@ from app.connectors.ssh_hostkey import HostKeyScan
 from app.models.account import Account
 from app.models.asset import Asset
 from app.models.host_key import HostKeyPresentation
+from app.models.zone import Zone, ZoneGateway
+from app.protocols.catalog import PROTOCOL_CATALOG
 
 K8S_CONNECT_PROTOCOLS = frozenset({"k8s", "kubernetes"})
 K8S_HTTPS_CA_DENIED_COPY = "无法连接（需要 HTTPS 和 CA）"
 K8S_CONNECT_DENIED_COPY = "无法连接"
+ZONE_GATEWAY_UNAVAILABLE = "ZONE_GATEWAY_UNAVAILABLE"
+HOST_CLASS_ASSET_TYPES: frozenset[str] = frozenset(
+    asset_type
+    for definition in PROTOCOL_CATALOG
+    if definition.id == "ssh"
+    for asset_type in definition.asset_types
+)
 
 PROTOCOL_MODES: dict[str, ConnectorSessionMode] = {
     "ssh": ConnectorSessionMode.INTERACTIVE,
@@ -164,14 +174,27 @@ class AssetVaultSessionConnectionResolver:
         account: Account,
         protocol: str,
     ) -> SessionConnectionSpec:
-        presented = await self._scan_or_deny(asset)
-        trust = await self._host_keys.get(tenant_id=request.tenant_id, asset_id=str(asset.id))
-        approved_key = trust.approved_public_key if trust is not None else ""
-        classification = classify_presented_key(
-            approved_public_key=approved_key, presented=presented
-        )
-        if classification.state is not HostKeyPresentation.APPROVED:
-            raise PermissionError("HOST_KEY_UNAPPROVED")
+        jump_target: SshTarget | None = None
+        jump_credential: SshCredential | None = None
+        zone_id = getattr(asset, "zone_id", None)
+        if zone_id is not None:
+            jump_target, jump_credential = await self._resolve_zone_jump(
+                request, zone_id=int(zone_id)
+            )
+            # 经网关时目标可能不可直连：跳过直连扫描，仅用已批准主机密钥 fail-closed。
+            trust = await self._host_keys.get(tenant_id=request.tenant_id, asset_id=str(asset.id))
+            approved_key = trust.approved_public_key if trust is not None else ""
+            if not approved_key.strip():
+                raise PermissionError("HOST_KEY_UNAPPROVED")
+        else:
+            presented = await self._scan_or_deny(asset)
+            trust = await self._host_keys.get(tenant_id=request.tenant_id, asset_id=str(asset.id))
+            approved_key = trust.approved_public_key if trust is not None else ""
+            classification = classify_presented_key(
+                approved_public_key=approved_key, presented=presented
+            )
+            if classification.state is not HostKeyPresentation.APPROVED:
+                raise PermissionError("HOST_KEY_UNAPPROVED")
 
         plaintext = await self._unwrap_secret(request, account)
         return SessionConnectionSpec(
@@ -183,6 +206,101 @@ class AssetVaultSessionConnectionResolver:
                 trusted_host_key=approved_key,
             ),
             credential=_credential_from_plaintext(plaintext),
+            jump_target=jump_target,
+            jump_credential=jump_credential,
+        )
+
+    async def _resolve_zone_jump(
+        self,
+        request: ConnectorDispatchRequest,
+        *,
+        zone_id: int,
+    ) -> tuple[SshTarget, SshCredential]:
+        """按网域选取可用网关；无可用成员则 fail-closed「无法连接」。"""
+
+        from app.connectors.host_key_trust import CONNECT_DENIED_COPY
+
+        async with self._session_factory() as session:
+            zone = await session.execute(
+                select(Zone)
+                .where(Zone.id == zone_id)
+                .where(Zone.tenant_id == request.tenant_id)
+            )
+            if zone.scalar_one_or_none() is None:
+                raise SshChannelError(ZONE_GATEWAY_UNAVAILABLE, CONNECT_DENIED_COPY)
+
+            member_rows = await session.execute(
+                select(ZoneGateway)
+                .where(ZoneGateway.zone_id == zone_id)
+                .where(ZoneGateway.tenant_id == request.tenant_id)
+                .order_by(ZoneGateway.id.asc())
+            )
+            member_ids = [row.asset_id for row in member_rows.scalars().all()]
+            if not member_ids:
+                raise SshChannelError(ZONE_GATEWAY_UNAVAILABLE, CONNECT_DENIED_COPY)
+
+            assets_result = await session.execute(
+                select(Asset)
+                .where(Asset.tenant_id == request.tenant_id)
+                .where(Asset.id.in_(member_ids))
+            )
+            assets_by_id = {asset.id: asset for asset in assets_result.scalars().all()}
+
+            usable: list[tuple[Asset, Account, str]] = []
+            for asset_id in member_ids:
+                gateway = assets_by_id.get(asset_id)
+                if gateway is None or not gateway.is_active:
+                    continue
+                asset_type = getattr(gateway, "asset_type", None) or "host"
+                if asset_type not in HOST_CLASS_ASSET_TYPES:
+                    continue
+                account = await _load_gateway_ssh_account(
+                    session,
+                    tenant_id=request.tenant_id,
+                    asset_id=gateway.id,
+                )
+                if account is None:
+                    continue
+                trust = await self._host_keys.get(
+                    tenant_id=request.tenant_id, asset_id=str(gateway.id)
+                )
+                approved_key = trust.approved_public_key if trust is not None else ""
+                if not approved_key.strip():
+                    continue
+                # 连通性探测：对网关做主机密钥扫描且须与已批准密钥一致。
+                try:
+                    presented = await self._scanner.scan(gateway.address, gateway.port)
+                except Exception:
+                    continue
+                classification = classify_presented_key(
+                    approved_public_key=approved_key, presented=presented
+                )
+                if classification.state is not HostKeyPresentation.APPROVED:
+                    continue
+                usable.append((gateway, account, approved_key))
+
+            if not usable:
+                raise SshChannelError(ZONE_GATEWAY_UNAVAILABLE, CONNECT_DENIED_COPY)
+
+            gateway, account, approved_key = choice(usable)
+            gateway_address = gateway.address
+            gateway_port = gateway.port
+            gateway_username = account.username
+            secret_id = account.secret_id
+
+        try:
+            plaintext = await self._secrets.unwrap(secret_id)
+        except Exception as exc:
+            raise SshChannelError(ZONE_GATEWAY_UNAVAILABLE, CONNECT_DENIED_COPY) from exc
+
+        return (
+            SshTarget(
+                host=gateway_address,
+                port=gateway_port,
+                username=gateway_username,
+                trusted_host_key=approved_key,
+            ),
+            _credential_from_plaintext(plaintext),
         )
 
     def _prepare_k8s_target(self, asset: Asset) -> tuple[str, str, str, NamespaceScope]:
@@ -278,6 +396,26 @@ async def _load_account(
         if account is not None:
             return account
     result = await session.execute(named)
+    return result.scalars().first()
+
+
+
+async def _load_gateway_ssh_account(
+    session: AsyncSession,
+    *,
+    tenant_id: str,
+    asset_id: int,
+) -> Account | None:
+    """选取网关资产上第一个活跃 SSH 账号（凭据走 Vault）。"""
+
+    result = await session.execute(
+        select(Account)
+        .where(Account.tenant_id == tenant_id)
+        .where(Account.asset_id == asset_id)
+        .where(Account.status == "active")
+        .where(Account.protocol == "ssh")
+        .order_by(Account.id.asc())
+    )
     return result.scalars().first()
 
 

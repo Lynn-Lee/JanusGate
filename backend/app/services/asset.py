@@ -81,7 +81,10 @@ class AssetService:
         if not asset:
             return None
         for key, value in data.items():
-            if hasattr(asset, key) and value is not None:
+            if not hasattr(asset, key):
+                continue
+            # zone_id 允许显式置空（直连）；其它字段仍跳过 None。
+            if key == "zone_id" or value is not None:
                 setattr(asset, key, value)
         await db.commit()
         await db.refresh(asset)

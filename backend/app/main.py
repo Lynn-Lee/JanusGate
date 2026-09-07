@@ -11,6 +11,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 
 from app.api import (
+    zones,
     accounts,
     acl,
     admin,
@@ -70,6 +71,7 @@ app.include_router(auth.router, prefix="/api/v1")
 app.include_router(auth.users_router, prefix="/api/v1")
 app.include_router(accounts.router, prefix="/api/v1")
 app.include_router(acl.router, prefix="/api/v1")
+app.include_router(zones.router, prefix="/api/v1")
 app.include_router(admin.router, prefix="/api/v1")
 app.include_router(automation.router, prefix="/api/v1")
 app.include_router(assets.router, prefix="/api/v1")

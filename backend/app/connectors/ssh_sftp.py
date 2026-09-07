@@ -98,13 +98,21 @@ class SftpChannel:
         sink: FileTransferEventSink,
         *,
         connect_timeout: float = 10.0,
+        jump_target: SshTarget | None = None,
+        jump_credential: SshCredential | None = None,
     ) -> SftpChannel:
         """建立安全连接并打开 SFTP 会话。
 
         :raises SshChannelError: 建立连接或打开 SFTP 会话失败；失败时不遗留连接。
         """
 
-        channel = await SshChannel.open(target, credential, connect_timeout=connect_timeout)
+        channel = await SshChannel.open(
+            target,
+            credential,
+            connect_timeout=connect_timeout,
+            jump_target=jump_target,
+            jump_credential=jump_credential,
+        )
         try:
             sftp = await channel.start_sftp()
         except BaseException:

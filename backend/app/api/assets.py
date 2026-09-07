@@ -23,6 +23,7 @@ from app.protocols.repository import ensure_builtin_protocols, sync_platform_pro
 from app.protocols.validation import ProtocolValidationError, validate_asset_protocol_binding
 from app.schemas.asset import (
     AssetCreate,
+    AssetUpdate,
     AssetResponse,
     K8sPodListResponse,
     K8sPodResponse,
@@ -64,6 +65,33 @@ async def create_asset(
     asset = await AssetService.create_asset(db, data.model_dump())
     return _asset_response(asset)
 
+
+
+
+@router.patch("/{asset_id}", response_model=AssetResponse)
+async def update_asset(
+    asset_id: int,
+    data: AssetUpdate,
+    db: AsyncSession = Depends(get_db),
+    user: dict[str, Any] = Depends(require_permission("assets:write")),
+) -> AssetResponse:
+    """更新资产；zone_id 为空表示直连。不得在此创建网域。"""
+
+    payload = data.model_dump(exclude_unset=True)
+    if "zone_id" in payload and payload["zone_id"] is not None:
+        from app.models.zone import Zone
+        from app.tenancy.scope import actor_scope_from_user, scoped_select
+
+        actor_scope = actor_scope_from_user(user)
+        result = await db.execute(
+            scoped_select(Zone, actor_scope).where(Zone.id == payload["zone_id"])
+        )
+        if result.scalar_one_or_none() is None:
+            raise HTTPException(status_code=400, detail="网域不存在")
+    asset = await AssetService.update_asset(db, asset_id, payload)
+    if not asset:
+        raise HTTPException(404, "资产不存在")
+    return _asset_response(asset)
 
 @router.delete("/{asset_id}")
 async def delete_asset(
@@ -147,6 +175,7 @@ def _asset_response(asset: Asset, *, connect_protocols: list[str] | None = None)
         namespace=getattr(asset, "namespace", "") or "",
         has_server_ca=bool((getattr(asset, "server_ca", "") or "").strip()),
         connect_protocols=list(connect_protocols or []),
+        zone_id=getattr(asset, "zone_id", None),
     )
 
 @router.get("/{asset_id}/k8s/pods", response_model=K8sPodListResponse)

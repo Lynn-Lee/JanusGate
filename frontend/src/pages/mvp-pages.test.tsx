@@ -178,6 +178,8 @@ function installFetch() {
     if (url.endsWith('/api/v1/login-acls/')) return Response.json({ items: [], total: 0 });
     if (url.endsWith('/api/v1/login-asset-acls/')) return Response.json({ items: [], total: 0 });
     if (url.endsWith('/api/v1/connect-method-acls/')) return Response.json({ items: [], total: 0 });
+    if (url.endsWith('/api/v1/zones/')) return Response.json({ items: [], total: 0 });
+    if (url.endsWith('/api/v1/zones/gateway-candidates/')) return Response.json([]);
     return Response.json(session);
   });
 }
@@ -354,6 +356,8 @@ describe('MVP pages', () => {
     await waitFor(() =>
       expect(fetchMock).toHaveBeenCalledWith('/api/v1/admin/license-summary', expect.any(Object))
     );
+    expect(await screen.findByText('网域')).toBeInTheDocument();
+    expect(screen.getByText('还没有网域')).toBeInTheDocument();
     expect(await screen.findByText('登录 ACL')).toBeInTheDocument();
     expect(screen.getByText('资产登录 ACL')).toBeInTheDocument();
     expect(screen.getByText('连接方式 ACL')).toBeInTheDocument();
@@ -383,6 +387,7 @@ describe('MVP pages', () => {
 
     expect(await screen.findByRole('heading', { name: '系统设置' })).toBeInTheDocument();
     expect(await screen.findByText('运行时状态')).toBeInTheDocument();
+    expect(screen.queryByText('网域')).not.toBeInTheDocument();
     expect(screen.queryByText('登录 ACL')).not.toBeInTheDocument();
     expect(screen.queryByText('资产登录 ACL')).not.toBeInTheDocument();
     expect(screen.queryByText('连接方式 ACL')).not.toBeInTheDocument();
@@ -409,6 +414,9 @@ describe('MVP pages', () => {
     history.pushState(null, '', '/settings');
     render(<App />);
 
+    expect(await screen.findByText('网域')).toBeInTheDocument();
+    expect(screen.getByText('还没有网域')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '创建网域' })).not.toBeInTheDocument();
     expect(await screen.findByText('登录 ACL')).toBeInTheDocument();
     expect(screen.getByText('资产登录 ACL')).toBeInTheDocument();
     expect(screen.getByText('连接方式 ACL')).toBeInTheDocument();

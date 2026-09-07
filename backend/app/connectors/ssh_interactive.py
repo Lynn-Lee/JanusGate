@@ -183,6 +183,8 @@ class SshInteractiveSession:
         session_id: str | None = None,
         session_factory: Any = None,
         db: Any = None,
+        jump_target: SshTarget | None = None,
+        jump_credential: SshCredential | None = None,
     ) -> SshInteractiveSession:
         """建立安全连接、打开 PTY shell，并消费到首个 prompt 后返回就绪会话。
 
@@ -199,7 +201,8 @@ class SshInteractiveSession:
             db=db,
         )
         channel = await SshChannel.open(
-            target, credential, connect_timeout=connect_timeout, policy=resolved
+            target, credential, connect_timeout=connect_timeout, policy=resolved,
+            jump_target=jump_target, jump_credential=jump_credential,
         )
         try:
             process = await channel.start_interactive(term_type=term_type)

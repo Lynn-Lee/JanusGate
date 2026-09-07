@@ -11,6 +11,22 @@ export type Asset = {
   namespace?: string;
   has_server_ca?: boolean;
   connect_protocols?: string[];
+  zone_id?: number | null;
+};
+
+export type Zone = {
+  id: number;
+  name: string;
+  gateway_count: number;
+  gateway_asset_ids: number[];
+};
+
+export type GatewayCandidate = {
+  id: number;
+  name: string;
+  address: string;
+  asset_type: string;
+  is_active: boolean;
 };
 
 export type Platform = {
@@ -245,6 +261,7 @@ export type TreeAsset = {
   address: string;
   node_id: string | null;
   location_label: string;
+  zone_id?: number | null;
 };
 
 export type AssetGrant = {

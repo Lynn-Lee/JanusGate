@@ -1,4 +1,4 @@
-import { Alert, Button, Card, Descriptions, Form, Input, Modal, Select, Space, Table, Tag, TimePicker, Typography } from 'antd';
+import { Alert, Button, Card, Descriptions, Empty, Form, Input, Modal, Select, Space, Table, Tag, TimePicker, Typography } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
 import dayjs, { type Dayjs } from 'dayjs';
 import { useMemo, useState } from 'react';
@@ -6,7 +6,7 @@ import { useAuth } from '../auth/AuthContext';
 import { ErrorState, LoadingState } from '../components/StatusView';
 import { UserSelect, type DirectoryUser } from '../components/UserSelect';
 import { getErrorMessage, useApiData, useApiMessage } from './pageUtils';
-import type { Asset, AssetNode, ListResponse } from './types';
+import type { Asset, AssetNode, GatewayCandidate, ListResponse, Zone } from './types';
 
 type Health = { status: string; version?: string };
 type LicenseSummary = {
@@ -278,9 +278,154 @@ export function SettingsPage() {
             <Descriptions.Item label="边界">不展示或编辑真实密钥、Token、连接串</Descriptions.Item>
           </Descriptions>
         </Card>
+        {showOverlayAcls ? <ZonePanels canWrite={writeOverlayAcls} /> : null}
         {showOverlayAcls ? <OverlayAclPanels canWrite={writeOverlayAcls} /> : null}
       </div>
     </section>
+  );
+}
+
+
+function ZonePanels({ canWrite }: { canWrite: boolean }) {
+  const { api } = useAuth();
+  const messages = useApiMessage();
+  const zones = useApiData(() => api.get<ListResponse<Zone>>('/api/v1/zones/'), []);
+  const candidates = useApiData(
+    () => api.get<GatewayCandidate[]>('/api/v1/zones/gateway-candidates/'),
+    []
+  );
+  const [open, setOpen] = useState(false);
+  const [editing, setEditing] = useState<Zone | null>(null);
+  const [form] = Form.useForm<{ name: string; gateway_asset_ids: number[] }>();
+
+  const openCreate = () => {
+    setEditing(null);
+    form.resetFields();
+    form.setFieldsValue({ name: '', gateway_asset_ids: [] });
+    setOpen(true);
+  };
+
+  const openEdit = (zone: Zone) => {
+    setEditing(zone);
+    form.setFieldsValue({
+      name: zone.name,
+      gateway_asset_ids: zone.gateway_asset_ids ?? []
+    });
+    setOpen(true);
+  };
+
+  const confirmDelete = (zone: Zone) => {
+    Modal.confirm({
+      title: '确定删除这个网域？资产上的所属网域会清空。',
+      okText: '删除',
+      okType: 'danger',
+      cancelText: '取消',
+      onOk: async () => {
+        await api.delete(`/api/v1/zones/${zone.id}`);
+        messages.success('已删除');
+        zones.reload();
+      }
+    });
+  };
+
+  const columns: ColumnsType<Zone> = [
+    { title: '名称', dataIndex: 'name' },
+    {
+      title: '网关',
+      dataIndex: 'gateway_count',
+      render: (count: number) => `${count} 台`
+    },
+    ...(canWrite
+      ? [
+          {
+            title: '操作',
+            render: (_: unknown, record: Zone) => (
+              <Space>
+                <Button type="link" onClick={() => openEdit(record)}>
+                  编辑
+                </Button>
+                <Button type="link" danger onClick={() => confirmDelete(record)}>
+                  删除
+                </Button>
+              </Space>
+            )
+          } as ColumnsType<Zone>[number]
+        ]
+      : [])
+  ];
+
+  const items = zones.data?.items ?? [];
+
+  return (
+    <>
+      <Card
+        title="网域"
+        extra={
+          canWrite ? (
+            <Button type="primary" onClick={openCreate}>
+              创建网域
+            </Button>
+          ) : null
+        }
+      >
+        {zones.loading ? <LoadingState /> : null}
+        {zones.error ? <ErrorState message={zones.error} onRetry={zones.reload} /> : null}
+        {!zones.loading && !zones.error && items.length === 0 ? (
+          <Empty description="还没有网域">
+            {canWrite ? (
+              <Button type="primary" onClick={openCreate}>
+                创建网域
+              </Button>
+            ) : null}
+          </Empty>
+        ) : null}
+        {!zones.loading && !zones.error && items.length > 0 ? (
+          <Table rowKey="id" pagination={false} dataSource={items} columns={columns} />
+        ) : null}
+      </Card>
+
+      <Modal
+        title={editing ? '编辑网域' : '创建网域'}
+        open={open}
+        onCancel={() => setOpen(false)}
+        onOk={() => form.submit()}
+        destroyOnHidden
+      >
+        <Form
+          form={form}
+          layout="vertical"
+          onFinish={async (values) => {
+            const payload = {
+              name: values.name,
+              gateway_asset_ids: values.gateway_asset_ids ?? []
+            };
+            if (editing) {
+              await api.patch(`/api/v1/zones/${editing.id}`, payload);
+            } else {
+              await api.post('/api/v1/zones/', payload);
+            }
+            setOpen(false);
+            messages.success('已保存');
+            zones.reload();
+          }}
+        >
+          <Form.Item label="名称" name="name" rules={[{ required: true, message: '请输入名称' }]}>
+            <Input />
+          </Form.Item>
+          <Form.Item label="网关成员" name="gateway_asset_ids">
+            <Select
+              mode="multiple"
+              allowClear
+              placeholder="选择 host-class 资产（可为空）"
+              options={(candidates.data ?? []).map((item) => ({
+                value: item.id,
+                label: `${item.name}（${item.address}）`
+              }))}
+            />
+          </Form.Item>
+        </Form>
+      </Modal>
+    </>
   );
 }
 

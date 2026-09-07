@@ -838,7 +838,7 @@ User ──┬── WorkflowRequest ──── JitGrant
 | 任务 ID | 任务 | Owner | 范围 | 优先级 |
 |---------|------|-------|------|--------|
 | **#t66** | 资产类型与协议模型 | backend | **✅ 已完成**：`ProtocolModel` 全局声明式目录（19 对标 + `gpt` 扩展位共 20 条）、`PlatformProtocolModel` 关联约束、`assets.asset_type` / `platforms.asset_type` 八类资产类型；`GET /api/v1/protocols/`、`GET /api/v1/protocols/by-asset-type/{asset_type}`、`GET /api/v1/assets/platforms/{platform_id}/protocols`；创建资产校验 Platform 资产类型一致；数据库驱动仅 `driver_module` 占位按需加载 | 高 |
-| **#t67** | 网域与网关中转 | backend | `Zone` + `Gateway` 模型；建连时按网域选取活跃网关并做连通性探测；连接侧走 SSH ProxyJump 语义。**约束**：网关凭据同样走 Vault，不得明文传递（对应关闭 P0#16） | 中 |
+| **#t67** | 网域与网关中转 | backend | **✅ 已完成**：`Zone` + `ZoneGateway`（网关为已有 host-class 资产，不新增资产类型）；`assets.zone_id`（删网域清空所属、不级联删资产）；迁移 `a1b2c3d4e5f6`。网域 CRUD + `gateway-candidates`（租户 scope）；设置页「网域」、资产页「所属网域」。**建连 ProxyJump 已 QA SHIP**：`AssetVaultSessionConnectionResolver` 按网域筛选活跃网关（host-class + SSH 账号 + 已批准主机密钥），随机选取；网关与目标凭据均走 Vault（仅内存）；`ssh_channel` / interactive / sftp / `session_runtime` 经 ProxyJump；无可用网关 `ZONE_GATEWAY_UNAVAILABLE` →「无法连接」。测试 `test_zone_api.py` + `test_zone_gateway_resolver.py` | 中 |
 | **#t68** | K8s 容器纳管（对标 + 安全增强） | backend + security | 云资产 + `k8s` 协议（端口 443、凭据类型限定 token、namespace 作用域）；审计化 kubectl 访问。**增强项（超出 JumpServer）**：集群 token 走 envelope encryption + 审批后 unwrap；支持对接 K8s TokenRequest API 签发短期 token 替代长期静态 token（对应关闭 P0#8 在容器场景的放大风险） | 高 |
 
 **M3：真实连接通道**（技术风险最高，建议独立立项并优先做技术验证）
@@ -895,7 +895,7 @@ User ──┬── WorkflowRequest ──── JitGrant
 | M0：前置阻塞项 | 1-2 周 | #t60 + #t61 + #t62 | ✅ **3/3 完成** | 必须最先完成，否则后续无迁移与回滚路径 |
 | M3-预研：单协议通道验证 | 1-2 周 | #t69 技术切片 | ✅ **完成** | **与 M1 并行启动**，尽早暴露最高技术风险 |
 | M1：授权与访问控制内核 | 4-6 周 | #t63 + #t64 + #t65 | ✅ **3/3 完成** | 差距最大，优先级最高 |
-| M2：资产与协议广度 | 3-4 周 | #t66 + #t67 + #t68 | 🟡 #t66 已完成；#t67/#t68 未开始 | 依赖 M1 授权模型 |
+| M2：资产与协议广度 | 3-4 周 | #t66 + #t67 + #t68 | 🟡 #t66/#t67 已完成；#t68 未开始 | 依赖 M1 授权模型 |
 | M3：真实连接通道 | 6-8 周 | #t69 + #t70 + #t71 + #t72 | 🟡 #t69/#t72 完成；#t70/#t71 未开始 | 风险最高，#t70 图形通道为其中最重 |
 | M4：账号自动化 | 3-4 周 | #t73 | ⬜ 未开始 | 依赖 #t69 SSH 通道（前置已满足） |
 | M5：工单、通知、认证源 | 4-5 周 | #t74 + #t75 + #t76 | ⬜ 未开始 | 可与 M3 并行 |
@@ -905,7 +905,7 @@ User ──┬── WorkflowRequest ──── JitGrant
 
 > **v2.4 排期修订**：M3 预研切片（#t69）已完成并解除全局单点关键路径，M0 三项前置阻塞项全部关闭；**#t69 / #t72 生产 SessionConnectionResolver 已 QA SHIP**。
 > M3 剩余两项性质已分化——#t71 的 #t65 脱敏依赖已解除，剩协议实现难度；#t70 需外部图形基建，建议独立立项（见其任务行）。
-> 因此后续排序建议为：**#t67 网域与网关中转** 或 **#t68 K8s 容器纳管**（#t66 资产类型与协议已 SHIP），而非按里程碑编号顺序推进。
+> 因此后续排序建议为：**#t68 K8s 容器纳管**（#t66 资产类型与协议、#t67 网域与网关 ProxyJump 已 QA SHIP），而非按里程碑编号顺序推进。
 
 #### 11.4.5 Phase 6 验收标准
 
@@ -1063,7 +1063,7 @@ P1（15 项）/ P2（18 项）：架构性问题（xpack 侵入、common 大杂�
 | 2 | 用户与用户组 | 🟡 `User` 模型 | 用户组、认证源绑定、密码历史、用户偏好 | 是 | **P6 #t63、#t79** |
 | 3 | RBAC 角色权限 | ⬜ 仅 `admin` / `workflow:admin` 字符串判断 | 角色模型、角色绑定、system/org 双 scope、对象级权限、内置角色、菜单权限 | 是 | **P6 #t63** |
 | 4 | 组织 / 多租户 | 🟡 `Organization`/`Team`/`Project` + `scoped_select()` 租户过滤 + 只读页 | 组织级角色绑定、组织切换、跨组织数据边界回归 | 是 | P4 #t42 → **P6 #t63** |
-| 5 | 资产管理 | 🟡 `Asset` + `Platform` 基础模型 + SSRF 防护 | 资产类型分化、协议模型、资产树、网域网关、收藏、标签 | 是 | P1 已有 → **P6 #t66、#t67** |
+| 5 | 资产管理 | 🟡 `Asset` + `Platform` + 八类资产类型/协议目录（#t66）+ **网域/网关 ProxyJump（#t67 QA SHIP）** + 资产树授权 | 收藏、标签；云资产/k8s 协议模型属 #t68 | 是 | P1 已有 → **P6 #t66、#t67**；#t68 |
 | 6 | 资产授权 | 🟡 `NodeModel` / `AssetPermissionModel` + 祖先继承 + 使用面过滤 + `scoped_select()` | RBAC 角色/用户组管理、更多资产类型与协议 | 是 | **P6 #t64 已完成，域能力仍为部分实现** |
 | 7 | ACL 访问控制 | 🟡 命令过滤 ACL + 命令组 + 数据脱敏规则 + 登录/资产登录/连接方式 overlay ACL + 租户 CRUD + SSH/K8s/PTY 执行前守卫与登录/连接 overlay，判定统一进 PolicyDecisionService | 弱密码策略（#t79）、命令复核工单（#t74）；人脸核验不做 | 是 | **P6 #t65 已完成，域能力仍为部分实现** |
 | 8 | 账号与凭据 | 🟡 `Account` + `CredentialRotation` + envelope 加密 + 审批后 unwrap | 8 类账号自动化、账号模板、账号风险、真实云 KMS/HSM | 是 | P4 #t43/#t50 → **P6 #t73** |
@@ -1113,7 +1113,7 @@ P1（15 项）/ P2（18 项）：架构性问题（xpack 侵入、common 大杂�
 | 原交汇点 | ~~**#t69 真实连接通道**~~——**已于 v2.4 解除**，4 项 P0 已关闭，SSH / K8s 运行时已走通 | |
 
 **结论（v2.4 修订）**：v2.3 判定的全局单点关键路径 #t69 **已解除**。两条路线不再强耦合于同一任务——
-安全侧剩余 2 项 P0 全部收敛到 #t76 SSO；#t65 判定已接到 SSH/K8s/PTY 执行前与交互式登录/资产连接 overlay。功能侧 #t63 RBAC、#t64 资产树与 AssetPermission、#t65 overlay ACL、#t66 资产类型与协议、**#t69 / #t72 生产 SessionConnectionResolver 已 QA SHIP**；下一刀是 #t67 网域与网关中转或 #t68 K8s 容器纳管。
+安全侧剩余 2 项 P0 全部收敛到 #t76 SSO；#t65 判定已接到 SSH/K8s/PTY 执行前与交互式登录/资产连接 overlay。功能侧 #t63 RBAC、#t64 资产树与 AssetPermission、#t65 overlay ACL、#t66 资产类型与协议、**#t67 网域与网关 ProxyJump 已 QA SHIP**、**#t69 / #t72 生产 SessionConnectionResolver 已 QA SHIP**；下一刀是 #t68 K8s 容器纳管。
 
 **表述边界仍然有效**：#t69 的走通只解除了运行时前提，功能替代完成度仍为 **0/19 等价**。
 在 §14.2 矩阵出现第一个 ✅ 之前，「功能替代进度过半」的表述依然不成立；

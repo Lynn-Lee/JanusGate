@@ -29,7 +29,8 @@ import type {
   AssetNode,
   ConnectImpact,
   Platform,
-  TreeAsset
+  TreeAsset,
+  Zone
 } from './types';
 
 type Surface = 'manage' | 'connect';
@@ -558,6 +559,11 @@ function DirectAssetsTab({
   onWhoCanConnect: (assetId: number) => void;
 }) {
   const { api } = useAuth();
+  const notify = useApiMessage();
+  const zones = useApiData(() => api.get<{ items: Zone[]; total: number }>('/api/v1/zones/'), []);
+  const [editOpen, setEditOpen] = useState(false);
+  const [editing, setEditing] = useState<TreeAsset | null>(null);
+  const [editForm] = Form.useForm<{ zone_id?: number | null }>();
 
   const hang = async () => {
     const picker = await api.get<{ items: TreeAsset[] }>('/api/v1/asset-nodes/ungrouped-assets');
@@ -614,6 +620,22 @@ function DirectAssetsTab({
     });
   };
 
+  const openEdit = (record: TreeAsset) => {
+    setEditing(record);
+    editForm.setFieldsValue({
+      zone_id: record.zone_id ?? undefined
+    });
+    setEditOpen(true);
+  };
+
+  const zoneName = (zoneId: number | null | undefined) => {
+    if (zoneId == null) {
+      return '直连';
+    }
+    const match = (zones.data?.items ?? []).find((item) => item.id === zoneId);
+    return match?.name ?? `网域 #${zoneId}`;
+  };
+
   if (loading) {
     return <LoadingState />;
   }
@@ -634,9 +656,16 @@ function DirectAssetsTab({
             { title: '资产', dataIndex: 'name' },
             { title: '地址', dataIndex: 'address' },
             {
+              title: '所属网域',
+              render: (_: unknown, record: TreeAsset) => zoneName(record.zone_id)
+            },
+            {
               title: '操作',
               render: (_: unknown, record: TreeAsset) => (
                 <Space>
+                  <Button type="link" onClick={() => openEdit(record)}>
+                    编辑
+                  </Button>
                   <Button type="link" onClick={() => onWhoCanConnect(record.id)}>
                     谁能连
                   </Button>
@@ -649,6 +678,44 @@ function DirectAssetsTab({
           ]}
         />
       )}
+      <Modal
+        title="编辑资产"
+        open={editOpen}
+        onCancel={() => setEditOpen(false)}
+        onOk={() => editForm.submit()}
+        destroyOnHidden
+      >
+        <Form
+          form={editForm}
+          layout="vertical"
+          onFinish={async (values) => {
+            if (!editing) {
+              return;
+            }
+            try {
+              await api.patch(`/api/v1/assets/${editing.id}`, {
+                zone_id: values.zone_id ?? null
+              });
+              notify.success('已保存');
+              setEditOpen(false);
+              onReload();
+            } catch (err) {
+              notify.error(getErrorMessage(err));
+            }
+          }}
+        >
+          <Form.Item label="所属网域" name="zone_id">
+            <Select
+              allowClear
+              placeholder="直连"
+              options={(zones.data?.items ?? []).map((item) => ({
+                value: item.id,
+                label: item.name
+              }))}
+            />
+          </Form.Item>
+        </Form>
+      </Modal>
     </Space>
   );
 }

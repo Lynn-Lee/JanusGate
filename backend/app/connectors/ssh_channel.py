@@ -229,8 +229,11 @@ class SshChannel:
         connection: asyncssh.SSHClientConnection,
         target: SshTarget,
         policy: CommandPolicyGuard,
+        *,
+        tunnel: asyncssh.SSHClientConnection | None = None,
     ) -> None:
         self._connection = connection
+        self._tunnel = tunnel
         self._target = target
         self._policy = policy
 
@@ -240,6 +243,8 @@ class SshChannel:
         target: SshTarget,
         credential: SshCredential,
         *,
+        jump_target: SshTarget | None = None,
+        jump_credential: SshCredential | None = None,
         connect_timeout: float = 10.0,
         policy: CommandPolicyGuard | None = None,
         subject: SubjectRef | None = None,
@@ -249,7 +254,7 @@ class SshChannel:
         session_factory: Any = None,
         db: Any = None,
     ) -> SshChannel:
-        """在强安全约束下建立 SSH 连接。
+        """在强安全约束下建立 SSH 连接；可选经网关 ProxyJump。
 
         :raises SshChannelError: 主机密钥不可信（``SSH_HOST_KEY_REJECTED``）、算法
             协商失败（``SSH_ALGORITHM_NEGOTIATION_FAILED``）、认证失败
@@ -257,10 +262,50 @@ class SshChannel:
             （``SSH_CONNECT_FAILED``）。
         """
 
+        tunnel: asyncssh.SSHClientConnection | None = None
+        if jump_target is not None:
+            if jump_credential is None:
+                raise SshChannelError(
+                    "SSH_CREDENTIAL_MISSING",
+                    "jump credential required when jump_target is set",
+                )
+            tunnel = await cls._connect_once(
+                jump_target, jump_credential, connect_timeout=connect_timeout
+            )
+        try:
+            connection = await cls._connect_once(
+                target,
+                credential,
+                connect_timeout=connect_timeout,
+                tunnel=tunnel,
+            )
+        except BaseException:
+            if tunnel is not None:
+                tunnel.close()
+                await tunnel.wait_closed()
+            raise
+        resolved = policy or await default_command_policy_guard(
+            subject=subject,
+            resource=resource,
+            account_id=account_id,
+            session_id=session_id,
+            session_factory=session_factory,
+            db=db,
+        )
+        return cls(connection, target, resolved, tunnel=tunnel)
+
+    @staticmethod
+    async def _connect_once(
+        target: SshTarget,
+        credential: SshCredential,
+        *,
+        connect_timeout: float,
+        tunnel: asyncssh.SSHClientConnection | None = None,
+    ) -> asyncssh.SSHClientConnection:
         client_keys = _load_client_keys(credential)
         known_hosts = _build_known_hosts(target)
         try:
-            connection = await asyncssh.connect(
+            return await asyncssh.connect(
                 host=target.host,
                 port=target.port,
                 username=target.username,
@@ -268,6 +313,7 @@ class SshChannel:
                 password=credential.password,
                 passphrase=credential.private_key_passphrase,
                 known_hosts=known_hosts,
+                tunnel=tunnel,
                 # 显式关闭 agent、默认密钥扫描与用户 ssh_config，杜绝磁盘凭据来源。
                 agent_path=None,
                 config=None,
@@ -287,15 +333,6 @@ class SshChannel:
             raise SshChannelError("SSH_CONNECT_TIMEOUT", "connection timed out") from exc
         except (asyncssh.Error, OSError) as exc:
             raise SshChannelError("SSH_CONNECT_FAILED", str(exc)) from exc
-        resolved = policy or await default_command_policy_guard(
-            subject=subject,
-            resource=resource,
-            account_id=account_id,
-            session_id=session_id,
-            session_factory=session_factory,
-            db=db,
-        )
-        return cls(connection, target, resolved)
 
     async def run_command(
         self,
@@ -394,10 +431,14 @@ class SshChannel:
             raise SshChannelError("SSH_SFTP_OPEN_FAILED", str(exc)) from exc
 
     async def close(self) -> None:
-        """关闭连接并等待其完全释放。"""
+        """关闭连接（及可选网关隧道）并等待其完全释放。"""
 
         self._connection.close()
         await self._connection.wait_closed()
+        if self._tunnel is not None:
+            self._tunnel.close()
+            await self._tunnel.wait_closed()
+            self._tunnel = None
 
     async def __aenter__(self) -> SshChannel:
         return self

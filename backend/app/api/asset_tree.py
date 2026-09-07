@@ -310,6 +310,7 @@ async def list_node_assets(
                 address=asset.address,
                 node_id=asset.node_id,
                 location_label=_location_label(asset, nodes),
+                zone_id=getattr(asset, "zone_id", None),
             )
             for asset in assets
         ]
@@ -333,6 +334,7 @@ async def list_ungrouped_assets(
                 address=asset.address,
                 node_id=asset.node_id,
                 location_label=_location_label(asset, nodes),
+                zone_id=getattr(asset, "zone_id", None),
             )
             for asset in assets
         ]
@@ -376,6 +378,7 @@ async def hang_asset(
         address=asset.address,
         node_id=asset.node_id,
         location_label=_location_label(asset, nodes),
+                zone_id=getattr(asset, "zone_id", None),
     )
 
 
@@ -409,6 +412,7 @@ async def ungroup_asset(
         address=asset.address,
         node_id=asset.node_id,
         location_label=_location_label(asset, nodes),
+                zone_id=getattr(asset, "zone_id", None),
     )
 
 

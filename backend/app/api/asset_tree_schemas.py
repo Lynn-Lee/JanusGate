@@ -58,6 +58,7 @@ class TreeAssetResponse(BaseModel):
     address: str
     node_id: str | None
     location_label: str
+    zone_id: int | None = None
 
 
 class TreeAssetListResponse(BaseModel):

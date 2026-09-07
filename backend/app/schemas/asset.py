@@ -41,6 +41,19 @@ class AssetCreate(BaseModel):
     description: str = ""
     namespace: str = Field(default="", max_length=253)
     server_ca: str = ""
+    zone_id: int | None = None
+
+
+class AssetUpdate(BaseModel):
+    name: str | None = Field(default=None, min_length=1, max_length=100)
+    address: str | None = Field(default=None, min_length=1, max_length=200)
+    port: int | None = None
+    username: str | None = None
+    description: str | None = None
+    namespace: str | None = Field(default=None, max_length=253)
+    server_ca: str | None = None
+    is_active: bool | None = None
+    zone_id: int | None = None
 
 
 class AssetResponse(BaseModel):
@@ -57,6 +70,7 @@ class AssetResponse(BaseModel):
     namespace: str = ""
     has_server_ca: bool = False
     connect_protocols: list[str] = Field(default_factory=list)
+    zone_id: int | None = None
 
 
 class K8sPodResponse(BaseModel):

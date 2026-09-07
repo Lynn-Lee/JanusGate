@@ -54,6 +54,8 @@ class SessionConnectionSpec:
     :param mode: 通道形态。
     :param target: SSH 目标与可信主机公钥。
     :param credential: 内存凭据（私钥或密码）。
+    :param jump_target: 可选网关（ProxyJump）目标。
+    :param jump_credential: 网关凭据（Vault 解开，仅内存）。
     :param k8s_target: K8s API Server 目标（仅 K8S 模式）。
     :param k8s_credential: K8s Bearer token（仅内存，仅 K8S 模式）。
     :param k8s_scope: 授权的单一 namespace 作用域（仅 K8S 模式）。
@@ -62,6 +64,8 @@ class SessionConnectionSpec:
     mode: ConnectorSessionMode
     target: SshTarget | None = None
     credential: SshCredential | None = None
+    jump_target: SshTarget | None = None
+    jump_credential: SshCredential | None = None
     k8s_target: K8sTarget | None = None
     k8s_credential: K8sCredential | None = None
     k8s_scope: NamespaceScope | None = None
@@ -220,7 +224,13 @@ class ConnectorSessionRuntime:
                 f"no connection spec for asset={request.asset_id} account={request.account_id}",
             )
         if spec.mode is ConnectorSessionMode.EXEC:
-            return await SshChannel.open(spec.target, spec.credential, policy=policy)
+            return await SshChannel.open(
+                spec.target,
+                spec.credential,
+                jump_target=spec.jump_target,
+                jump_credential=spec.jump_credential,
+                policy=policy,
+            )
         if spec.mode is ConnectorSessionMode.INTERACTIVE:
             if self._command_sink is None:
                 raise SshChannelError(
@@ -228,7 +238,12 @@ class ConnectorSessionRuntime:
                     "interactive mode requires a command_sink",
                 )
             return await SshInteractiveSession.open(
-                spec.target, spec.credential, self._command_sink, policy=policy
+                spec.target,
+                spec.credential,
+                self._command_sink,
+                jump_target=spec.jump_target,
+                jump_credential=spec.jump_credential,
+                policy=policy,
             )
         if spec.mode is ConnectorSessionMode.SFTP:
             if self._transfer_sink is None:
@@ -236,7 +251,13 @@ class ConnectorSessionRuntime:
                     "CONNECTOR_TRANSFER_SINK_MISSING",
                     "sftp mode requires a transfer_sink",
                 )
-            return await SftpChannel.open(spec.target, spec.credential, self._transfer_sink)
+            return await SftpChannel.open(
+                spec.target,
+                spec.credential,
+                self._transfer_sink,
+                jump_target=spec.jump_target,
+                jump_credential=spec.jump_credential,
+            )
         raise SshChannelError("CONNECTOR_UNSUPPORTED_MODE", str(spec.mode))
 
     async def _open_k8s_channel(
