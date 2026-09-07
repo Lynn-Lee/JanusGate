@@ -7,6 +7,8 @@ from typing import Any
 import pytest
 from fastapi.testclient import TestClient
 
+from app.api import auth as auth_api
+from app.api.auth import MVP_CONSOLE_PERMISSIONS
 from app.core.database import get_db, get_read_db
 from app.core.deps import current_user, get_redis
 from app.core.security import (
@@ -71,6 +73,35 @@ def clear_dependency_overrides() -> None:
     app.dependency_overrides.clear()
     yield
     app.dependency_overrides.clear()
+
+
+@pytest.fixture(autouse=True)
+def allow_login_overlay(monkeypatch: pytest.MonkeyPatch) -> None:
+    """FakeDB cannot load LoginACL overlays; keep interactive login paths fail-open in unit tests."""
+
+    async def _allow(*_args: Any, **_kwargs: Any) -> None:
+        return None
+
+    monkeypatch.setattr(auth_api, "_enforce_login_acl", _allow)
+
+
+@pytest.fixture(autouse=True)
+def stub_token_data_for_fake_db(monkeypatch: pytest.MonkeyPatch) -> None:
+    async def _token_data(db: Any, user: User, *, extra: dict[str, Any] | None = None) -> dict[str, Any]:
+        del db
+        payload: dict[str, Any] = {
+            "sub": str(user.id),
+            "username": user.username,
+            "tenant_id": getattr(user, "tenant_id", None) or "default",
+            "permissions": list(MVP_CONSOLE_PERMISSIONS),
+            "menu_permissions": [],
+            "role_ids": [],
+        }
+        if extra:
+            payload.update(extra)
+        return payload
+
+    monkeypatch.setattr(auth_api, "_token_data_for_user", _token_data)
 
 
 def user(**overrides: Any) -> User:
