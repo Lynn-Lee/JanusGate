@@ -44,6 +44,11 @@ class AccountVerifyJobCreate(BaseModel):
     account_id: int = Field(gt=0)
 
 
+class AccountPushJobCreate(BaseModel):
+    account_id: int = Field(gt=0)
+    privileged_account_id: int = Field(gt=0)
+
+
 class AutomationJobRunResponse(BaseModel):
     message_id: str
     job_type: str
@@ -178,6 +183,42 @@ async def enqueue_account_verify_job(
         payload={"account_id": account.id},
     )
     return AutomationJobResponse(job_id=job_id, job_type="account.verify", status="queued")
+
+
+@router.post(
+    "/account-pushes",
+    response_model=AutomationJobResponse,
+    status_code=status.HTTP_202_ACCEPTED,
+)
+async def enqueue_account_push_job(
+    data: AccountPushJobCreate,
+    db: AsyncSession = Depends(get_db),
+    queue: AutomationJobQueue = Depends(get_automation_job_queue),
+    user: dict[str, Any] = Depends(current_user),
+) -> AutomationJobResponse:
+    """手动触发 account.push；权限 automation:write；载荷仅账号 ID。"""
+
+    _require_automation_permission(user, "automation:write")
+    account = await _get_scoped_account(db=db, user=user, account_id=data.account_id)
+    privileged = await _get_scoped_account(
+        db=db, user=user, account_id=data.privileged_account_id
+    )
+    if account.protocol.lower() != "ssh" or privileged.protocol.lower() != "ssh":
+        raise HTTPException(status_code=400, detail="仅支持 SSH 账号推送")
+    if privileged.asset_id != account.asset_id:
+        raise HTTPException(status_code=400, detail="特权账号须与目标账号同资产")
+    if privileged.id == account.id:
+        raise HTTPException(status_code=400, detail="特权账号不能与目标账号相同")
+    job_id = await queue.enqueue(
+        tenant_id=account.tenant_id,
+        requested_by=str(user["id"]),
+        job_type="account.push",
+        payload={
+            "account_id": account.id,
+            "privileged_account_id": privileged.id,
+        },
+    )
+    return AutomationJobResponse(job_id=job_id, job_type="account.push", status="queued")
 
 
 @router.post(

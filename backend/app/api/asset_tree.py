@@ -29,8 +29,8 @@ from app.api.asset_tree_schemas import (
 )
 from app.core.database import get_db, get_read_db
 from app.core.deps import current_user
-from app.models.asset import Asset
 from app.models.acl import ConnectMethodAclModel, LoginAssetAclModel
+from app.models.asset import Asset
 from app.models.asset_tree import (
     ASSET_RESOURCE,
     NODE_RESOURCE,
@@ -282,8 +282,8 @@ async def delete_asset_node(
             ConnectMethodAclModel.resource_id == node.id,
         )
     )
-    for overlay in method_result.scalars().all():
-        await db.delete(overlay)
+    for method_acl in method_result.scalars().all():
+        await db.delete(method_acl)
     await db.delete(node)
     await db.commit()
     return Response(status_code=status.HTTP_204_NO_CONTENT)

@@ -12,7 +12,13 @@ from typing import Protocol
 type JsonValue = str | int | float | bool | None | list[JsonValue] | dict[str, JsonValue]
 
 ALLOWED_JOB_TYPES: frozenset[str] = frozenset(
-    {"asset.scan", "credential.rotate", "ansible.playbook", "account.verify"}
+    {
+        "asset.scan",
+        "credential.rotate",
+        "ansible.playbook",
+        "account.verify",
+        "account.push",
+    }
 )
 SENSITIVE_PAYLOAD_KEYS: frozenset[str] = frozenset(
     {
