@@ -13,7 +13,7 @@ import hashlib
 import json
 import secrets
 import uuid
-from typing import Any
+from typing import Any, TypeGuard
 from urllib.parse import urlencode, urlparse
 
 import httpx
@@ -61,7 +61,7 @@ def validate_issuer_url(issuer_url: str) -> str:
     return cleaned
 
 
-def is_fully_configured(provider: OidcProvider | None) -> bool:
+def is_fully_configured(provider: OidcProvider | None) -> TypeGuard[OidcProvider]:
     if provider is None:
         return False
     if not provider.enabled:

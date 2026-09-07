@@ -116,7 +116,6 @@ async def oidc_login_options(
     provider = await oidc_service.get_provider(db, tenant_id or "default")
     if not is_fully_configured(provider):
         return OidcLoginOptionResponse(enabled=False, display_name="")
-    assert provider is not None
     return OidcLoginOptionResponse(enabled=True, display_name=provider.display_name)
 
 
@@ -131,7 +130,6 @@ async def oidc_start(
     provider = await oidc_service.get_provider(db, tenant_id or "default")
     if not is_fully_configured(provider):
         return _fail_redirect()
-    assert provider is not None
     callback_url = build_callback_url(str(request.base_url).rstrip("/"))
     try:
         url = await oidc_service.build_authorization_redirect(
@@ -163,7 +161,6 @@ async def oidc_callback(
     provider = await oidc_service.get_provider(db, tenant_id)
     if not is_fully_configured(provider):
         return _fail_redirect()
-    assert provider is not None
     callback_url = str(state_payload.get("callback_url") or build_callback_url(str(request.base_url).rstrip("/")))
     try:
         exchanged = await oidc_service.exchange_code(

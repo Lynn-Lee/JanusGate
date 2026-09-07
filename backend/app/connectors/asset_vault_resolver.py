@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Awaitable, Callable
-from random import choice
+from secrets import choice
 from typing import Protocol
 
 from sqlalchemy import select
@@ -277,9 +277,12 @@ class AssetVaultSessionConnectionResolver:
                 if not approved_key.strip():
                     continue
                 # 连通性探测：对网关做主机密钥扫描且须与已批准密钥一致。
+                presented = None
                 try:
                     presented = await self._scanner.scan(gateway.address, gateway.port)
                 except Exception:
+                    presented = None
+                if presented is None:
                     continue
                 classification = classify_presented_key(
                     approved_public_key=approved_key, presented=presented

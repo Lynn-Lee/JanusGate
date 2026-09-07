@@ -404,15 +404,17 @@ async def request_service_account_token(
     except ValueError as exc:
         raise K8sChannelError("K8S_TOKEN_REQUEST_FAILED", "TokenRequest response is not json") from exc
     status_obj = payload.get("status") if isinstance(payload, dict) else None
-    token = ""
+    issued: str | None = None
     if isinstance(status_obj, dict):
-        token = str(status_obj.get("token") or "").strip()
-    if not token:
+        raw = status_obj.get("token")
+        if raw is not None:
+            issued = str(raw).strip() or None
+    if not issued:
         raise K8sChannelError(
             "K8S_TOKEN_REQUEST_FAILED",
             "TokenRequest response missing status.token",
         )
-    return token
+    return issued
 
 
 class K8sExecChannel:
