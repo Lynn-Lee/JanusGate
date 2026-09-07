@@ -75,17 +75,40 @@ _OVERLAY_CONNECT_DENY_REASONS = frozenset(
         "SSH_HOST_KEY_REJECTED",
         "CONNECTOR_PROTOCOL_UNSUPPORTED",
         "CONNECTOR_TARGET_UNRESOLVED",
+        "K8S_NAMESPACE_FORBIDDEN",
+        "K8S_NAMESPACE_OVERREACH",
+        "K8S_NAMESPACE_MISSING",
+        "K8S_TARGET_INCOMPLETE",
+        "K8S_POD_REQUIRED",
+        "K8S_TLS_CA_INVALID",
+        "K8S_CREDENTIAL_MISSING",
+        "K8S_COMMAND_DENIED",
+        "K8S_TLS_HANDSHAKE_FAILED",
+        "K8S_EXEC_REJECTED",
+        "K8S_CONNECT_TIMEOUT",
+        "K8S_CONNECT_FAILED",
     }
 )
+
+_K8S_HTTPS_CA_DENY_REASONS = frozenset(
+    {
+        "K8S_INSECURE_TRANSPORT",
+        "K8S_TLS_CA_MISSING",
+        "K8S_HTTPS_CA_REQUIRED",
+    }
+)
+K8S_HTTPS_CA_DENIED_COPY = "无法连接（需要 HTTPS 和 CA）"
 
 
 def _raise_connect_denied(exc: BaseException) -> NoReturn:
     reason = getattr(exc, "code", None) or str(exc)
     if reason in _ASSET_CONNECT_DENY_REASONS:
         raise HTTPException(status_code=404, detail="资产不存在") from exc
+    if reason in _K8S_HTTPS_CA_DENY_REASONS:
+        raise HTTPException(status_code=403, detail=K8S_HTTPS_CA_DENIED_COPY) from exc
     if reason in _OVERLAY_CONNECT_DENY_REASONS:
         raise HTTPException(status_code=403, detail="无法连接") from exc
-    if "没有权限" in str(reason):
+    if "没有权限" in str(reason) or "越权" in str(reason):
         raise HTTPException(status_code=403, detail="无法连接") from exc
     raise HTTPException(status_code=403, detail=reason) from exc
 
@@ -230,12 +253,19 @@ async def create_session(
             client_ip=client_ip,
             client_ip_source=client_ip_source,
             jit_grant_id=data.jit_grant_id,
+            pod=data.pod,
+            container=data.container,
         )
     except PermissionError as exc:
         _raise_connect_denied(exc)
     except Exception as exc:
         code = getattr(exc, "code", "")
-        if code in _OVERLAY_CONNECT_DENY_REASONS or str(exc) in _OVERLAY_CONNECT_DENY_REASONS:
+        if (
+            code in _OVERLAY_CONNECT_DENY_REASONS
+            or code in _K8S_HTTPS_CA_DENY_REASONS
+            or str(exc) in _OVERLAY_CONNECT_DENY_REASONS
+            or str(exc) in _K8S_HTTPS_CA_DENY_REASONS
+        ):
             _raise_connect_denied(exc)
         if isinstance(exc, ValueError):
             raise HTTPException(status_code=400, detail=str(exc)) from exc

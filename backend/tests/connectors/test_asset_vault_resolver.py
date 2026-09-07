@@ -262,10 +262,13 @@ async def test_changed_key_with_stale_approval_cannot_connect(
         await resolver.resolve(_dispatch(asset.id))
 
 
-async def test_k8s_protocol_is_not_resolved(
+async def test_k8s_protocol_does_not_use_host_key_fail_closed_path(
     session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
-    asset = await _seed_ssh_asset(session_factory)
+    """#t72：k8s 不再走主机密钥路径；缺 namespace 时「无法连接」，不是 HOST_KEY_UNAPPROVED。"""
+    from app.connectors.k8s_exec import K8sChannelError
+
+    asset = await _seed_ssh_asset(session_factory, protocol="k8s")
     scanner = FakeScanner(public_key="ssh-ed25519 AAAAAPPROVED")
     resolver, store = _resolver(session_factory, scanner)
     await store.approve_presented(
@@ -274,8 +277,10 @@ async def test_k8s_protocol_is_not_resolved(
         public_key="ssh-ed25519 AAAAAPPROVED",
         fingerprint="SHA256:fake",
     )
-    with pytest.raises(PermissionError, match="HOST_KEY_UNAPPROVED"):
+    with pytest.raises(K8sChannelError) as excinfo:
         await resolver.resolve(_dispatch(asset.id, protocol="k8s"))
+    assert excinfo.value.code == "K8S_HTTPS_CA_REQUIRED"
+    assert scanner.calls == 0
 
 
 def test_session_api_maps_unapproved_host_key_to_cannot_connect() -> None:

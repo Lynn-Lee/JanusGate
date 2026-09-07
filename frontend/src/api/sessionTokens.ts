@@ -17,6 +17,11 @@ export type SessionConnectionTokenResponse = SessionConnectionTokenRequest & {
 
 export type ConnectionTokenGrantInput = Pick<JitGrant, 'id' | 'asset_id' | 'account_id' | 'protocol' | 'action'>;
 
+export type SessionCreateExtras = {
+  pod?: string;
+  container?: string;
+};
+
 export async function issueConnectionToken(
   api: ApiClient,
   grant: ConnectionTokenGrantInput
@@ -32,14 +37,22 @@ export async function issueConnectionToken(
 
 export async function createSessionWithConnectionToken(
   api: ApiClient,
-  grant: ConnectionTokenGrantInput
+  grant: ConnectionTokenGrantInput,
+  extras: SessionCreateExtras = {}
 ): Promise<SessionRecord> {
   const issue = await issueConnectionToken(api, grant);
-  return api.post<SessionRecord>('/api/v1/sessions/', {
+  const body: Record<string, string> = {
     asset_id: grant.asset_id,
     account_id: grant.account_id,
     protocol: grant.protocol,
     connection_token: issue.connection_token,
     jit_grant_id: grant.id
-  });
+  };
+  if (extras.pod) {
+    body.pod = extras.pod;
+  }
+  if (extras.container) {
+    body.container = extras.container;
+  }
+  return api.post<SessionRecord>('/api/v1/sessions/', body);
 }

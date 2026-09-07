@@ -1,10 +1,15 @@
 """资产 API 路由。"""
+from __future__ import annotations
+
+import json
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.sessions.routes import _raise_connect_denied
+from app.api.sessions.service import ConnectorDispatchRequest
 from app.core.config import settings
 from app.core.database import get_db, get_read_db
 from app.core.deps import require_permission
@@ -12,9 +17,18 @@ from app.models.asset import Asset, Platform
 from app.policy.asset_permission import connectable_asset_ids
 from app.policy.asset_tree_ops import list_assets as list_scoped_assets
 from app.policy.asset_tree_ops import list_nodes, list_permissions, nodes_by_id
+from app.policy.decision import PolicyDecision
+from app.policy.schemas import PolicyDecisionRequest, ResourceRef, SubjectRef
 from app.protocols.repository import ensure_builtin_protocols, sync_platform_protocols
 from app.protocols.validation import ProtocolValidationError, validate_asset_protocol_binding
-from app.schemas.asset import AssetCreate, AssetResponse, PlatformCreate, PlatformResponse
+from app.schemas.asset import (
+    AssetCreate,
+    AssetResponse,
+    K8sPodListResponse,
+    K8sPodResponse,
+    PlatformCreate,
+    PlatformResponse,
+)
 from app.services.asset import AssetService
 from app.tenancy.scope import actor_scope_from_user
 
@@ -32,7 +46,8 @@ async def list_assets(
 
     visible = await _visible_assets(db, user)
     sliced = visible[skip: skip + limit]
-    return [_asset_response(asset) for asset in sliced]
+    protocol_map = await _connect_protocols_by_asset(db, user, sliced)
+    return [_asset_response(asset, connect_protocols=protocol_map.get(asset.id, [])) for asset in sliced]
 
 
 @router.post("/", response_model=AssetResponse)
@@ -117,7 +132,7 @@ def _platform_response(platform: Platform) -> PlatformResponse:
     )
 
 
-def _asset_response(asset: Asset) -> AssetResponse:
+def _asset_response(asset: Asset, *, connect_protocols: list[str] | None = None) -> AssetResponse:
     return AssetResponse(
         id=asset.id,
         name=asset.name,
@@ -129,7 +144,51 @@ def _asset_response(asset: Asset) -> AssetResponse:
         is_active=asset.is_active,
         description=asset.description,
         created_at=asset.created_at.isoformat() if asset.created_at else "",
+        namespace=getattr(asset, "namespace", "") or "",
+        has_server_ca=bool((getattr(asset, "server_ca", "") or "").strip()),
+        connect_protocols=list(connect_protocols or []),
     )
+
+@router.get("/{asset_id}/k8s/pods", response_model=K8sPodListResponse)
+async def list_k8s_pods(
+    asset_id: int,
+    account_id: str = Query(default=""),
+    db: AsyncSession = Depends(get_read_db),
+    user: dict[str, Any] = Depends(require_permission("assets:read")),
+) -> K8sPodListResponse:
+    """列出资产单一 namespace 内可 exec 的 Pod。失败不打开建连弹层。"""
+
+    visible = await _visible_assets(db, user)
+    asset = next((item for item in visible if item.id == asset_id), None)
+    if asset is None:
+        raise HTTPException(404, "资产不存在")
+    protocol_map = await _connect_protocols_by_asset(db, user, [asset])
+    allowed = {item.lower() for item in protocol_map.get(asset.id, [])}
+    if "k8s" not in allowed and "kubernetes" not in allowed:
+        raise HTTPException(status_code=403, detail="无法连接")
+
+    from app.connectors.session_runtime import build_production_session_resolver
+
+    resolver = build_production_session_resolver()
+    request = ConnectorDispatchRequest(
+        session_id="k8s-pod-list",
+        connector_id="default-connector",
+        tenant_id=str(user.get("tenant_id") or "default"),
+        subject_id=str(user["id"]),
+        asset_id=str(asset.id),
+        account_id=account_id.strip() or asset.username or "default",
+        protocol="k8s",
+    )
+    try:
+        namespace, pods = await resolver.list_k8s_pods(request)
+    except Exception as exc:
+        _raise_connect_denied(exc)
+    return K8sPodListResponse(
+        namespace=namespace,
+        items=[K8sPodResponse(name=pod.name, containers=list(pod.containers)) for pod in pods],
+        total=len(pods),
+    )
+
 
 @router.get("/{asset_id}", response_model=AssetResponse)
 async def get_asset(
@@ -141,7 +200,8 @@ async def get_asset(
     asset = next((item for item in visible if item.id == asset_id), None)
     if asset is None:
         raise HTTPException(404, "资产不存在")
-    return _asset_response(asset)
+    protocol_map = await _connect_protocols_by_asset(db, user, [asset])
+    return _asset_response(asset, connect_protocols=protocol_map.get(asset.id, []))
 
 
 async def _visible_assets(db: AsyncSession, user: dict[str, Any]) -> list[Asset]:
@@ -158,3 +218,54 @@ async def _visible_assets(db: AsyncSession, user: dict[str, Any]) -> list[Asset]
         nodes_by_id=nodes,
     )
     return [asset for asset in assets if str(asset.id) in allowed]
+
+
+def _platform_protocols(platform: Platform | None) -> list[str]:
+    raw = ["ssh"]
+    if platform is not None and platform.protocols:
+        try:
+            parsed = json.loads(platform.protocols)
+        except json.JSONDecodeError:
+            parsed = None
+        if isinstance(parsed, list) and parsed:
+            raw = [str(item) for item in parsed if str(item).strip()]
+    return raw
+
+
+async def _connect_protocols_by_asset(
+    db: AsyncSession, user: dict[str, Any], assets: list[Asset]
+) -> dict[int, list[str]]:
+    if not assets:
+        return {}
+    try:
+        result = await db.execute(select(Platform).order_by(Platform.id))
+        platforms = {item.id: item for item in result.scalars().all()}
+        from app.policy.repository import build_tenant_policy_service
+
+        policy = await build_tenant_policy_service(db, actor_scope_from_user(user))
+    except Exception:
+        return {}
+
+    tenant_id = str(user.get("tenant_id") or "default")
+    group_ids = [str(group_id) for group_id in user.get("group_ids", ())]
+    mapped: dict[int, list[str]] = {}
+    for asset in assets:
+        allowed: list[str] = []
+        for protocol in _platform_protocols(platforms.get(asset.platform_id)):
+            decision = policy.evaluate(
+                PolicyDecisionRequest(
+                    subject=SubjectRef(id=str(user["id"]), tenant_id=tenant_id),
+                    action="session.connect",
+                    resource=ResourceRef(id=str(asset.id), type="asset", tenant_id=tenant_id),
+                    context={
+                        "account_id": asset.username or "default",
+                        "protocol": protocol,
+                        "group_ids": group_ids,
+                    },
+                    connector_trusted=True,
+                )
+            )
+            if decision.decision == PolicyDecision.ALLOW:
+                allowed.append(protocol)
+        mapped[asset.id] = allowed
+    return mapped

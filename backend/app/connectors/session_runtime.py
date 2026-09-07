@@ -3,7 +3,7 @@
 :class:`~app.api.sessions.service.ConnectorScheduler` 这个 Protocol 是**连接器进程边界**：
 生产环境 ``dispatch`` 是一次发往远端连接器进程的 RPC，凭据解析与真实通道建立都发生在
 连接器侧。本模块提供该边界的**进程内实现**（dev / 单机 / 测试）：在同进程内把网关传来的
-身份解析为目标 + 凭据并打开真实 SSH/SFTP 通道。
+身份解析为目标 + 凭据并打开真实 SSH/SFTP/K8s 通道。
 
 关键约束：网关只传身份（asset/account/protocol），**不持有凭据**；凭据仅在本模块（代表
 连接器侧）经 :class:`SessionConnectionResolver` 解析后出现。要换成远端形态，只需另写一个
@@ -24,6 +24,7 @@ from uuid import uuid4
 
 from app.api.sessions.service import ConnectorDispatchRequest
 from app.connectors.command_policy import CommandPolicyGuard, default_command_policy_guard
+from app.connectors.k8s_exec import K8sCredential, K8sExecChannel, K8sTarget, NamespaceScope
 from app.connectors.ssh_channel import (
     CommandEvent,
     CommandEventSink,
@@ -43,6 +44,7 @@ class ConnectorSessionMode(StrEnum):
     EXEC = "exec"
     INTERACTIVE = "interactive"
     SFTP = "sftp"
+    K8S = "k8s"
 
 
 @dataclass(frozen=True)
@@ -52,15 +54,21 @@ class SessionConnectionSpec:
     :param mode: 通道形态。
     :param target: SSH 目标与可信主机公钥。
     :param credential: 内存凭据（私钥或密码）。
+    :param k8s_target: K8s API Server 目标（仅 K8S 模式）。
+    :param k8s_credential: K8s Bearer token（仅内存，仅 K8S 模式）。
+    :param k8s_scope: 授权的单一 namespace 作用域（仅 K8S 模式）。
     """
 
     mode: ConnectorSessionMode
-    target: SshTarget
-    credential: SshCredential
+    target: SshTarget | None = None
+    credential: SshCredential | None = None
+    k8s_target: K8sTarget | None = None
+    k8s_credential: K8sCredential | None = None
+    k8s_scope: NamespaceScope | None = None
 
 
-# 已打开通道的联合类型：三者均提供 async close()，故运行时可统一关闭。
-OpenChannel = SshChannel | SshInteractiveSession | SftpChannel
+# 已打开通道的联合类型：均提供 async close()，故运行时可统一关闭。
+OpenChannel = SshChannel | SshInteractiveSession | SftpChannel | K8sExecChannel
 
 
 @dataclass
@@ -204,6 +212,13 @@ class ConnectorSessionRuntime:
         self, spec: SessionConnectionSpec, request: ConnectorDispatchRequest
     ) -> OpenChannel:
         policy = await self._policy_for(request)
+        if spec.mode is ConnectorSessionMode.K8S:
+            return await self._open_k8s_channel(spec, request, policy)
+        if spec.target is None or spec.credential is None:
+            raise SshChannelError(
+                "CONNECTOR_TARGET_UNRESOLVED",
+                f"no connection spec for asset={request.asset_id} account={request.account_id}",
+            )
         if spec.mode is ConnectorSessionMode.EXEC:
             return await SshChannel.open(spec.target, spec.credential, policy=policy)
         if spec.mode is ConnectorSessionMode.INTERACTIVE:
@@ -223,6 +238,38 @@ class ConnectorSessionRuntime:
                 )
             return await SftpChannel.open(spec.target, spec.credential, self._transfer_sink)
         raise SshChannelError("CONNECTOR_UNSUPPORTED_MODE", str(spec.mode))
+
+    async def _open_k8s_channel(
+        self,
+        spec: SessionConnectionSpec,
+        request: ConnectorDispatchRequest,
+        policy: CommandPolicyGuard,
+    ) -> OpenChannel:
+        target = spec.k8s_target
+        credential = spec.k8s_credential
+        scope = spec.k8s_scope
+        if (
+            not isinstance(target, K8sTarget)
+            or not isinstance(credential, K8sCredential)
+            or not isinstance(scope, NamespaceScope)
+        ):
+            raise SshChannelError(
+                "CONNECTOR_TARGET_UNRESOLVED",
+                f"no connection spec for asset={request.asset_id} account={request.account_id}",
+            )
+        return await K8sExecChannel.open(
+            target,
+            credential,
+            scope,
+            policy=policy,
+            subject=SubjectRef(id=request.subject_id, tenant_id=request.tenant_id),
+            resource=ResourceRef(
+                id=request.asset_id, type=request.protocol or "asset", tenant_id=request.tenant_id
+            ),
+            account_id=request.account_id,
+            session_id=request.session_id,
+            session_factory=self._session_factory,
+        )
 
 
 class ConnectorRuntimeScheduler:
@@ -256,14 +303,14 @@ class _NoopFileTransferEventSink:
         return None
 
 
-def build_production_connector_scheduler(
+def build_production_session_resolver(
     *,
     session_factory=None,
     secrets=None,
     host_keys=None,
     scanner=None,
 ):
-    """装配生产连接器调度器：资产注册表 + Vault + 已批准主机密钥。"""
+    """装配生产 SessionConnectionResolver：资产注册表 + Vault + 已批准主机密钥 / K8s CA。"""
 
     from hashlib import sha256
 
@@ -301,11 +348,31 @@ def build_production_connector_scheduler(
 
         secrets = CallableSecretUnwrapper(_unwrap)
 
-    resolver = AssetVaultSessionConnectionResolver(
+    return AssetVaultSessionConnectionResolver(
         session_factory=factory,
         secrets=secrets,
         host_keys=trust_store,
         scanner=scan,
+    )
+
+
+def build_production_connector_scheduler(
+    *,
+    session_factory=None,
+    secrets=None,
+    host_keys=None,
+    scanner=None,
+):
+    """装配生产连接器调度器：资产注册表 + Vault + 已批准主机密钥 / K8s CA。"""
+
+    from app.core.database import AsyncSessionLocal
+
+    factory = session_factory or AsyncSessionLocal
+    resolver = build_production_session_resolver(
+        session_factory=factory,
+        secrets=secrets,
+        host_keys=host_keys,
+        scanner=scanner,
     )
     runtime = ConnectorSessionRuntime(
         resolver,

@@ -430,3 +430,53 @@ async def test_runtime_unavailable_store_does_not_reach_remote(server: _RunningS
     assert excinfo.value.detail == "COMMAND_POLICY_STORE_UNAVAILABLE"
     assert sink.events == []
     await runtime.close("cs-down")
+
+
+async def test_runtime_opens_k8s_channel_from_spec() -> None:
+    from unittest.mock import AsyncMock, patch
+
+    from app.connectors.k8s_exec import K8sCredential, K8sExecChannel, K8sTarget, NamespaceScope
+
+    resolver = InMemorySessionConnectionResolver()
+    resolver.register(
+        tenant_id="default",
+        asset_id="asset-1",
+        account_id="root",
+        protocol="k8s",
+        spec=SessionConnectionSpec(
+            mode=ConnectorSessionMode.K8S,
+            k8s_target=K8sTarget(
+                api_server="https://k8s.internal:6443",
+                namespace="prod",
+                pod="web-0",
+                container="app",
+                server_ca="-----BEGIN CERTIFICATE-----\nfake\n-----END CERTIFICATE-----",
+            ),
+            k8s_credential=K8sCredential(token="live-token"),
+            k8s_scope=NamespaceScope(namespaces=frozenset({"prod"})),
+        ),
+    )
+    channel = AsyncMock()
+    channel.close = AsyncMock()
+    runtime = ConnectorSessionRuntime(resolver, id_factory=lambda: "cs-k8s")
+    with patch.object(K8sExecChannel, "open", AsyncMock(return_value=channel)) as opened:
+        record = await runtime.open(
+            ConnectorDispatchRequest(
+                session_id="sess-k8s",
+                connector_id="conn-1",
+                tenant_id="default",
+                subject_id="user-1",
+                asset_id="asset-1",
+                account_id="root",
+                protocol="k8s",
+            )
+        )
+    assert record.connector_session_id == "cs-k8s"
+    assert record.mode is ConnectorSessionMode.K8S
+    assert opened.await_count == 1
+    target = opened.await_args.args[0]
+    assert target.namespace == "prod"
+    assert target.pod == "web-0"
+    assert "live-token" not in repr(opened.await_args.args[1])
+    await runtime.close("cs-k8s")
+

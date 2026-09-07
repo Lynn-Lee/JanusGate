@@ -39,6 +39,8 @@ class AssetCreate(BaseModel):
     port: int = 22
     username: str = ""
     description: str = ""
+    namespace: str = Field(default="", max_length=253)
+    server_ca: str = ""
 
 
 class AssetResponse(BaseModel):
@@ -52,3 +54,17 @@ class AssetResponse(BaseModel):
     is_active: bool
     description: str
     created_at: str
+    namespace: str = ""
+    has_server_ca: bool = False
+    connect_protocols: list[str] = Field(default_factory=list)
+
+
+class K8sPodResponse(BaseModel):
+    name: str
+    containers: list[str] = Field(default_factory=list)
+
+
+class K8sPodListResponse(BaseModel):
+    namespace: str
+    items: list[K8sPodResponse]
+    total: int

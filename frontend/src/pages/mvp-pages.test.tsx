@@ -1,4 +1,4 @@
-import { render, screen, waitFor, within } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import App from '../App';
@@ -541,11 +541,12 @@ describe('MVP pages', () => {
 
 
 describe('#t69 host key overlay and connect list', () => {
-  it('hides k8s protocol from the assets connect list', async () => {
-    const k8sPlatform = { id: 2, name: 'Kubernetes', category: 'cloud', protocols: '["k8s"]', is_active: true };
-    const mixedPlatform = { id: 3, name: 'Mixed', category: 'host', protocols: '["ssh","k8s"]', is_active: true };
-    const k8sAsset = { id: 2, name: 'prod-cluster', address: 'k8s.internal', platform_id: 2, port: 443, username: '', is_active: true, description: '', created_at: '2026-07-01T00:00:00Z' };
-    const mixedAsset = { id: 3, name: 'bastion', address: '10.0.0.11', platform_id: 3, port: 22, username: 'ops', is_active: true, description: '', created_at: '2026-07-01T00:00:00Z' };
+  const k8sPlatform = { id: 2, name: 'Kubernetes', category: 'cloud', protocols: '["k8s"]', is_active: true };
+  const mixedPlatform = { id: 3, name: 'Mixed', category: 'host', protocols: '["ssh","k8s"]', is_active: true };
+  const k8sAsset = { id: 2, name: 'prod-cluster', address: 'k8s.internal', platform_id: 2, port: 443, username: '', is_active: true, description: '', created_at: '2026-07-01T00:00:00Z', namespace: 'prod', has_server_ca: true };
+  const mixedAsset = { id: 3, name: 'bastion', address: '10.0.0.11', platform_id: 3, port: 22, username: 'ops', is_active: true, description: '', created_at: '2026-07-01T00:00:00Z', namespace: 'prod', has_server_ca: true };
+
+  function installK8sConnectFetch(podsResponse: Response | ((url: string) => Response | undefined)) {
     const fetchMock = installFetch();
     vi.stubGlobal('fetch', async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
@@ -556,6 +557,71 @@ describe('#t69 host key overlay and connect list', () => {
       if (url.endsWith('/api/v1/assets/platforms')) {
         return Response.json([platform, k8sPlatform, mixedPlatform]);
       }
+      if (url.includes('/k8s/pods')) {
+        const custom = typeof podsResponse === 'function' ? podsResponse(url) : podsResponse;
+        if (custom) {
+          return custom;
+        }
+      }
+      return fetchMock(input, init);
+    });
+  }
+
+  it('shows k8s assets on the connect list and opens 建连弹层 after listing pods', async () => {
+    const k8sPlatform = { id: 2, name: 'Kubernetes', category: 'cloud', protocols: '["k8s"]', is_active: true };
+    const mixedPlatform = { id: 3, name: 'Mixed', category: 'host', protocols: '["ssh","k8s"]', is_active: true };
+    const k8sAsset = {
+      id: 2,
+      name: 'prod-cluster',
+      address: 'https://k8s.internal:6443',
+      platform_id: 2,
+      port: 443,
+      username: 'deploy',
+      is_active: true,
+      description: '',
+      created_at: '2026-07-01T00:00:00Z',
+      namespace: 'prod',
+      has_server_ca: true
+    };
+    const mixedAsset = { id: 3, name: 'bastion', address: 'https://10.0.0.11', platform_id: 3, port: 22, username: 'ops', is_active: true, description: '', created_at: '2026-07-01T00:00:00Z', namespace: 'prod', has_server_ca: true };
+    const k8sGrant = { ...grant, id: 'grant-k8s', asset_id: '2', account_id: 'deploy', protocol: 'k8s' };
+    const fetchMock = installFetch();
+    const sessionBodies: Record<string, unknown>[] = [];
+    vi.stubGlobal('fetch', async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      const method = init?.method ?? 'GET';
+      if (url.endsWith('/api/v1/assets/') && method === 'GET') {
+        return Response.json([asset, k8sAsset, mixedAsset]);
+      }
+      if (url.endsWith('/api/v1/assets/platforms')) {
+        return Response.json([platform, k8sPlatform, mixedPlatform]);
+      }
+      if (url.includes('/k8s/pods') && method === 'GET') {
+        return Response.json({
+          namespace: 'prod',
+          items: [{ name: 'web-0', containers: ['app', 'sidecar'] }],
+          total: 1
+        });
+      }
+      if (url.endsWith('/api/v1/workflows/grants/active') && method === 'GET') {
+        return Response.json({ items: [k8sGrant], total: 1 });
+      }
+      if (url.endsWith('/api/v1/sessions/connection-token') && method === 'POST') {
+        return Response.json({
+          connection_token: 'tok-k8s',
+          expires_at: '2026-07-01T00:10:00Z',
+          jit_grant_id: k8sGrant.id,
+          workflow_request_id: request.id,
+          asset_id: k8sGrant.asset_id,
+          account_id: k8sGrant.account_id,
+          protocol: k8sGrant.protocol,
+          action: k8sGrant.action
+        }, { status: 201 });
+      }
+      if (url.endsWith('/api/v1/sessions/') && method === 'POST') {
+        sessionBodies.push(JSON.parse(String(init?.body || '{}')) as Record<string, unknown>);
+        return Response.json({ ...session, id: 'session-k8s', asset_id: '2', account_id: 'deploy', protocol: 'k8s' }, { status: 201 });
+      }
       return fetchMock(input, init);
     });
     history.pushState(null, '', '/assets');
@@ -563,9 +629,197 @@ describe('#t69 host key overlay and connect list', () => {
     await userEvent.click(await screen.findByText('连接'));
     expect(await screen.findByText('生产 SSH 主机')).toBeInTheDocument();
     expect(screen.getByText('bastion')).toBeInTheDocument();
-    expect(screen.queryByText('prod-cluster')).not.toBeInTheDocument();
-    expect(screen.queryByText('连接 k8s')).not.toBeInTheDocument();
-    expect(screen.queryByText('k8s')).not.toBeInTheDocument();
+    expect(screen.getByText('prod-cluster')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: '连接 ssh' })).toHaveAttribute('href', '/workflow');
+    expect(screen.getByRole('button', { name: '连接 k8s' })).toBeInTheDocument();
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+
+    const clusterRow = screen.getByText('prod-cluster').closest('tr');
+    expect(clusterRow).not.toBeNull();
+    await userEvent.click(within(clusterRow as HTMLElement).getByRole('button', { name: '连接' }));
+    const dialog = await screen.findByRole('dialog');
+    expect(within(dialog).getByLabelText('Namespace')).toHaveValue('prod');
+    expect(within(dialog).getByLabelText('Namespace')).toHaveAttribute('readOnly');
+    expect(within(dialog).getByText('选择 Pod')).toBeInTheDocument();
+    expect(within(dialog).getByText('默认容器')).toBeInTheDocument();
+    expect(within(dialog).getByRole('button', { name: '连接' })).toBeDisabled();
+    expect(within(dialog).getByRole('button', { name: '取消' })).toBeInTheDocument();
+
+    fireEvent.mouseDown(within(dialog).getByRole('combobox', { name: 'Pod' }));
+    const podOption = await screen.findByText('web-0', { selector: '.ant-select-item-option-content' });
+    fireEvent.click(podOption);
+    const connectBtn = within(dialog).getByRole('button', { name: '连接' });
+    await waitFor(() => expect(connectBtn).not.toBeDisabled());
+    await userEvent.click(connectBtn);
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+    expect(await screen.findByRole('heading', { name: 'Workflow/JIT 申请审批' })).toBeInTheDocument();
+    await userEvent.click(await screen.findByRole('button', { name: '创建会话' }));
+    await waitFor(() => expect(sessionBodies).toHaveLength(1));
+    expect(sessionBodies[0]).toMatchObject({ protocol: 'k8s', pod: 'web-0' });
+    expect(sessionBodies[0]).not.toHaveProperty('namespace');
+    expect(fetchMock.mock.calls.some((call) => String(call[0]).includes('/api/v1/assets/') && (call[1]?.method ?? 'GET') === 'PATCH')).toBe(false);
+    expect(screen.queryByText('没有权限')).not.toBeInTheDocument();
+    expect(screen.queryByText('越权')).not.toBeInTheDocument();
+  });
+
+  it('shows 没有可执行的 Pod when the namespace has no running pods', async () => {
+    const k8sPlatform = { id: 2, name: 'Kubernetes', category: 'cloud', protocols: '["k8s"]', is_active: true };
+    const k8sAsset = {
+      id: 2,
+      name: 'prod-cluster',
+      address: 'https://k8s.internal:6443',
+      platform_id: 2,
+      port: 443,
+      username: 'deploy',
+      is_active: true,
+      description: '',
+      created_at: '2026-07-01T00:00:00Z',
+      namespace: 'prod',
+      has_server_ca: true
+    };
+    const fetchMock = installFetch();
+    vi.stubGlobal('fetch', async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      const method = init?.method ?? 'GET';
+      if (url.endsWith('/api/v1/assets/') && method === 'GET') {
+        return Response.json([k8sAsset]);
+      }
+      if (url.endsWith('/api/v1/assets/platforms')) {
+        return Response.json([k8sPlatform]);
+      }
+      if (url.includes('/api/v1/assets/2/k8s/pods') && method === 'GET') {
+        return Response.json({ namespace: 'prod', items: [], total: 0 });
+      }
+      return fetchMock(input, init);
+    });
+    history.pushState(null, '', '/assets');
+    render(<App />);
+    await userEvent.click(await screen.findByText('连接'));
+    await userEvent.click(await screen.findByRole('button', { name: /^连接$/ }));
+    const dialog = await screen.findByRole('dialog');
+    await userEvent.click(within(dialog).getByRole('combobox', { name: 'Pod' }));
+    expect(await screen.findByText('没有可执行的 Pod')).toBeInTheDocument();
+    expect(within(dialog).getByRole('button', { name: '连接' })).toBeDisabled();
+  });
+
+  it('does not open the modal when HTTPS or CA is missing', async () => {
+    const k8sPlatform = { id: 2, name: 'Kubernetes', category: 'cloud', protocols: '["k8s"]', is_active: true };
+    const k8sAsset = {
+      id: 2,
+      name: 'prod-cluster',
+      address: 'http://k8s.internal:6443',
+      platform_id: 2,
+      port: 443,
+      username: 'deploy',
+      is_active: true,
+      description: '',
+      created_at: '2026-07-01T00:00:00Z',
+      namespace: 'prod',
+      has_server_ca: false
+    };
+    const fetchMock = installFetch();
+    vi.stubGlobal('fetch', async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      const method = init?.method ?? 'GET';
+      if (url.endsWith('/api/v1/assets/') && method === 'GET') {
+        return Response.json([k8sAsset]);
+      }
+      if (url.endsWith('/api/v1/assets/platforms')) {
+        return Response.json([k8sPlatform]);
+      }
+      if (url.includes('/k8s/pods')) {
+        throw new Error('should not list pods');
+      }
+      return fetchMock(input, init);
+    });
+    history.pushState(null, '', '/assets');
+    render(<App />);
+    await userEvent.click(await screen.findByText('连接'));
+    await userEvent.click(await screen.findByRole('button', { name: '连接' }));
+    expect((await screen.findAllByText('无法连接（需要 HTTPS 和 CA）')).length).toBeGreaterThan(0);
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(screen.queryByText('没有权限')).not.toBeInTheDocument();
+    expect(screen.queryByText('越权')).not.toBeInTheDocument();
+  });
+
+  it('does not open the modal when namespace is missing', async () => {
+    const k8sPlatform = { id: 2, name: 'Kubernetes', category: 'cloud', protocols: '["k8s"]', is_active: true };
+    const k8sAsset = {
+      id: 2,
+      name: 'prod-cluster',
+      address: 'https://k8s.internal:6443',
+      platform_id: 2,
+      port: 443,
+      username: 'deploy',
+      is_active: true,
+      description: '',
+      created_at: '2026-07-01T00:00:00Z',
+      namespace: '',
+      has_server_ca: true
+    };
+    const fetchMock = installFetch();
+    vi.stubGlobal('fetch', async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      const method = init?.method ?? 'GET';
+      if (url.endsWith('/api/v1/assets/') && method === 'GET') {
+        return Response.json([k8sAsset]);
+      }
+      if (url.endsWith('/api/v1/assets/platforms')) {
+        return Response.json([k8sPlatform]);
+      }
+      if (url.includes('/k8s/pods')) {
+        throw new Error('should not list pods');
+      }
+      return fetchMock(input, init);
+    });
+    history.pushState(null, '', '/assets');
+    render(<App />);
+    await userEvent.click(await screen.findByText('连接'));
+    await userEvent.click(await screen.findByRole('button', { name: '连接' }));
+    expect((await screen.findAllByText('无法连接')).length).toBeGreaterThan(0);
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(screen.queryByText('没有权限')).not.toBeInTheDocument();
+    expect(screen.queryByText('越权')).not.toBeInTheDocument();
+  });
+
+  it('does not open the modal when listing pods is overreach', async () => {
+    const k8sPlatform = { id: 2, name: 'Kubernetes', category: 'cloud', protocols: '["k8s"]', is_active: true };
+    const k8sAsset = {
+      id: 2,
+      name: 'prod-cluster',
+      address: 'https://k8s.internal:6443',
+      platform_id: 2,
+      port: 443,
+      username: 'deploy',
+      is_active: true,
+      description: '',
+      created_at: '2026-07-01T00:00:00Z',
+      namespace: 'prod',
+      has_server_ca: true
+    };
+    const fetchMock = installFetch();
+    vi.stubGlobal('fetch', async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      const method = init?.method ?? 'GET';
+      if (url.endsWith('/api/v1/assets/') && method === 'GET') {
+        return Response.json([k8sAsset]);
+      }
+      if (url.endsWith('/api/v1/assets/platforms')) {
+        return Response.json([k8sPlatform]);
+      }
+      if (url.includes('/api/v1/assets/2/k8s/pods') && method === 'GET') {
+        return Response.json({ code: 'K8S_NAMESPACE_FORBIDDEN', message: '无法连接', detail: '无法连接' }, { status: 403 });
+      }
+      return fetchMock(input, init);
+    });
+    history.pushState(null, '', '/assets');
+    render(<App />);
+    await userEvent.click(await screen.findByText('连接'));
+    await userEvent.click(await screen.findByRole('button', { name: '连接' }));
+    expect((await screen.findAllByText('无法连接')).length).toBeGreaterThan(0);
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(screen.queryByText('没有权限')).not.toBeInTheDocument();
+    expect(screen.queryByText('越权')).not.toBeInTheDocument();
   });
 
   it('shows 确认这台主机 for unknown host keys and not the change warning', async () => {

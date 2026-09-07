@@ -12,6 +12,8 @@ class SessionCreateRequest(BaseModel):
     protocol: str = Field(min_length=1, max_length=32)
     connection_token: str = Field(min_length=1)
     jit_grant_id: str = Field(default="", max_length=64)
+    pod: str = Field(default="", max_length=253)
+    container: str = Field(default="", max_length=253)
 
 
 class SessionConnectionTokenRequest(BaseModel):

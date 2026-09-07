@@ -30,6 +30,8 @@ from dataclasses import dataclass, field
 from typing import Any
 from urllib.parse import quote, urlencode
 
+import httpx
+
 from websockets import Subprotocol
 from websockets.asyncio.client import ClientConnection
 from websockets.asyncio.client import connect as ws_connect
@@ -90,6 +92,14 @@ class NamespaceScope:
 
         return namespace in self.namespaces
 
+
+
+@dataclass(frozen=True)
+class K8sPodInfo:
+    """资产单一 namespace 内可 exec 的 Pod 摘要（名称 + 容器名）。"""
+
+    name: str
+    containers: tuple[str, ...] = ()
 
 @dataclass(frozen=True)
 class K8sTarget:
@@ -207,6 +217,110 @@ def _build_ssl_context(target: K8sTarget) -> ssl.SSLContext:
     return context
 
 
+def assert_k8s_https_ca(api_server: str, server_ca: str | None) -> str:
+    """建连 / 列 Pod 前强制 HTTPS + 预置 CA。返回规范化 api_server。"""
+
+    endpoint = (api_server or "").strip()
+    if not endpoint.startswith("https://"):
+        raise K8sChannelError(
+            "K8S_INSECURE_TRANSPORT",
+            "api_server must be an https:// endpoint",
+        )
+    if not (server_ca or "").strip():
+        raise K8sChannelError(
+            "K8S_TLS_CA_MISSING",
+            "target has no trusted API server CA; refusing to trust on first use",
+        )
+    return endpoint
+
+
+def assert_single_namespace(scope: NamespaceScope, namespace: str) -> str:
+    """强制单一授权 namespace；空或越权一律拒绝。"""
+
+    ns = (namespace or "").strip()
+    if not ns:
+        raise K8sChannelError(
+            "K8S_NAMESPACE_MISSING",
+            "asset namespace is required",
+        )
+    if not scope.allows(ns):
+        raise K8sChannelError(
+            "K8S_NAMESPACE_FORBIDDEN",
+            f"namespace {ns!r} is not within the granted scope",
+        )
+    return ns
+
+
+
+async def list_namespaced_pods(
+    *,
+    api_server: str,
+    namespace: str,
+    server_ca: str | None,
+    credential: K8sCredential,
+    scope: NamespaceScope,
+    transport: httpx.AsyncBaseTransport | None = None,
+) -> list[K8sPodInfo]:
+    """只列出资产授权 namespace 内的 Pod，不做集群浏览。
+
+    越权（API Server 403/401）映射为 ``K8S_NAMESPACE_FORBIDDEN``，调用方对外展示「无法连接」。
+    """
+
+    endpoint = assert_k8s_https_ca(api_server, server_ca)
+    ns = assert_single_namespace(scope, namespace)
+    ssl_context = _build_ssl_context(
+        K8sTarget(api_server=endpoint, namespace=ns, pod="_", server_ca=server_ca)
+    )
+    url = f"{endpoint.rstrip('/')}/api/v1/namespaces/{quote(ns, safe='')}/pods"
+    headers = {"Authorization": f"Bearer {credential.token}"}
+    client_kwargs: dict[str, Any] = {"verify": ssl_context, "timeout": 10.0, "headers": headers}
+    if transport is not None:
+        client_kwargs["transport"] = transport
+    try:
+        async with httpx.AsyncClient(**client_kwargs) as client:
+            response = await client.get(url)
+    except ssl.SSLError as exc:
+        raise K8sChannelError("K8S_TLS_HANDSHAKE_FAILED", str(exc)) from exc
+    except httpx.TimeoutException as exc:
+        raise K8sChannelError("K8S_CONNECT_TIMEOUT", "connection timed out") from exc
+    except httpx.HTTPError as exc:
+        raise K8sChannelError("K8S_CONNECT_FAILED", str(exc)) from exc
+    if response.status_code in {401, 403}:
+        raise K8sChannelError(
+            "K8S_NAMESPACE_FORBIDDEN",
+            "namespace is not within the granted scope",
+        )
+    if response.status_code >= 400:
+        raise K8sChannelError("K8S_CONNECT_FAILED", f"list pods rejected: {response.status_code}")
+    try:
+        payload = response.json()
+    except ValueError as exc:
+        raise K8sChannelError("K8S_CONNECT_FAILED", "pod list is not json") from exc
+    items = payload.get("items") if isinstance(payload, dict) else None
+    if not isinstance(items, list):
+        return []
+    pods: list[K8sPodInfo] = []
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        metadata = item.get("metadata") or {}
+        spec = item.get("spec") or {}
+        status = item.get("status") or {}
+        name = str(metadata.get("name") or "").strip()
+        if not name:
+            continue
+        phase = str(status.get("phase") or "")
+        if phase and phase != "Running":
+            continue
+        containers = tuple(
+            str(container.get("name") or "").strip()
+            for container in spec.get("containers") or []
+            if isinstance(container, dict) and str(container.get("name") or "").strip()
+        )
+        pods.append(K8sPodInfo(name=name, containers=containers))
+    return pods
+
+
 class K8sExecChannel:
     """已授权的 K8s ``exec`` 通道。
 
@@ -257,16 +371,8 @@ class K8sExecChannel:
             （``K8S_TLS_CA_MISSING`` / ``K8S_TLS_CA_INVALID``）。
         """
 
-        if not scope.allows(target.namespace):
-            raise K8sChannelError(
-                "K8S_NAMESPACE_FORBIDDEN",
-                f"namespace {target.namespace!r} is not within the granted scope",
-            )
-        if not target.api_server.startswith("https://"):
-            raise K8sChannelError(
-                "K8S_INSECURE_TRANSPORT",
-                "api_server must be an https:// endpoint",
-            )
+        assert_single_namespace(scope, target.namespace)
+        assert_k8s_https_ca(target.api_server, target.server_ca)
         ssl_context = _build_ssl_context(target)
         return cls(
             target,

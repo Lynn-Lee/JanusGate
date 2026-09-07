@@ -530,3 +530,84 @@ async def test_default_assembly_tenant_acl_does_not_exec_k8s(
     assert excinfo.value.code == "K8S_COMMAND_DENIED"
     assert sink.events == []
     assert len(k8s_server.captured) == before
+
+
+
+async def test_list_namespaced_pods_only_current_namespace(monkeypatch) -> None:
+    import httpx
+
+    from app.connectors import k8s_exec as mod
+    from app.connectors.k8s_exec import (
+        K8sChannelError,
+        K8sCredential,
+        NamespaceScope,
+        list_namespaced_pods,
+    )
+
+    monkeypatch.setattr(mod, "_build_ssl_context", lambda target: True)
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.method == "GET"
+        assert str(request.url).endswith("/api/v1/namespaces/prod/pods")
+        assert "kube-system" not in str(request.url)
+        assert request.headers["Authorization"] == "Bearer sa-token"
+        assert "token" not in str(request.url)
+        return httpx.Response(
+            200,
+            json={
+                "items": [
+                    {
+                        "metadata": {"name": "web-0"},
+                        "spec": {"containers": [{"name": "app"}, {"name": "sidecar"}]},
+                        "status": {"phase": "Running"},
+                    },
+                    {
+                        "metadata": {"name": "done"},
+                        "spec": {"containers": [{"name": "app"}]},
+                        "status": {"phase": "Succeeded"},
+                    },
+                ]
+            },
+        )
+
+    pods = await list_namespaced_pods(
+        api_server="https://k8s.internal:6443",
+        namespace="prod",
+        server_ca="-----BEGIN CERTIFICATE-----\nMIIB\n-----END CERTIFICATE-----",
+        credential=K8sCredential(token="sa-token"),
+        scope=NamespaceScope(namespaces=frozenset({"prod"})),
+        transport=httpx.MockTransport(handler),
+    )
+    assert [pod.name for pod in pods] == ["web-0"]
+    assert pods[0].containers == ("app", "sidecar")
+
+
+async def test_list_namespaced_pods_forbidden_is_namespace_forbidden(monkeypatch) -> None:
+    import httpx
+
+    from app.connectors import k8s_exec as mod
+    from app.connectors.k8s_exec import (
+        K8sChannelError,
+        K8sCredential,
+        NamespaceScope,
+        list_namespaced_pods,
+    )
+
+    monkeypatch.setattr(mod, "_build_ssl_context", lambda target: True)
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert "/namespaces/prod/pods" in str(request.url)
+        return httpx.Response(403, json={"kind": "Status", "code": 403})
+
+    with pytest.raises(K8sChannelError) as excinfo:
+        await list_namespaced_pods(
+            api_server="https://k8s.internal:6443",
+            namespace="prod",
+            server_ca="-----BEGIN CERTIFICATE-----\nMIIB\n-----END CERTIFICATE-----",
+            credential=K8sCredential(token="sa-token"),
+            scope=NamespaceScope(namespaces=frozenset({"prod"})),
+            transport=httpx.MockTransport(handler),
+        )
+    assert excinfo.value.code == "K8S_NAMESPACE_FORBIDDEN"
+    assert "越权" not in str(excinfo.value)
+    assert "没有权限" not in str(excinfo.value)

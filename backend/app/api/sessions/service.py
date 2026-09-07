@@ -133,6 +133,8 @@ class ConnectorDispatchRequest(BaseModel):
     asset_id: str
     account_id: str
     protocol: str
+    pod: str = ""
+    container: str = ""
 
 
 class ConnectorScheduler(Protocol):
@@ -601,6 +603,8 @@ class SessionGatewayService:
         client_ip: str = "",
         client_ip_source: str = "direct",
         jit_grant_id: str = "",
+        pod: str = "",
+        container: str = "",
     ) -> SessionRecord:
         now = self.now()
         session = SessionRecord(
@@ -706,6 +710,8 @@ class SessionGatewayService:
                     asset_id=session.asset_id,
                     account_id=session.account_id,
                     protocol=session.protocol,
+                    pod=pod,
+                    container=container,
                 )
             )
             session.connector_session_id = dispatch_result.get("connector_session_id", "")

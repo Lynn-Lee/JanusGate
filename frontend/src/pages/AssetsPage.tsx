@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react';
 import {
+  Alert,
   Button,
   Card,
   DatePicker,
@@ -17,7 +18,7 @@ import {
   Typography
 } from 'antd';
 import type { DataNode } from 'antd/es/tree';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../auth/AuthContext';
 import { ErrorState, LoadingState } from '../components/StatusView';
 import { UserSelect } from '../components/UserSelect';
@@ -55,22 +56,46 @@ function canManageAssets(isSuperuser: boolean, token: string | null): boolean {
   return isSuperuser || permissions.includes('admin');
 }
 
-const HIDDEN_CONNECT_PROTOCOLS = new Set(['k8s', 'kubernetes']);
-
 export function connectProtocolsForPlatform(platform?: Platform | null): string[] {
-  let raw = ['ssh'];
   if (platform?.protocols) {
     try {
       const parsed = JSON.parse(platform.protocols) as unknown;
       if (Array.isArray(parsed) && parsed.length) {
-        raw = parsed.map(String);
+        return parsed.map(String);
       }
     } catch {
-      raw = ['ssh'];
+      return ['ssh'];
     }
   }
-  return raw.filter((protocol) => !HIDDEN_CONNECT_PROTOCOLS.has(protocol.toLowerCase()));
+  return ['ssh'];
 }
+
+export function connectProtocolsForAsset(asset: Asset, platform?: Platform | null): string[] {
+  if (Array.isArray(asset.connect_protocols)) {
+    return asset.connect_protocols;
+  }
+  return connectProtocolsForPlatform(platform);
+}
+
+function isK8sProtocol(protocol: string): boolean {
+  const value = protocol.toLowerCase();
+  return value === 'k8s' || value === 'kubernetes';
+}
+
+export function k8sConnectBlockedCopy(asset: Asset): string | null {
+  const address = (asset.address || '').trim();
+  const lowered = address.toLowerCase();
+  if (!address || lowered.startsWith('http://') || !asset.has_server_ca) {
+    return '无法连接（需要 HTTPS 和 CA）';
+  }
+  if (!(asset.namespace || '').trim()) {
+    return '无法连接';
+  }
+  return null;
+}
+
+type K8sPodItem = { name: string; containers: string[] };
+type K8sPodList = { namespace: string; items: K8sPodItem[]; total: number };
 
 function impactCopy(impact: ConnectImpact): string {
   if (!impact.lost.length) {
@@ -121,18 +146,78 @@ export function AssetsPage() {
 
 function AssetConnectPanel() {
   const { api } = useAuth();
+  const navigate = useNavigate();
   const assets = useApiData(() => api.get<Asset[]>('/api/v1/assets/'), []);
   const platforms = useApiData(() => api.get<Platform[]>('/api/v1/assets/platforms'), []);
   const platformMap = new Map((platforms.data ?? []).map((item) => [item.id, item]));
   const rows = (assets.data ?? []).filter((asset) => {
-    const protocols = connectProtocolsForPlatform(platformMap.get(asset.platform_id));
+    const protocols = connectProtocolsForAsset(asset, platformMap.get(asset.platform_id));
     return protocols.length > 0;
   });
+  const [connectError, setConnectError] = useState('');
+  const [k8sOpen, setK8sOpen] = useState(false);
+  const [k8sLoading, setK8sLoading] = useState(false);
+  const [k8sAsset, setK8sAsset] = useState<Asset | null>(null);
+  const [k8sProtocol, setK8sProtocol] = useState('k8s');
+  const [k8sNamespace, setK8sNamespace] = useState('');
+  const [k8sPods, setK8sPods] = useState<K8sPodItem[]>([]);
+  const [pod, setPod] = useState<string | undefined>();
+  const [container, setContainer] = useState<string | undefined>();
+
+  const openK8sModal = async (asset: Asset, protocol: string) => {
+    setConnectError('');
+    const blocked = k8sConnectBlockedCopy(asset);
+    if (blocked) {
+      setConnectError(blocked);
+      setK8sOpen(false);
+      return;
+    }
+    setK8sLoading(true);
+    try {
+      const accountId = asset.username || 'default';
+      const data = await api.get<K8sPodList>(
+        `/api/v1/assets/${asset.id}/k8s/pods?account_id=${encodeURIComponent(accountId)}`
+      );
+      setK8sAsset(asset);
+      setK8sProtocol(protocol);
+      setK8sNamespace(data.namespace || asset.namespace || '');
+      setK8sPods(data.items ?? []);
+      setPod(undefined);
+      setContainer(undefined);
+      setK8sOpen(true);
+    } catch (err) {
+      const copy = getErrorMessage(err);
+      setConnectError(copy);
+      setK8sOpen(false);
+    } finally {
+      setK8sLoading(false);
+    }
+  };
+
+  const confirmK8s = () => {
+    if (!k8sAsset || !pod) {
+      return;
+    }
+    setK8sOpen(false);
+    navigate('/workflow', {
+      state: {
+        assetId: String(k8sAsset.id),
+        accountId: k8sAsset.username || 'default',
+        protocol: k8sProtocol,
+        pod,
+        container: container || ''
+      }
+    });
+  };
+
+  const selectedPod = k8sPods.find((item) => item.name === pod);
+  const containerOptions = selectedPod?.containers ?? [];
 
   return (
     <Card>
       {assets.loading ? <LoadingState /> : null}
       {assets.error ? <ErrorState message={assets.error} onRetry={assets.reload} /> : null}
+      {connectError ? <Alert type="error" showIcon message={connectError} style={{ marginBottom: 16 }} /> : null}
       {!assets.loading && !assets.error && rows.length === 0 ? (
         <Empty description="没有可连接的资产。" />
       ) : null}
@@ -160,22 +245,33 @@ function AssetConnectPanel() {
             {
               title: '操作',
               render: (_: unknown, record: Asset) => {
-                const protocols = connectProtocolsForPlatform(platformMap.get(record.platform_id));
+                const protocols = connectProtocolsForAsset(record, platformMap.get(record.platform_id));
                 return (
                   <Space>
-                    {protocols.map((protocol) => (
-                      <Link
-                        key={protocol}
-                        to="/workflow"
-                        state={{
-                          assetId: String(record.id),
-                          accountId: record.username || 'default',
-                          protocol
-                        }}
-                      >
-                        <Button type="link">{protocols.length === 1 ? '连接' : `连接 ${protocol}`}</Button>
-                      </Link>
-                    ))}
+                    {protocols.map((protocol) =>
+                      isK8sProtocol(protocol) ? (
+                        <Button
+                          key={protocol}
+                          type="link"
+                          loading={k8sLoading}
+                          onClick={() => void openK8sModal(record, protocol)}
+                        >
+                          {protocols.length === 1 ? '连接' : `连接 ${protocol}`}
+                        </Button>
+                      ) : (
+                        <Link
+                          key={protocol}
+                          to="/workflow"
+                          state={{
+                            assetId: String(record.id),
+                            accountId: record.username || 'default',
+                            protocol
+                          }}
+                        >
+                          <Button type="link">{protocols.length === 1 ? '连接' : `连接 ${protocol}`}</Button>
+                        </Link>
+                      )
+                    )}
                   </Space>
                 );
               }
@@ -183,6 +279,46 @@ function AssetConnectPanel() {
           ]}
         />
       ) : null}
+      <Modal
+        title="连接"
+        open={k8sOpen}
+        onOk={confirmK8s}
+        onCancel={() => setK8sOpen(false)}
+        okText="连接"
+        cancelText="取消"
+        okButtonProps={{ disabled: !pod, autoInsertSpace: false }}
+        cancelButtonProps={{ autoInsertSpace: false }}
+        destroyOnHidden
+      >
+        <Form layout="vertical">
+          <Form.Item label="Namespace" htmlFor="k8s-connect-namespace">
+            <Input id="k8s-connect-namespace" value={k8sNamespace} readOnly />
+          </Form.Item>
+          <Form.Item label="Pod" required htmlFor="k8s-connect-pod">
+            <Select
+              id="k8s-connect-pod"
+              value={pod}
+              placeholder="选择 Pod"
+              onChange={(value) => {
+                setPod(value);
+                setContainer(undefined);
+              }}
+              notFoundContent="没有可执行的 Pod"
+              options={k8sPods.map((item) => ({ label: item.name, value: item.name }))}
+            />
+          </Form.Item>
+          <Form.Item label="容器" htmlFor="k8s-connect-container">
+            <Select
+              id="k8s-connect-container"
+              allowClear
+              value={container}
+              placeholder="默认容器"
+              onChange={(value) => setContainer(value)}
+              options={containerOptions.map((name) => ({ label: name, value: name }))}
+            />
+          </Form.Item>
+        </Form>
+      </Modal>
     </Card>
   );
 }

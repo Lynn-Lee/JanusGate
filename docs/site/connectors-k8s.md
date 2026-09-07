@@ -36,4 +36,4 @@ POST /api/v1/connectors/{connector_id}/session-recordings/{recording_id}/command
 
 - 本切片聚焦一次性命令 exec + 命令审计 + namespace 作用域 + TLS 强校验，暂不实现交互式 PTY（`stdin=true` + `tty=true` + resize 通道）与 `attach`；后续可在同一 `v4.channel.k8s.io` 帧协议上扩展。
 - 短期 token 签发（K8s TokenRequest API，对应 #t68 安全增强项）由凭据保险库侧负责，本通道只消费传入的 token，不负责其签发与轮换。
-- 与会话网关的接线（`session_runtime.py` 的 `ConnectorSessionMode`）沿用 SSH 通道已建立的 `SessionConnectionResolver` + `ConnectorScheduler` 边界。**#t69 生产 resolver 已 QA SHIP**，但仅覆盖 SSH（exec / interactive / sftp）；连接列表隐藏 k8s，本通道不在本次生产装配范围。
+- 与会话网关的接线（`session_runtime.py` 的 `ConnectorSessionMode.K8S`）沿用 SSH 通道已建立的 `SessionConnectionResolver` + `ConnectorScheduler` 边界。**#t72 生产 resolver 已 QA SHIP**：`AssetVaultSessionConnectionResolver` 在 `protocol=k8s` 时从资产读取 API URL、预置 CA、单一 namespace，从建连弹层接收 pod（必选）与 container（可选），并从 Vault 解开 token（仅内存）。HTTPS + CA 缺失一律「无法连接（需要 HTTPS 和 CA）」且不打开弹层；缺 namespace 或 namespace 越权一律「无法连接」，不打开弹层。Pod 不落库。连接列表在 AssetPermission connect + 连接方式 ACL 允许时展示 k8s，沿用现有建连弹层，不是集群浏览器。

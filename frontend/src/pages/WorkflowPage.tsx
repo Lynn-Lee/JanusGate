@@ -14,7 +14,7 @@ type WorkflowFormValues = {
   requested_ttl_seconds: number;
 };
 
-type LocationState = { assetId?: string; accountId?: string; protocol?: string } | null;
+type LocationState = { assetId?: string; accountId?: string; protocol?: string; pod?: string; container?: string } | null;
 
 const HOST_KEY_UNKNOWN_TITLE = '确认这台主机';
 const HOST_KEY_CHANGED_TITLE = '这台主机的密钥变了';
@@ -128,7 +128,12 @@ export function WorkflowPage() {
 
   const createSession = async (grant: JitGrant) => {
     try {
-      const session = await createSessionWithConnectionToken(api, grant);
+      const isK8s = grant.protocol.toLowerCase() === 'k8s' || grant.protocol.toLowerCase() === 'kubernetes';
+      const extras =
+        isK8s && (!state?.assetId || state.assetId === grant.asset_id)
+          ? { pod: state?.pod, container: state?.container }
+          : {};
+      const session = await createSessionWithConnectionToken(api, grant, extras);
       const next = [session, ...cache.read().filter((item) => item.id !== session.id)];
       cache.write(next);
       msg.success('会话已创建');

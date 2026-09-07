@@ -41,6 +41,8 @@ class Asset(Base):
     credential: Mapped[str] = mapped_column(Text, default="")
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     description: Mapped[str] = mapped_column(String(500), default="")
+    namespace: Mapped[str] = mapped_column(String(253), default="")
+    server_ca: Mapped[str] = mapped_column(Text, default="")
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )

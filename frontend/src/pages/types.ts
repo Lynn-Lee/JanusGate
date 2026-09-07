@@ -8,6 +8,9 @@ export type Asset = {
   is_active: boolean;
   description: string;
   created_at: string;
+  namespace?: string;
+  has_server_ca?: boolean;
+  connect_protocols?: string[];
 };
 
 export type Platform = {

@@ -29,12 +29,19 @@ DB_BACKED_GET_ROUTE_ROUTING_INVENTORY = {
     ("GET", "/accounts/"),
     ("GET", "/command-filter-acls/"),
     ("GET", "/command-filter-acls/{acl_id}"),
+    ("GET", "/connect-method-acls/"),
+    ("GET", "/connect-method-acls/{acl_id}"),
+    ("GET", "/login-acls/"),
+    ("GET", "/login-acls/{acl_id}"),
+    ("GET", "/login-asset-acls/"),
+    ("GET", "/login-asset-acls/{acl_id}"),
     ("GET", "/data-masking-rules/"),
     ("GET", "/data-masking-rules/{rule_id}"),
     ("GET", "/admin/license-summary"),
     ("GET", "/accounts/{account_id}/rotations"),
     ("GET", "/assets/"),
     ("GET", "/assets/platforms"),
+    ("GET", "/assets/{asset_id}/k8s/pods"),
     ("GET", "/assets/{asset_id}"),
     ("GET", "/auth/me"),
     ("GET", "/automation/jobs/runs"),
@@ -158,6 +165,7 @@ def test_asset_read_routes_use_read_database_dependency() -> None:
     read_routes = [
         ("GET", "/assets/"),
         ("GET", "/assets/platforms"),
+        ("GET", "/assets/{asset_id}/k8s/pods"),
         ("GET", "/assets/{asset_id}"),
     ]
 
