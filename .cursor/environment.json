@@ -1,0 +1,26 @@
+{
+  "name": "JanusGate",
+  "user": "ubuntu",
+  "build": {
+    "dockerfile": "Dockerfile",
+    "context": ".."
+  },
+  "install": "./.cursor/install.sh",
+  "start": "./.cursor/start.sh",
+  "terminals": [
+    {
+      "name": "backend",
+      "command": "export PATH=\"$HOME/.local/bin:$PATH\"; cd backend && uv run uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload",
+      "description": "JanusGate FastAPI backend on http://localhost:8000 (docs at /docs, health at /health)."
+    },
+    {
+      "name": "frontend",
+      "command": "cd frontend && npm run dev",
+      "description": "JanusGate React/Vite console on http://localhost:5173 (proxies /api and /health to the backend)."
+    }
+  ],
+  "ports": [
+    { "name": "backend", "port": 8000 },
+    { "name": "frontend", "port": 5173 }
+  ]
+}

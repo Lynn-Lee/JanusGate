@@ -1,0 +1,15 @@
+# Build context ignore for the .cursor/ Cloud Agent image (context is the repo
+# root). The image installs no repository source, so excluding heavy, generated,
+# and local-only paths keeps the build context small and fast.
+.git
+**/.venv
+**/node_modules
+**/__pycache__
+**/.pytest_cache
+**/.ruff_cache
+**/.mypy_cache
+frontend/dist
+**/*.tsbuildinfo
+.env
+.env.*
+**/*.log
