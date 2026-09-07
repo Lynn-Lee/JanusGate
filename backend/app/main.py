@@ -20,6 +20,7 @@ from app.api import (
     assets,
     auth,
     automation,
+    oidc,
     connectors,
     notification_deliveries,
     notification_rules,
@@ -70,6 +71,7 @@ register_exception_handlers(app)
 
 app.include_router(auth.router, prefix="/api/v1")
 app.include_router(auth.users_router, prefix="/api/v1")
+app.include_router(oidc.router, prefix="/api/v1")
 app.include_router(accounts.router, prefix="/api/v1")
 app.include_router(account_templates.router, prefix="/api/v1")
 app.include_router(acl.router, prefix="/api/v1")

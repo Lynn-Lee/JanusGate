@@ -14,6 +14,7 @@ from app.models.audit import AuditEventModel
 from app.models.automation import AutomationJobRun
 from app.models.connector import Connector
 from app.models.host_key import AssetHostKeyModel
+from app.models.oidc import OidcProvider
 from app.models.protocol import PlatformProtocolModel, ProtocolModel
 from app.models.rbac import RoleBindingModel, RoleModel, RoleObjectPermissionModel
 from app.models.session import SessionModel
@@ -59,6 +60,7 @@ __all__ = [
     "LoginAssetAclModel",
     "NotificationRule",
     "NodeModel",
+    "OidcProvider",
     "NotificationDelivery",
     "Organization",
     "Platform",

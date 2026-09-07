@@ -31,6 +31,7 @@ type AuthContextValue = {
   isAuthenticated: boolean;
   pendingTwoFa: boolean;
   login: (username: string, password: string) => Promise<LoginOutcome>;
+  completeOidcTicket: (ticket: string) => Promise<LoginOutcome>;
   verifyTwoFa: (totpCode: string) => Promise<void>;
   cancelTwoFa: () => void;
   logout: () => void;
@@ -101,6 +102,31 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return { status: 'authenticated' };
   }, [api]);
 
+  const completeOidcTicket = useCallback(async (ticket: string): Promise<LoginOutcome> => {
+    const result = await api.post<LoginResult>('/api/v1/auth/oidc/exchange', { ticket });
+    if (result.requires_2fa) {
+      if (!result.two_fa_token) {
+        throw new Error('无法登录');
+      }
+      localStorage.removeItem(ACCESS_TOKEN_KEY);
+      localStorage.removeItem(REFRESH_TOKEN_KEY);
+      setToken(null);
+      setUser(null);
+      setTwoFaToken(result.two_fa_token);
+      return { status: 'requires_2fa' };
+    }
+    if (!result.access_token || !result.refresh_token) {
+      throw new Error('无法登录');
+    }
+    localStorage.setItem(ACCESS_TOKEN_KEY, result.access_token);
+    localStorage.setItem(REFRESH_TOKEN_KEY, result.refresh_token);
+    setTwoFaToken('');
+    setToken(result.access_token);
+    const currentUser = await api.get<UserMe>('/api/v1/auth/me');
+    setUser(currentUser);
+    return { status: 'authenticated' };
+  }, [api]);
+
   const verifyTwoFa = useCallback(
     async (totpCode: string) => {
       if (!twoFaToken) {
@@ -132,12 +158,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       isAuthenticated: Boolean(token),
       pendingTwoFa: Boolean(twoFaToken),
       login,
+      completeOidcTicket,
       verifyTwoFa,
       cancelTwoFa,
       logout,
       setUser
     }),
-    [token, user, api, twoFaToken, login, verifyTwoFa, cancelTwoFa, logout]
+    [token, user, api, twoFaToken, login, completeOidcTicket, verifyTwoFa, cancelTwoFa, logout]
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

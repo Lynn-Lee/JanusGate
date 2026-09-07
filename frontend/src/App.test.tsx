@@ -7,6 +7,9 @@ function mockFetch() {
   return vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);
     const method = init?.method ?? 'GET';
+    if (url.endsWith('/api/v1/auth/oidc/login-options')) {
+      return Response.json({ enabled: false, display_name: '' });
+    }
     if (url.endsWith('/api/v1/auth/login') && method === 'POST') {
       return Response.json({ access_token: 'token-1', refresh_token: 'refresh-1', token_type: 'Bearer' });
     }
@@ -64,6 +67,9 @@ describe('JanusGate console app', () => {
     const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
       const method = init?.method ?? 'GET';
+      if (url.endsWith('/api/v1/auth/oidc/login-options')) {
+        return Response.json({ enabled: false, display_name: '' });
+      }
       if (url.endsWith('/api/v1/auth/login') && method === 'POST') {
         return Response.json({
           access_token: '',

@@ -63,8 +63,10 @@ class Settings(BaseSettings):
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
     REFRESH_TOKEN_EXPIRE_DAYS: int = 7
 
-    # ── CORS ──
+    # ── CORS / public URLs ──
     CORS_ORIGINS: list[str] = ["http://localhost:5173", "http://localhost:3000"]
+    FRONTEND_BASE_URL: str = "http://localhost:5173"
+    PUBLIC_API_BASE_URL: str = ""
 
     # ── Rate Limiting ──
     RATE_LIMIT_LOGIN_PER_MINUTE: int = 5

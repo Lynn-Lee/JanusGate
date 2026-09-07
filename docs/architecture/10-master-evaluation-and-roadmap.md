@@ -865,7 +865,7 @@ User ──┬── WorkflowRequest ──── JitGrant
 |---------|------|-------|------|--------|
 | **#t74** | 多级审批工单流 | backend + frontend | **✅ 已完成**：`TicketFlow` / `ApprovalRule` / `TicketStep`（本切片 `asset_grant`）；迁移 `d4e5f6a7b8c9`；每流 1–3 级、每级最多 3 审批人；启用流租户内唯一。`TicketFlowRepository` + 无启用流时保持单级审批；多级全过才签发 Grant、任一级拒绝关单不签发；保留防自审批与对象级步骤审批人校验。`GET/POST/PATCH/DELETE /api/v1/workflows/ticket-flows`；WorkflowPage 步骤进度；设置页「审批流」`TicketFlowPanels` + `UserSelect`。测试 `test_ticket_flow_t74.py` + `mvp-pages.test.tsx`。**asset_grant TicketFlow 多级审批已 QA SHIP**（对应约束：审批与授权签发解耦 / 防自审批）；其余工单类型（登录申请 / 命令复核 / 资产登录复核）可后续切片 | 高 |
 | **#t75** | 通知渠道扩展 | backend | 在 #t47 已有的 WebHook / 通知规则 / 投递队列基础上扩展 IM sender：钉钉 / 飞书 / Lark / 企业微信 / Slack / SMS / 邮件 / 站内信；系统消息订阅。**约束**：沿用 #t47 已建立的脱敏 payload 与 dead-letter 契约 | 中 |
-| **#t76** | 认证源与 MFA 扩展 | architect + security | 认证源：LDAP / OIDC / OAuth2 / SAML2 / CAS / RADIUS / passkey；OAuth2 Provider。MFA：TOTP / 邮件 / SMS / RADIUS / passkey；人脸识别不做。**约束**：强制 PKCE + 完整 state 校验、禁止关闭 SSL 校验与 monkey-patch、回调地址走 `safe_next_url` 白名单（对应关闭 P0#12 / P0#14 / P1#7）。本任务承接 §9.2 #t39 中挂起的 OAuth/OIDC 项 | 高 |
+| **#t76** | 认证源与 MFA 扩展 | architect + security | **✅ 已完成**：`OidcProvider`（租户至多一行）；迁移 `e5f6a7b8c9d0`。`OidcService` discovery + 授权码 + mandatory PKCE (S256) + 完整 state（Redis TTL）；Issuer/IdP 请求强制 HTTPS/`verify=True`（禁止关 SSL / monkey-patch）；`safe_next_url` 拒绝 `//` 开放重定向；仅邮箱绑定已有用户（无账号 →「无法登录」）。`GET/PUT /api/v1/auth/oidc/settings`、`/login-options`、`/start`、`/callback`、`POST /exchange`；设置页 `OidcSettingsCard`、登录页 OIDC 按钮、`AuthContext` ticket 交换。测试 `test_oidc_api.py` + `LoginPage.oidc.test.tsx`。**OIDC 登录已 QA SHIP**（对应关闭 P0#12 / P0#14 / P1#7）；LDAP / OAuth2 / SAML2 / CAS / RADIUS / passkey 与 MFA 扩展可后续切片 | 高 |
 
 **M6：运维与平台治理**
 
@@ -898,14 +898,14 @@ User ──┬── WorkflowRequest ──── JitGrant
 | M2：资产与协议广度 | 3-4 周 | #t66 + #t67 + #t68 | ✅ **3/3 完成** | 依赖 M1 授权模型 |
 | M3：真实连接通道 | 6-8 周 | #t69 + #t70 + #t71 + #t72 | 🟡 #t69/#t72 完成；#t70/#t71 未开始 | 风险最高，#t70 图形通道为其中最重 |
 | M4：账号自动化 | 3-4 周 | #t73 | ✅ **完成** | 依赖 #t69 SSH 通道（前置已满足） |
-| M5：工单、通知、认证源 | 4-5 周 | #t74 + #t75 + #t76 | 🟡 #t74 完成；#t75/#t76 未开始 | 可与 M3 并行 |
+| M5：工单、通知、认证源 | 4-5 周 | #t74 + #t75 + #t76 | 🟡 #t74/#t76 完成；#t75 未开始 | 可与 M3 并行 |
 | M6：运维与平台治理 | 3-4 周 | #t77 + #t78 + #t79 | ⬜ 未开始 | 收口阶段 |
 
 > **周期为规模估算而非承诺**，未考虑团队规模与并行度。M3 的估算不确定性最大，建议在预研切片完成后重估。
 
 > **v2.4 排期修订**：M3 预研切片（#t69）已完成并解除全局单点关键路径，M0 三项前置阻塞项全部关闭；**#t69 / #t72 生产 SessionConnectionResolver 已 QA SHIP**。
 > M3 剩余两项性质已分化——#t71 的 #t65 脱敏依赖已解除，剩协议实现难度；#t70 需外部图形基建，建议独立立项（见其任务行）。
-> 因此后续排序建议为：**#t75 通知渠道扩展** 或 **#t76 认证源与 MFA**（#t66/#t67/#t68、#t69/#t72、**#t73 AccountTemplate / account.verify** 与 **#t74 asset_grant TicketFlow** 已 QA SHIP；#t70 建议独立立项），而非按里程碑编号顺序推进。
+> 因此后续排序建议为：**#t75 通知渠道扩展**（#t66/#t67/#t68、#t69/#t72、**#t73 AccountTemplate / account.verify**、**#t74 asset_grant TicketFlow** 与 **#t76 OIDC 登录** 已 QA SHIP；#t70 建议独立立项），而非按里程碑编号顺序推进。
 
 #### 11.4.5 Phase 6 验收标准
 
@@ -1039,27 +1039,27 @@ P0 级 20 项逐项状态（评估口径：已有代码与测试可证明为关�
 
 | 状态 | 数量 | 条目 |
 |------|------|------|
-| ✅ 已关闭 | 17 | P0#1,2,3,4,5,6,8,9,10,11,18,19,20 + **P0#7,15,16,17（v2.4 新增，由 #t69 关闭）** |
-| 🟡 部分关闭 | 1 | P0#13（架构上无 SuperConnectionToken，但对象级授权待 #t63/#t74 补齐） |
-| ⬜ 未关闭 | 2 | P0#12,14（依赖 SSO 接入 #t76） |
+| ✅ 已关闭 | 19 | P0#1,2,3,4,5,6,8,9,10,11,18,19,20 + **P0#7,15,16,17（v2.4，#t69）** + **P0#12,14（#t76 OIDC 登录）** |
+| 🟡 部分关闭 | 1 | P0#13（架构上无 SuperConnectionToken；对象级授权随 #t63/#t74 推进） |
+| ⬜ 未关闭 | 0 | — |
 
-**P0 完成度：17/20 ≈ 85%。**
+**P0 完成度：19/20 ≈ 95%。**
 
 **v2.4 变更依据**：#t69 交付的 `app/connectors/ssh_channel.py` 基于纯 Python `asyncssh`，不 fork 任何 `ssh`/`sshpass` 子进程，四条约束逐条由 `tests/connectors/test_ssh_channel.py` 断言——
 P0#7 仅协商现代算法白名单（服务端只提供 SHA-1 MAC / CBC 时协商即失败）、P0#15 私钥仅经 `import_private_key` 从内存加载且 `repr` 屏蔽、
 P0#16 凭据作为库调用参数传入且显式关闭 agent / 默认密钥扫描 / 用户 ssh_config、P0#17 `known_hosts` 由预置可信公钥严格构造，未知主机一律拒绝且绝不 TOFU。
 判定为关闭的口径是**代码中不存在不安全路径**（无 sshpass、无 AutoAddPolicy 等价物）。生产 HTTP 装配已接入 `AssetVaultSessionConnectionResolver`（资产注册表 + Vault + 已批准主机密钥，QA SHIP）；测试仍注入 Noop/Fake。
 
-关键观察（v2.4 修订）：剩余未关闭项已从 6 项收敛到 2 项，且**全部集中在 SSO 接入**（OAuth2 state、OIDC 关 SSL 校验），对应 Phase 6 的 #t76。
-v2.3 所述「安全重构的最后 35% 与功能对标的起步是同一批工作」的判断已由 #t69 兑现——该批工作的连接通道部分已完成，剩余仅 SSO 一块。
+关键观察（v2.4 修订 + #t76）：#t69 关闭连接通道侧 P0 后，剩余 SSO 两项（OAuth2 state / OIDC 关 SSL）已由 **#t76 OIDC 登录 QA SHIP** 关闭（强制 PKCE + 完整 state、Issuer HTTPS + `verify=True`、禁止 monkey-patch）。
+v2.3 所述「安全重构的最后 35% 与功能对标的起步是同一批工作」的判断已由 #t69 与 #t76 先后兑现。
 
-P1（15 项）/ P2（18 项）：架构性问题（xpack 侵入、common 大杂烩、4 种并发模型、多 DB 驱动、Django ORM 反模式）已由技术选型天然规避；工程实践问题（测试覆盖、CI 门禁、except:pass、类型注解）已由 §12.1 门禁与 §11.4.3 DoD 持续约束。剩余未关闭项集中在弱密码策略（#t65）与开放重定向（#t76）；其中**命令过滤缺失已由 #t65 的命令过滤 ACL + 命令组关闭**，**登录/资产登录/连接方式 overlay ACL 亦已 SHIP**（判定进 PolicyDecisionService，SSH/K8s/PTY 执行前守卫与交互式登录/连接 overlay 已接线，见 §11.4 #t65 行）。
+P1（15 项）/ P2（18 项）：架构性问题（xpack 侵入、common 大杂烩、4 种并发模型、多 DB 驱动、Django ORM 反模式）已由技术选型天然规避；工程实践问题（测试覆盖、CI 门禁、except:pass、类型注解）已由 §12.1 门禁与 §11.4.3 DoD 持续约束。开放重定向（P1#7）已由 #t76 `safe_next_url` 关闭；剩余未关闭项集中在弱密码策略（#t65/#t79）；其中**命令过滤缺失已由 #t65 的命令过滤 ACL + 命令组关闭**，**登录/资产登录/连接方式 overlay ACL 亦已 SHIP**（判定进 PolicyDecisionService，SSH/K8s/PTY 执行前守卫与交互式登录/连接 overlay 已接线，见 §11.4 #t65 行）。
 
 ### 14.2 功能等价矩阵
 
 | # | JumpServer 功能域 | JanusGate 当前状态 | 缺口 | 纳入目标 | Phase |
 |---|------------------|-------------------|------|----------|-------|
-| 1 | 身份认证 | 🟡 密码 + MFA + API Key + JWT 生命周期管理 | LDAP / OIDC / OAuth2 / SAML2 / CAS / RADIUS / passkey；MFA 仅 TOTP，缺邮件 / SMS / RADIUS | 是 | P1 已有 → **P6 #t76** |
+| 1 | 身份认证 | 🟡 密码 + MFA + API Key + JWT 生命周期管理 + **OIDC 登录（#t76 QA SHIP）** | LDAP / OAuth2 / SAML2 / CAS / RADIUS / passkey；MFA 缺邮件 / SMS / RADIUS | 是 | P1 已有 → **P6 #t76** |
 | 2 | 用户与用户组 | 🟡 `User` 模型 | 用户组、认证源绑定、密码历史、用户偏好 | 是 | **P6 #t63、#t79** |
 | 3 | RBAC 角色权限 | ⬜ 仅 `admin` / `workflow:admin` 字符串判断 | 角色模型、角色绑定、system/org 双 scope、对象级权限、内置角色、菜单权限 | 是 | **P6 #t63** |
 | 4 | 组织 / 多租户 | 🟡 `Organization`/`Team`/`Project` + `scoped_select()` 租户过滤 + 只读页 | 组织级角色绑定、组织切换、跨组织数据边界回归 | 是 | P4 #t42 → **P6 #t63** |
@@ -1107,13 +1107,13 @@ P1（15 项）/ P2（18 项）：架构性问题（xpack 侵入、common 大杂�
 
 | | 安全重构完成度 | 功能替代完成度 |
 |---|---|---|
-| 当前（v2.4） | P0 17/20 ≈ 85% | 0/19 等价，16/19 部分 |
+| 当前（v2.4 + #t76） | P0 19/20 ≈ 95% | 0/19 等价，16/19 部分 |
 | v2.3 时 | P0 13/20 ≈ 65% | 0/19 等价，14/19 部分（原记 13，属统计错误） |
-| 剩余工作的性质 | 2 项 P0 全部依赖 #t76 SSO | 19 个域全部需要 Phase 6 推进 |
+| 剩余工作的性质 | P0 仅余 #13 部分关闭 | 19 个域全部需要 Phase 6 推进 |
 | 原交汇点 | ~~**#t69 真实连接通道**~~——**已于 v2.4 解除**，4 项 P0 已关闭，SSH / K8s 运行时已走通 | |
 
 **结论（v2.4 修订）**：v2.3 判定的全局单点关键路径 #t69 **已解除**。两条路线不再强耦合于同一任务——
-安全侧剩余 2 项 P0 全部收敛到 #t76 SSO；#t65 判定已接到 SSH/K8s/PTY 执行前与交互式登录/资产连接 overlay。功能侧 #t63 RBAC、#t64 资产树与 AssetPermission、#t65 overlay ACL、#t66 资产类型与协议、**#t67 网域与网关 ProxyJump 已 QA SHIP**、**#t68 TokenRequest 已 QA SHIP**、**#t69 / #t72 生产 SessionConnectionResolver 已 QA SHIP**、**#t73 AccountTemplate / account.verify 已 QA SHIP**、**#t74 asset_grant TicketFlow 已 QA SHIP**；下一刀是 #t75 通知渠道或 #t76 认证源/MFA。
+安全侧 P0#12 / P0#14 / P1#7 已由 **#t76 OIDC 登录 QA SHIP** 关闭（强制 PKCE + state、HTTPS/`verify=True`、`safe_next_url`）；#t65 判定已接到 SSH/K8s/PTY 执行前与交互式登录/资产连接 overlay。功能侧 #t63 RBAC、#t64 资产树与 AssetPermission、#t65 overlay ACL、#t66 资产类型与协议、**#t67 网域与网关 ProxyJump 已 QA SHIP**、**#t68 TokenRequest 已 QA SHIP**、**#t69 / #t72 生产 SessionConnectionResolver 已 QA SHIP**、**#t73 AccountTemplate / account.verify 已 QA SHIP**、**#t74 asset_grant TicketFlow 已 QA SHIP**、**#t76 OIDC 登录已 QA SHIP**；下一刀是 #t75 通知渠道扩展。
 
 **表述边界仍然有效**：#t69 的走通只解除了运行时前提，功能替代完成度仍为 **0/19 等价**。
 在 §14.2 矩阵出现第一个 ✅ 之前，「功能替代进度过半」的表述依然不成立；
