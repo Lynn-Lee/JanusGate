@@ -231,6 +231,8 @@ export type Account = {
   template_id?: number | null;
   verify_status?: string;
   last_verify_message_id?: string | null;
+  push_status?: string;
+  last_push_message_id?: string | null;
 };
 
 export type AutomationJobRun = {

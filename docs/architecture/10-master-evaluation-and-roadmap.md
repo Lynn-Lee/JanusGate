@@ -857,7 +857,7 @@ User ──┬── WorkflowRequest ──── JitGrant
 
 | 任务 ID | 任务 | Owner | 范围 | 优先级 |
 |---------|------|-------|------|--------|
-| **#t73** | 账号自动化与账号治理 | backend + security | **✅ 已完成**：`AccountTemplate`（固定 ssh + 默认用户名，租户内唯一名；删模板仅 unlink）；Account `template_id` / `verify_status` / `last_verify_*`；`AccountRisk`（本切片 `verify_failed`）；迁移 `c3d4e5f6a7b8`；`AutomationJobRun.reason`。`account.verify` 入 `ALLOWED_JOB_TYPES`；`AccountVerifyWorkerHandler` Vault unwrap → SSH probe（载荷仅 `account_id`，无凭据经 shell）；`POST /api/v1/account-templates/` CRUD + `POST /api/v1/accounts/{id}/verify` / automation enqueue。设置页「账号模板」、账号页模板选填与校验状态/触发。测试 `test_account_template_api.py` + `test_account_verify_worker.py` + 相关 API/队列/mvp-pages。**AccountTemplate / account.verify 已 QA SHIP**（对应约束：凭据不经 shell / 结构化作业记录）；其余 7 类自动化作业与更广 `AccountRisk` 类型可后续切片 | 高 |
+| **#t73** | 账号自动化与账号治理 | backend + security | **✅ 已完成（持续切片）**：`AccountTemplate`（固定 ssh + 默认用户名，租户内唯一名；删模板仅 unlink）；Account `template_id` / `verify_status` / `last_verify_*` / `push_status` / `last_push_*`；`AccountRisk`（`verify_failed` / `push_failed`）；迁移 `c3d4e5f6a7b8` + `f6a7b8c9d0e1`；`AutomationJobRun.reason`。`account.verify` / `account.push` 入 `ALLOWED_JOB_TYPES`；`AccountVerifyWorkerHandler` Vault unwrap → SSH probe；`AccountPushWorkerHandler` Vault unwrap 目标公钥（OpenSSH 行或私钥导出）+ 同资产特权账号 → 可注入 `SshAccountPusher`（默认 fail-closed）；载荷仅账号 ID，无凭据经 shell/队列。`POST /api/v1/accounts/{id}/verify` / `/{id}/push` + automation enqueue。设置页「账号模板」、账号页模板选填、校验/公钥推送状态与触发。测试 `test_account_template_api.py` + `test_account_verify_worker.py` + `test_account_push_worker.py` + 相关 API/队列/mvp-pages。**AccountTemplate / account.verify / account.push 已落地**（对应约束：凭据不经 shell / 结构化作业记录）；其余 6 类自动化作业与更广 `AccountRisk` 类型可后续切片 | 高 |
 
 **M5：工单、通知与认证源**
 

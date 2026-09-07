@@ -54,6 +54,8 @@ class AccountResponse(BaseModel):
     template_id: int | None = None
     verify_status: str = "unverified"
     last_verify_message_id: str | None = None
+    push_status: str = "unpushed"
+    last_push_message_id: str | None = None
 
 
 class AccountListResponse(BaseModel):
@@ -87,3 +89,16 @@ class AccountVerifyJobResponse(BaseModel):
     status: str
     account_id: int
     verify_status: str
+
+
+class AccountPushRequest(BaseModel):
+    privileged_account_id: int
+
+
+class AccountPushJobResponse(BaseModel):
+    job_id: str
+    job_type: str
+    status: str
+    account_id: int
+    privileged_account_id: int
+    push_status: str

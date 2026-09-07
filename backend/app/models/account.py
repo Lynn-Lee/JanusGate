@@ -60,6 +60,10 @@ class Account(Base):
     verify_status: Mapped[str] = mapped_column(String(20), nullable=False, default="unverified")
     last_verify_message_id: Mapped[str | None] = mapped_column(String(120), nullable=True)
     last_verify_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # #t73 推送状态：unpushed / pushing / success / failed
+    push_status: Mapped[str] = mapped_column(String(20), nullable=False, default="unpushed")
+    last_push_message_id: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    last_push_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
@@ -71,7 +75,7 @@ class Account(Base):
 
 
 class AccountRisk(Base):
-    """#t73 账号风险记录（本切片仅 verify_failed）。"""
+    """#t73 账号风险记录（verify_failed / push_failed）。"""
 
     __tablename__ = "account_risks"
 

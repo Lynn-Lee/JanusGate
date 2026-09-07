@@ -9,6 +9,8 @@ from app.api.account_schemas import (
     TOKEN_TTL_DEFAULT,
     AccountCreate,
     AccountListResponse,
+    AccountPushJobResponse,
+    AccountPushRequest,
     AccountResponse,
     AccountUpdate,
     AccountVerifyJobResponse,
@@ -21,6 +23,7 @@ from app.core.deps import current_user, get_redis
 from app.models.account import Account, AccountTemplate, CredentialRotation
 from app.models.asset import Asset
 from app.models.tenancy import Organization, Project, Team
+from app.services.account_push import PUSH_STATUS_PUSHING
 from app.services.account_verify import VERIFY_STATUS_VERIFYING
 from app.services.automation_worker import AutomationJobQueue, RedisStreamClient
 from app.tenancy.scope import actor_scope_from_user, scoped_select
@@ -172,6 +175,61 @@ async def trigger_account_verify(
     )
 
 
+@router.post(
+    "/{account_id}/push",
+    response_model=AccountPushJobResponse,
+    status_code=status.HTTP_202_ACCEPTED,
+)
+async def trigger_account_push(
+    account_id: int,
+    data: AccountPushRequest,
+    db: AsyncSession = Depends(get_db),
+    queue: AutomationJobQueue = Depends(get_automation_job_queue),
+    user: dict[str, Any] = Depends(current_user),
+) -> AccountPushJobResponse:
+    """手动触发 account.push（SSH 公钥推送）；载荷不含凭据。"""
+
+    _require_account_permission(user, "accounts:write")
+    account = await _get_scoped_account(db=db, user=user, account_id=account_id)
+    if account.protocol.lower() != "ssh":
+        raise HTTPException(status_code=400, detail="仅支持 SSH 账号推送")
+    privileged = await _get_scoped_account(
+        db=db, user=user, account_id=data.privileged_account_id
+    )
+    if privileged.protocol.lower() != "ssh":
+        raise HTTPException(status_code=400, detail="特权账号必须为 SSH")
+    if privileged.asset_id != account.asset_id:
+        raise HTTPException(status_code=400, detail="特权账号须与目标账号同资产")
+    if privileged.id == account.id:
+        raise HTTPException(status_code=400, detail="特权账号不能与目标账号相同")
+    if privileged.status != "active":
+        raise HTTPException(status_code=400, detail="特权账号未激活")
+
+    account.push_status = PUSH_STATUS_PUSHING
+    await db.commit()
+
+    job_id = await queue.enqueue(
+        tenant_id=account.tenant_id,
+        requested_by=str(user.get("id") or ""),
+        job_type="account.push",
+        payload={
+            "account_id": account.id,
+            "privileged_account_id": privileged.id,
+        },
+    )
+    account.last_push_message_id = job_id
+    await db.commit()
+    await db.refresh(account)
+    return AccountPushJobResponse(
+        job_id=job_id,
+        job_type="account.push",
+        status="queued",
+        account_id=account.id,
+        privileged_account_id=privileged.id,
+        push_status=account.push_status,
+    )
+
+
 @router.get("/{account_id}/rotations", response_model=CredentialRotationListResponse)
 async def list_credential_rotations(
     account_id: int,
@@ -304,6 +362,8 @@ def _account_response(account: Account) -> AccountResponse:
         template_id=getattr(account, "template_id", None),
         verify_status=str(getattr(account, "verify_status", None) or "unverified"),
         last_verify_message_id=getattr(account, "last_verify_message_id", None),
+        push_status=str(getattr(account, "push_status", None) or "unpushed"),
+        last_push_message_id=getattr(account, "last_push_message_id", None),
     )
 
 

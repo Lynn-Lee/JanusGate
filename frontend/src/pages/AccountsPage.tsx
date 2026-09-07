@@ -28,6 +28,19 @@ function verifyStatusLabel(status: string | undefined): string {
   }
 }
 
+function pushStatusLabel(status: string | undefined): string {
+  switch (status) {
+    case 'success':
+      return '成功';
+    case 'failed':
+      return '失败';
+    case 'pushing':
+      return '推送中';
+    default:
+      return '未推送';
+  }
+}
+
 function isK8sProtocol(protocol: string): boolean {
   const value = protocol.toLowerCase();
   return value === 'k8s' || value === 'kubernetes';
@@ -63,6 +76,9 @@ export function AccountsPage() {
   const [saving, setSaving] = useState(false);
   const [creating, setCreating] = useState(false);
   const [verifyingIds, setVerifyingIds] = useState<Set<number>>(new Set());
+  const [pushingIds, setPushingIds] = useState<Set<number>>(new Set());
+  const [pushTarget, setPushTarget] = useState<Account | null>(null);
+  const [privilegedAccountId, setPrivilegedAccountId] = useState<number | null>(null);
   const [editForm] = Form.useForm<AccountEditValues>();
   const [createForm] = Form.useForm<AccountCreateValues>();
   const useTokenRequest = Form.useWatch('use_token_request', editForm);
@@ -86,6 +102,23 @@ export function AccountsPage() {
     () => (runs.data?.items ?? []).filter((run) => run.job_type === 'account.verify'),
     [runs.data]
   );
+  const pushRuns = useMemo(
+    () => (runs.data?.items ?? []).filter((run) => run.job_type === 'account.push'),
+    [runs.data]
+  );
+
+  const privilegedOptions = useMemo(() => {
+    if (!pushTarget) return [];
+    return (accounts.data?.items ?? [])
+      .filter(
+        (item) =>
+          item.id !== pushTarget.id &&
+          item.asset_id === pushTarget.asset_id &&
+          isSshProtocol(item.protocol) &&
+          item.status === 'active'
+      )
+      .map((item) => ({ label: `${item.username} (#${item.id})`, value: item.id }));
+  }, [accounts.data, pushTarget]);
 
   useEffect(() => {
     if (!selectedAccountId && accounts.data?.items[0]) {
@@ -123,6 +156,33 @@ export function AccountsPage() {
       setVerifyingIds((prev) => {
         const next = new Set(prev);
         next.delete(account.id);
+        return next;
+      });
+    }
+  };
+
+  const openPushModal = (account: Account) => {
+    setPushTarget(account);
+    setPrivilegedAccountId(null);
+  };
+
+  const confirmPush = async () => {
+    if (!pushTarget || !privilegedAccountId) return;
+    setPushingIds((prev) => new Set(prev).add(pushTarget.id));
+    try {
+      await api.post(`/api/v1/accounts/${pushTarget.id}/push`, {
+        privileged_account_id: privilegedAccountId
+      });
+      toast.success('已开始公钥推送');
+      setPushTarget(null);
+      accounts.reload();
+      runs.reload();
+    } catch (error) {
+      toast.error(getErrorMessage(error));
+    } finally {
+      setPushingIds((prev) => {
+        const next = new Set(prev);
+        next.delete(pushTarget.id);
         return next;
       });
     }
@@ -312,6 +372,31 @@ export function AccountsPage() {
                   </Space>
                 )
               },
+              {
+                title: '推送',
+                dataIndex: 'push_status',
+                render: (value: string | undefined, record: Account) => (
+                  <Space>
+                    <Tag
+                      color={
+                        value === 'success' ? 'green' : value === 'failed' ? 'red' : value === 'pushing' ? 'blue' : 'default'
+                      }
+                    >
+                      {pushStatusLabel(value)}
+                    </Tag>
+                    {isSshProtocol(record.protocol) ? (
+                      <Button
+                        type="link"
+                        size="small"
+                        loading={pushingIds.has(record.id) || record.push_status === 'pushing'}
+                        onClick={() => openPushModal(record)}
+                      >
+                        {pushingIds.has(record.id) || record.push_status === 'pushing' ? '推送中' : '推送公钥'}
+                      </Button>
+                    ) : null}
+                  </Space>
+                )
+              },
               { title: '轮换策略', dataIndex: 'rotation_policy' }
             ]}
           />
@@ -352,7 +437,48 @@ export function AccountsPage() {
             ]}
           />
         </Card>
+
+        <Card title="推送任务">
+          <Table
+            rowKey="message_id"
+            dataSource={pushRuns}
+            pagination={false}
+            size="small"
+            columns={[
+              { title: '类型', dataIndex: 'job_type' },
+              { title: '状态', dataIndex: 'status', render: statusTag },
+              {
+                title: '原因',
+                dataIndex: 'reason',
+                render: (value: string | null | undefined, record: AutomationJobRun) =>
+                  value || record.error_code || '—'
+              },
+              { title: '请求人', dataIndex: 'requested_by' }
+            ]}
+          />
+        </Card>
       </div>
+
+      <Modal
+        title="推送 SSH 公钥"
+        open={Boolean(pushTarget)}
+        onCancel={() => setPushTarget(null)}
+        onOk={() => void confirmPush()}
+        okButtonProps={{ disabled: !privilegedAccountId }}
+        okText="开始推送"
+        destroyOnHidden
+      >
+        <Typography.Paragraph type="secondary">
+          选择同资产上的特权 SSH 账号，将目标账号 Vault 中的公钥写入远端 authorized_keys。载荷不含凭据。
+        </Typography.Paragraph>
+        <Select
+          style={{ width: '100%' }}
+          placeholder="特权账号"
+          value={privilegedAccountId ?? undefined}
+          options={privilegedOptions}
+          onChange={(value) => setPrivilegedAccountId(value)}
+        />
+      </Modal>
 
       <Modal
         title="创建账号"
