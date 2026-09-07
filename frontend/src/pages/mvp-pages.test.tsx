@@ -73,7 +73,18 @@ const account = {
   team_id: 'team-a',
   project_id: 'project-a',
   status: 'active',
-  rotation_policy: 'manual'
+  rotation_policy: 'manual',
+  use_token_request: false,
+  token_ttl_seconds: 900
+};
+const k8sAccount = {
+  ...account,
+  id: 2,
+  username: 'deploy-sa',
+  protocol: 'k8s',
+  secret_id: 'sec_k8s_bootstrap',
+  use_token_request: false,
+  token_ttl_seconds: 900
 };
 const rotation = {
   id: 7,
@@ -154,12 +165,23 @@ function installFetch() {
     if (url.endsWith('/api/v1/tenancy/organizations')) return Response.json({ items: [organization], total: 1 });
     if (url.endsWith('/api/v1/tenancy/teams')) return Response.json({ items: [team], total: 1 });
     if (url.endsWith('/api/v1/tenancy/projects')) return Response.json({ items: [project], total: 1 });
-    if (url.endsWith('/api/v1/accounts/') && method === 'GET') return Response.json({ items: [account], total: 1 });
+    if (url.endsWith('/api/v1/accounts/') && method === 'GET') return Response.json({ items: [account, k8sAccount], total: 2 });
     if (url.endsWith('/api/v1/accounts/1/rotations') && method === 'GET') {
       return Response.json({ items: [rotation], total: 1 });
     }
+    if (url.endsWith('/api/v1/accounts/2/rotations') && method === 'GET') {
+      return Response.json({ items: [], total: 0 });
+    }
     if (url.endsWith('/api/v1/accounts/1/rotations') && method === 'POST') {
       return Response.json({ ...rotation, id: 8, reason: 'console requested rotation' }, { status: 201 });
+    }
+    if (url.endsWith('/api/v1/accounts/1') && method === 'PATCH') {
+      const body = JSON.parse(String(init?.body ?? '{}')) as Record<string, unknown>;
+      return Response.json({ ...account, ...body });
+    }
+    if (url.endsWith('/api/v1/accounts/2') && method === 'PATCH') {
+      const body = JSON.parse(String(init?.body ?? '{}')) as Record<string, unknown>;
+      return Response.json({ ...k8sAccount, ...body });
     }
     if (url.endsWith('/api/v1/ssh-certificate-authorities/') && method === 'GET') {
       return Response.json({ items: [sshCa], total: 1 });
@@ -517,6 +539,40 @@ describe('MVP pages', () => {
         expect.objectContaining({
           method: 'POST',
           body: JSON.stringify({ reason: 'console requested rotation' })
+        })
+      )
+    );
+  });
+
+  it('edits k8s account TokenRequest toggle and TTL only on account form', async () => {
+    const fetchMock = installFetch();
+    vi.stubGlobal('fetch', fetchMock);
+    history.pushState(null, '', '/accounts');
+    render(<App />);
+
+    expect(await screen.findByRole('heading', { name: '账号托管与凭据轮换' })).toBeInTheDocument();
+    expect(screen.getByText('deploy-sa')).toBeInTheDocument();
+    // list has no TokenRequest columns
+    expect(screen.queryByText('开启短期令牌')).not.toBeInTheDocument();
+    expect(screen.queryByText('令牌有效期（秒）')).not.toBeInTheDocument();
+
+    const k8sRow = screen.getByText('deploy-sa').closest('tr');
+    expect(k8sRow).not.toBeNull();
+    await userEvent.click(within(k8sRow as HTMLElement).getByRole('radio'));
+    await userEvent.click(screen.getByRole('button', { name: '编辑账号' }));
+    expect(await screen.findByText('开启短期令牌')).toBeInTheDocument();
+    expect(screen.getByText('开启后，连接使用短期令牌，过期需重新建连。')).toBeInTheDocument();
+    expect(screen.queryByText('令牌有效期（秒）')).not.toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole('switch'));
+    expect(await screen.findByText('令牌有效期（秒）')).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: /确\s*定/ }));
+    await waitFor(() =>
+      expect(fetchMock).toHaveBeenCalledWith(
+        '/api/v1/accounts/2',
+        expect.objectContaining({
+          method: 'PATCH',
+          body: expect.stringContaining('"use_token_request":true')
         })
       )
     );

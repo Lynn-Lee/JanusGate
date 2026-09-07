@@ -55,6 +55,11 @@ _CHANNEL_ERROR = 3
 # K8s streaming exec 使用的 WebSocket 子协议标识（v4：error 通道回传 metav1.Status）。
 V4_CHANNEL_SUBPROTOCOL = "v4.channel.k8s.io"
 
+# #t68 TokenRequest TTL：与 Design/Product 对齐（默认 900，夹紧 60..3600）。
+TOKEN_TTL_DEFAULT = 900
+TOKEN_TTL_MIN = 60
+TOKEN_TTL_MAX = 3600
+
 # 默认以 ``/bin/sh -c`` 包裹操作员命令，对齐 kubectl exec 的常见交互式用法；审计事件
 # 记录的是操作员命令原文，而非包裹后的 argv。
 _DEFAULT_EXEC_SHELL = "/bin/sh"
@@ -319,6 +324,96 @@ async def list_namespaced_pods(
         )
         pods.append(K8sPodInfo(name=name, containers=containers))
     return pods
+
+
+
+def clamp_token_ttl_seconds(value: int | None) -> int:
+    """将 TokenRequest TTL 夹紧到 Design 锁定数：默认 900，范围 60..3600。"""
+
+    if value is None:
+        return TOKEN_TTL_DEFAULT
+    try:
+        ttl = int(value)
+    except (TypeError, ValueError):
+        return TOKEN_TTL_DEFAULT
+    return max(TOKEN_TTL_MIN, min(TOKEN_TTL_MAX, ttl))
+
+
+async def request_service_account_token(
+    *,
+    api_server: str,
+    namespace: str,
+    service_account: str,
+    server_ca: str | None,
+    bootstrap_credential: K8sCredential,
+    expiration_seconds: int,
+    transport: httpx.AsyncBaseTransport | None = None,
+) -> str:
+    """用 Vault bootstrap 凭据调用 K8s TokenRequest，签发仅内存持有的短期会话令牌。
+
+    失败一律抛 ``K8S_TOKEN_REQUEST_FAILED``；调用方不得回退到长期 Vault token。
+    """
+
+    endpoint = assert_k8s_https_ca(api_server, server_ca)
+    ns = (namespace or "").strip()
+    sa = (service_account or "").strip()
+    if not ns or not sa:
+        raise K8sChannelError(
+            "K8S_TOKEN_REQUEST_FAILED",
+            "namespace and service account are required for TokenRequest",
+        )
+    ttl = clamp_token_ttl_seconds(expiration_seconds)
+    ssl_context = _build_ssl_context(
+        K8sTarget(api_server=endpoint, namespace=ns, pod="_", server_ca=server_ca)
+    )
+    url = (
+        f"{endpoint.rstrip('/')}/api/v1/namespaces/{quote(ns, safe='')}"
+        f"/serviceaccounts/{quote(sa, safe='')}/token"
+    )
+    body = {
+        "apiVersion": "authentication.k8s.io/v1",
+        "kind": "TokenRequest",
+        "spec": {"expirationSeconds": ttl},
+    }
+    headers = {
+        "Authorization": f"Bearer {bootstrap_credential.token}",
+        "Content-Type": "application/json",
+    }
+    client_kwargs: dict[str, Any] = {
+        "verify": ssl_context,
+        "timeout": 10.0,
+        "headers": headers,
+    }
+    if transport is not None:
+        client_kwargs["transport"] = transport
+    try:
+        async with httpx.AsyncClient(**client_kwargs) as client:
+            response = await client.post(url, json=body)
+    except ssl.SSLError as exc:
+        raise K8sChannelError("K8S_TOKEN_REQUEST_FAILED", str(exc)) from exc
+    except httpx.TimeoutException as exc:
+        raise K8sChannelError("K8S_TOKEN_REQUEST_FAILED", "connection timed out") from exc
+    except httpx.HTTPError as exc:
+        raise K8sChannelError("K8S_TOKEN_REQUEST_FAILED", str(exc)) from exc
+    if response.status_code >= 400:
+        raise K8sChannelError(
+            "K8S_TOKEN_REQUEST_FAILED",
+            f"TokenRequest rejected: {response.status_code}",
+        )
+    try:
+        payload = response.json()
+    except ValueError as exc:
+        raise K8sChannelError("K8S_TOKEN_REQUEST_FAILED", "TokenRequest response is not json") from exc
+    status_obj = payload.get("status") if isinstance(payload, dict) else None
+    token = ""
+    if isinstance(status_obj, dict):
+        token = str(status_obj.get("token") or "").strip()
+    if not token:
+        raise K8sChannelError(
+            "K8S_TOKEN_REQUEST_FAILED",
+            "TokenRequest response missing status.token",
+        )
+    return token
 
 
 class K8sExecChannel:

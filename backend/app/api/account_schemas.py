@@ -3,6 +3,11 @@ from datetime import datetime
 
 from pydantic import BaseModel, Field
 
+# #t68 Design + Product：TTL 默认 900，API 校验 60..3600（非 86400）。
+TOKEN_TTL_DEFAULT = 900
+TOKEN_TTL_MIN = 60
+TOKEN_TTL_MAX = 3600
+
 
 class AccountCreate(BaseModel):
     asset_id: int
@@ -14,6 +19,19 @@ class AccountCreate(BaseModel):
     project_id: str | None = Field(default=None, min_length=1, max_length=64)
     status: str = Field(default="active", min_length=1, max_length=20)
     rotation_policy: str = Field(default="manual", min_length=1, max_length=40)
+    use_token_request: bool = False
+    token_ttl_seconds: int = Field(default=TOKEN_TTL_DEFAULT, ge=TOKEN_TTL_MIN, le=TOKEN_TTL_MAX)
+
+
+class AccountUpdate(BaseModel):
+    secret_id: str | None = Field(default=None, min_length=1, max_length=120)
+    status: str | None = Field(default=None, min_length=1, max_length=20)
+    rotation_policy: str | None = Field(default=None, min_length=1, max_length=40)
+    organization_id: str | None = Field(default=None, min_length=1, max_length=64)
+    team_id: str | None = Field(default=None, min_length=1, max_length=64)
+    project_id: str | None = Field(default=None, min_length=1, max_length=64)
+    use_token_request: bool | None = None
+    token_ttl_seconds: int | None = Field(default=None, ge=TOKEN_TTL_MIN, le=TOKEN_TTL_MAX)
 
 
 class AccountResponse(BaseModel):
@@ -28,6 +46,8 @@ class AccountResponse(BaseModel):
     project_id: str | None
     status: str
     rotation_policy: str
+    use_token_request: bool = False
+    token_ttl_seconds: int = TOKEN_TTL_DEFAULT
 
 
 class AccountListResponse(BaseModel):

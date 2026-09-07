@@ -1,7 +1,7 @@
 """Phase 4 account custody models."""
 from datetime import datetime
 
-from sqlalchemy import DateTime, ForeignKey, Integer, String, UniqueConstraint, func
+from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, UniqueConstraint, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
@@ -25,6 +25,9 @@ class Account(Base):
     project_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
     status: Mapped[str] = mapped_column(String(20), nullable=False, default="active")
     rotation_policy: Mapped[str] = mapped_column(String(40), nullable=False, default="manual")
+    # #t68 K8s TokenRequest：默认关闭；开启后 Vault 仅提供 bootstrap，会话用短期令牌。
+    use_token_request: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    token_ttl_seconds: Mapped[int] = mapped_column(Integer, nullable=False, default=900)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )

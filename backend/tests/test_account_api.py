@@ -120,6 +120,8 @@ async def test_account_api_creates_and_lists_accounts_with_tenant_scope(
         "project_id": "project-a",
         "status": "active",
         "rotation_policy": "manual",
+        "use_token_request": False,
+        "token_ttl_seconds": 900,
     }
     assert "plaintext" not in created
     assert tenant_a_list.status_code == 200
@@ -307,3 +309,92 @@ async def test_account_rotation_api_respects_project_scope(
     assert in_scope_response.json()["account_id"] == 1
     assert out_of_scope_response.status_code == 404
     assert out_of_scope_response.json()["code"] == "ACCOUNT_NOT_FOUND"
+
+
+@pytest.mark.asyncio
+async def test_account_create_defaults_token_request_off(
+    session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    install_db(session_factory)
+    await seed_inventory_and_tenancy(session_factory)
+    with TestClient(app) as client:
+        install_user(tenant_id="tenant-a", permissions=["admin"])
+        response = client.post(
+            "/api/v1/accounts/",
+            json={
+                "asset_id": 1,
+                "username": "sa",
+                "protocol": "k8s",
+                "secret_id": "sec_k8s",
+            },
+        )
+    assert response.status_code == 201
+    body = response.json()
+    assert body["use_token_request"] is False
+    assert body["token_ttl_seconds"] == 900
+
+
+@pytest.mark.asyncio
+async def test_account_create_rejects_ttl_out_of_range(
+    session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    install_db(session_factory)
+    await seed_inventory_and_tenancy(session_factory)
+    with TestClient(app) as client:
+        install_user(tenant_id="tenant-a", permissions=["admin"])
+        too_low = client.post(
+            "/api/v1/accounts/",
+            json={
+                "asset_id": 1,
+                "username": "sa-low",
+                "protocol": "k8s",
+                "secret_id": "sec_k8s",
+                "token_ttl_seconds": 59,
+            },
+        )
+        too_high = client.post(
+            "/api/v1/accounts/",
+            json={
+                "asset_id": 1,
+                "username": "sa-high",
+                "protocol": "k8s",
+                "secret_id": "sec_k8s",
+                "token_ttl_seconds": 3601,
+            },
+        )
+    assert too_low.status_code == 422
+    assert too_high.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_account_patch_token_request_fields_for_k8s(
+    session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    install_db(session_factory)
+    await seed_inventory_and_tenancy(session_factory)
+    with TestClient(app) as client:
+        install_user(tenant_id="tenant-a", permissions=["admin"])
+        created = client.post(
+            "/api/v1/accounts/",
+            json={
+                "asset_id": 1,
+                "username": "deploy-k8s",
+                "protocol": "k8s",
+                "secret_id": "sec_k8s",
+            },
+        )
+        account_id = created.json()["id"]
+        patched = client.patch(
+            f"/api/v1/accounts/{account_id}",
+            json={"use_token_request": True, "token_ttl_seconds": 1200},
+        )
+        bad_ttl = client.patch(
+            f"/api/v1/accounts/{account_id}",
+            json={"token_ttl_seconds": 86400},
+        )
+    assert patched.status_code == 200
+    body = patched.json()
+    assert body["use_token_request"] is True
+    assert body["token_ttl_seconds"] == 1200
+    assert bad_ttl.status_code == 422
+

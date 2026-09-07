@@ -6,9 +6,11 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.account_schemas import (
+    TOKEN_TTL_DEFAULT,
     AccountCreate,
     AccountListResponse,
     AccountResponse,
+    AccountUpdate,
     CredentialRotationCreate,
     CredentialRotationListResponse,
     CredentialRotationResponse,
@@ -67,8 +69,46 @@ async def create_account(
         project_id=data.project_id,
         status=data.status,
         rotation_policy=data.rotation_policy,
+        use_token_request=bool(data.use_token_request),
+        token_ttl_seconds=int(data.token_ttl_seconds),
     )
     db.add(account)
+    await db.commit()
+    await db.refresh(account)
+    return _account_response(account)
+
+
+
+@router.patch("/{account_id}", response_model=AccountResponse)
+async def update_account(
+    account_id: int,
+    data: AccountUpdate,
+    db: AsyncSession = Depends(get_db),
+    user: dict[str, Any] = Depends(current_user),
+) -> AccountResponse:
+    _require_account_permission(user, "accounts:write")
+    account = await _get_scoped_account(db=db, user=user, account_id=account_id)
+    payload = data.model_dump(exclude_unset=True)
+    if "organization_id" in payload or "team_id" in payload or "project_id" in payload:
+        await _assert_tenant_scope(
+            db=db,
+            tenant_id=account.tenant_id,
+            organization_id=payload.get("organization_id", account.organization_id),
+            team_id=payload.get("team_id", account.team_id),
+            project_id=payload.get("project_id", account.project_id),
+        )
+    for field in (
+        "secret_id",
+        "status",
+        "rotation_policy",
+        "organization_id",
+        "team_id",
+        "project_id",
+        "use_token_request",
+        "token_ttl_seconds",
+    ):
+        if field in payload:
+            setattr(account, field, payload[field])
     await db.commit()
     await db.refresh(account)
     return _account_response(account)
@@ -188,6 +228,10 @@ def _account_response(account: Account) -> AccountResponse:
         project_id=account.project_id,
         status=account.status,
         rotation_policy=account.rotation_policy,
+        use_token_request=bool(getattr(account, "use_token_request", False)),
+        token_ttl_seconds=int(
+            getattr(account, "token_ttl_seconds", None) or TOKEN_TTL_DEFAULT
+        ),
     )
 
 

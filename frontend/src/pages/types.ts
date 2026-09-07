@@ -195,6 +195,8 @@ export type Account = {
   project_id: string | null;
   status: string;
   rotation_policy: string;
+  use_token_request?: boolean;
+  token_ttl_seconds?: number;
 };
 
 export type CredentialRotation = {

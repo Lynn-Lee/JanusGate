@@ -24,7 +24,9 @@ from app.connectors.k8s_exec import (
     NamespaceScope,
     assert_k8s_https_ca,
     assert_single_namespace,
+    clamp_token_ttl_seconds,
     list_namespaced_pods,
+    request_service_account_token,
 )
 from app.connectors.session_runtime import ConnectorSessionMode, SessionConnectionSpec
 from app.connectors.ssh_channel import SshChannelError, SshCredential, SshTarget
@@ -87,6 +89,8 @@ class AssetVaultSessionConnectionResolver:
 
     SSH 走已批准主机密钥（fail-closed，禁止 TOFU）。K8s 走 API URL + 预置 CA +
     单一 namespace（建连前强制，仅资产上的 ns），Bearer token 仅内存持有。
+    账号 ``use_token_request`` 开启时：Vault 仅提供 bootstrap，经 K8s TokenRequest
+    签发短期会话令牌；失败 fail-closed「无法连接」，不回退长期 Vault token。
     Pod 由建连弹层传入，不落库。
     """
 
@@ -98,12 +102,14 @@ class AssetVaultSessionConnectionResolver:
         host_keys: HostKeyTrustStore,
         scanner: HostKeyScanner,
         k8s_pod_lister=list_namespaced_pods,
+        k8s_token_requester=request_service_account_token,
     ) -> None:
         self._session_factory = session_factory
         self._secrets = secrets
         self._host_keys = host_keys
         self._scanner = scanner
         self._k8s_pod_lister = k8s_pod_lister
+        self._k8s_token_requester = k8s_token_requester
 
     async def resolve(self, request: ConnectorDispatchRequest) -> SessionConnectionSpec:
         protocol = request.protocol.lower()
@@ -157,7 +163,10 @@ class AssetVaultSessionConnectionResolver:
                 )
 
         api_server, server_ca, namespace, scope = self._prepare_k8s_target(asset)
-        token = await self._unwrap_secret(request, account)
+        token = await self._k8s_session_token(
+            request, account=account,
+            api_server=api_server, server_ca=server_ca, namespace=namespace,
+        )
         pods = await self._k8s_pod_lister(
             api_server=api_server,
             namespace=namespace,
@@ -332,7 +341,10 @@ class AssetVaultSessionConnectionResolver:
         if not pod:
             raise K8sChannelError("K8S_POD_REQUIRED", K8S_CONNECT_DENIED_COPY)
         container = (request.container or "").strip() or None
-        token = await self._unwrap_secret(request, account)
+        token = await self._k8s_session_token(
+            request, account=account,
+            api_server=api_server, server_ca=server_ca, namespace=namespace,
+        )
         return SessionConnectionSpec(
             mode=ConnectorSessionMode.K8S,
             k8s_target=K8sTarget(
@@ -345,6 +357,37 @@ class AssetVaultSessionConnectionResolver:
             k8s_credential=K8sCredential(token=token),
             k8s_scope=scope,
         )
+
+
+    async def _k8s_session_token(
+        self,
+        request: ConnectorDispatchRequest,
+        *,
+        account: Account,
+        api_server: str,
+        server_ca: str,
+        namespace: str,
+    ) -> str:
+        """解析本会话 K8s Bearer：默认 Vault 长期 token；开启 TokenRequest 则只发短期令牌。"""
+
+        bootstrap = await self._unwrap_secret(request, account)
+        if not bool(getattr(account, "use_token_request", False)):
+            return bootstrap
+        ttl = clamp_token_ttl_seconds(getattr(account, "token_ttl_seconds", None))
+        try:
+            return await self._k8s_token_requester(
+                api_server=api_server,
+                namespace=namespace,
+                service_account=account.username,
+                server_ca=server_ca,
+                bootstrap_credential=K8sCredential(token=bootstrap),
+                expiration_seconds=ttl,
+            )
+        except K8sChannelError as exc:
+            # fail-closed：不回退长期 Vault token；用户侧仅「无法连接」。
+            raise K8sChannelError("K8S_TOKEN_REQUEST_FAILED", K8S_CONNECT_DENIED_COPY) from exc
+        except Exception as exc:
+            raise K8sChannelError("K8S_TOKEN_REQUEST_FAILED", K8S_CONNECT_DENIED_COPY) from exc
 
     async def _unwrap_secret(self, request: ConnectorDispatchRequest, account: Account) -> str:
         try:
