@@ -671,7 +671,7 @@ class WorkflowService:
         now: Callable[[], datetime] | None = None,
         request_id_factory: Callable[[], str] | None = None,
         grant_id_factory: Callable[[], str] | None = None,
-        ticket_flow_loader: Callable[[str], Any] | None = None,
+        ticket_flow_loader: Callable[..., Any] | None = None,
     ) -> None:
         self.store = store or InMemoryWorkflowStore()
         self.audit_sink = audit_sink or NoopAuditSink()
@@ -709,7 +709,7 @@ class WorkflowService:
                 flow = self.ticket_flow_loader(tenant_id)
             if hasattr(flow, "__await__"):
                 flow = await flow
-            return flow
+            return flow if flow is None or isinstance(flow, TicketFlowSnapshot) else None
         return self._enabled_flows.get(f"{tenant_id}:{flow_type}") or (
             self._enabled_flows.get(tenant_id) if flow_type == "asset_grant" else None
         )

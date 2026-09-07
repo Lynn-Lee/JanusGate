@@ -41,10 +41,10 @@ _workflow_audit_sink = WorkflowAuditSink(audit_service)
 _host_key_trust = HostKeyTrustService(session_factory=AsyncSessionLocal)
 
 
-def _ticket_flow_loader(db: AsyncSession):
+def _ticket_flow_loader(db: AsyncSession) -> Any:
     repo = TicketFlowRepository(db)
 
-    async def loader(tenant_id: str, flow_type: str = "asset_grant"):
+    async def loader(tenant_id: str, flow_type: str = "asset_grant") -> Any:
         return await repo.get_enabled_flow(tenant_id=tenant_id, flow_type=flow_type)
 
     return loader

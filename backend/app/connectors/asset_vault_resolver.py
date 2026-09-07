@@ -101,8 +101,8 @@ class AssetVaultSessionConnectionResolver:
         secrets: SessionSecretUnwrapper,
         host_keys: HostKeyTrustStore,
         scanner: HostKeyScanner,
-        k8s_pod_lister=list_namespaced_pods,
-        k8s_token_requester=request_service_account_token,
+        k8s_pod_lister: Callable[..., Awaitable[list[K8sPodInfo]]] = list_namespaced_pods,
+        k8s_token_requester: Callable[..., Awaitable[str]] = request_service_account_token,
     ) -> None:
         self._session_factory = session_factory
         self._secrets = secrets
