@@ -205,6 +205,7 @@ function installFetch() {
     }
     if (url.endsWith('/api/v1/automation/jobs/runs')) return Response.json({ items: [], total: 0 });
     if (url.endsWith('/api/v1/zones/')) return Response.json({ items: [], total: 0 });
+    if (url.includes('/api/v1/workflows/ticket-flows')) return Response.json({ items: [], total: 0 });
     if (url.endsWith('/api/v1/zones/gateway-candidates/')) return Response.json([]);
     return Response.json(session);
   });
@@ -384,6 +385,8 @@ describe('MVP pages', () => {
     );
     expect(await screen.findByText('账号模板')).toBeInTheDocument();
     expect(screen.getByText('还没有账号模板')).toBeInTheDocument();
+    expect(await screen.findByText('审批流')).toBeInTheDocument();
+    expect(screen.getByText('还没有审批流')).toBeInTheDocument();
     expect(await screen.findByText('网域')).toBeInTheDocument();
     expect(screen.getByText('还没有网域')).toBeInTheDocument();
     expect(await screen.findByText('登录 ACL')).toBeInTheDocument();
@@ -962,5 +965,34 @@ describe('#t69 host key overlay and connect list', () => {
     await userEvent.click(await screen.findByRole('button', { name: '创建会话' }));
     expect(await screen.findByText('无法连接')).toBeInTheDocument();
     expect(screen.queryByText('没有权限')).not.toBeInTheDocument();
+  });
+
+  it('shows multi-level progress copy when ticket flow is bound', async () => {
+    const flowRequest = {
+      ...request,
+      id: 'req-flow',
+      ticket_flow_id: 'tf-1',
+      current_level: 1,
+      total_levels: 2,
+      steps: [
+        { id: 'ts-1', level: 1, status: 'pending', approver_user_ids: ['2'] },
+        { id: 'ts-2', level: 2, status: 'not_started', approver_user_ids: ['3'] }
+      ]
+    };
+    const fetchMock = installFetch();
+    vi.stubGlobal('fetch', async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.endsWith('/api/v1/workflows/requests') && (init?.method ?? 'GET') === 'GET') {
+        return Response.json({ items: [flowRequest], total: 1 });
+      }
+      return fetchMock(input, init);
+    });
+    history.pushState(null, '', '/workflow');
+    render(<App />);
+    expect(await screen.findByText('当前：第 1 级 / 共 2 级')).toBeInTheDocument();
+    expect(screen.getByText('第1级·进行中')).toBeInTheDocument();
+    expect(screen.getByText('第2级·未开始')).toBeInTheDocument();
+    expect(screen.getByText(/通\s*过/)).toBeInTheDocument();
+    expect(screen.getByText(/拒\s*绝/)).toBeInTheDocument();
   });
 });

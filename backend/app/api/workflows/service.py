@@ -15,14 +15,19 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.sessions.service import JitGrantSessionBinding
 from app.models.workflow import (
     JitGrantModel,
+    TicketStepModel,
     WorkflowRequestModel,
 )
 from app.models.workflow import (
     JitGrantStatus as SQLAlchemyJitGrantStatus,
 )
 from app.models.workflow import (
+    TicketStepStatus as SQLAlchemyTicketStepStatus,
+)
+from app.models.workflow import (
     WorkflowRequestStatus as SQLAlchemyWorkflowRequestStatus,
 )
+from app.workflows.ticket_flows import TicketFlowSnapshot, step_to_dict
 
 MAX_GRANT_TTL_SECONDS = 86_400
 
@@ -61,6 +66,17 @@ WORKFLOW_TRANSITIONS: dict[WorkflowRequestStatus, set[WorkflowRequestStatus]] = 
 }
 
 
+class TicketStepRecord(BaseModel):
+    id: str = ""
+    level: int
+    status: str = "not_started"
+    approver_user_ids: list[str] = Field(default_factory=list)
+    decided_by_id: str = ""
+    decided_by_username: str = ""
+    decided_at: datetime | None = None
+    decision_reason: str = ""
+
+
 class WorkflowRequestRecord(BaseModel):
     id: str
     tenant_id: str
@@ -83,6 +99,10 @@ class WorkflowRequestRecord(BaseModel):
     approver_username: str = ""
     grant_id: str = ""
     metadata: dict[str, Any] = Field(default_factory=dict)
+    ticket_flow_id: str = ""
+    current_level: int = 0
+    total_levels: int = 0
+    steps: list[TicketStepRecord] = Field(default_factory=list)
 
 
 class JitGrantRecord(BaseModel):
@@ -272,9 +292,13 @@ class SQLAlchemyWorkflowStore:
                 status=SQLAlchemyWorkflowRequestStatus(request.status.value),
                 created_at=request.created_at,
                 metadata_json=json.dumps(request.metadata, sort_keys=True),
+                ticket_flow_id=request.ticket_flow_id,
+                current_level=request.current_level,
+                total_levels=request.total_levels,
             )
             self._session.add(model)
         self._apply_request_record(model, request)
+        await self._sync_steps(request)
         await self._session.flush()
         return await self._request_record(model)
 
@@ -430,6 +454,7 @@ class SQLAlchemyWorkflowStore:
         persisted_grant_id = grant_result.scalars().first()
         if persisted_grant_id:
             grant_id = str(persisted_grant_id)
+        steps = await self._load_steps(model.id, model.tenant_id)
         return WorkflowRequestRecord(
             id=model.id,
             tenant_id=model.tenant_id,
@@ -452,6 +477,10 @@ class SQLAlchemyWorkflowStore:
             approver_username=model.approver_username,
             grant_id=grant_id,
             metadata=_json_dict(model.metadata_json),
+            ticket_flow_id=getattr(model, "ticket_flow_id", "") or "",
+            current_level=int(getattr(model, "current_level", 0) or 0),
+            total_levels=int(getattr(model, "total_levels", 0) or 0),
+            steps=steps,
         )
 
     def _grant_record(self, model: JitGrantModel) -> JitGrantRecord:
@@ -496,6 +525,9 @@ class SQLAlchemyWorkflowStore:
         model.approver_id = request.approver_id
         model.approver_username = request.approver_username
         model.metadata_json = json.dumps(request.metadata, sort_keys=True)
+        model.ticket_flow_id = request.ticket_flow_id
+        model.current_level = request.current_level
+        model.total_levels = request.total_levels
 
     def _apply_grant_record(self, model: JitGrantModel, grant: JitGrantRecord) -> None:
         model.tenant_id = grant.tenant_id
@@ -511,6 +543,58 @@ class SQLAlchemyWorkflowStore:
         model.revoked_at = grant.revoked_at
         model.max_session_ttl_seconds = grant.max_session_ttl_seconds
         model.constraints_json = json.dumps(grant.constraints, sort_keys=True)
+
+    async def _load_steps(self, request_id: str, tenant_id: str) -> list[TicketStepRecord]:
+        result = await self._session.execute(
+            select(TicketStepModel)
+            .where(
+                TicketStepModel.workflow_request_id == request_id,
+                TicketStepModel.tenant_id == tenant_id,
+            )
+            .order_by(TicketStepModel.level.asc())
+        )
+        steps: list[TicketStepRecord] = []
+        for model in result.scalars().all():
+            payload = step_to_dict(model)
+            steps.append(TicketStepRecord(**payload))
+        return steps
+
+    async def _sync_steps(self, request: WorkflowRequestRecord) -> None:
+        if not request.steps and not request.ticket_flow_id:
+            return
+        existing = await self._session.execute(
+            select(TicketStepModel).where(
+                TicketStepModel.workflow_request_id == request.id,
+                TicketStepModel.tenant_id == request.tenant_id,
+            )
+        )
+        by_level = {int(step.level): step for step in existing.scalars().all()}
+        for step in request.steps:
+            model = by_level.get(step.level)
+            if model is None:
+                model = TicketStepModel(
+                    id=step.id or f"ts_{uuid.uuid4().hex}",
+                    tenant_id=request.tenant_id,
+                    workflow_request_id=request.id,
+                    ticket_flow_id=request.ticket_flow_id,
+                    level=step.level,
+                    status=SQLAlchemyTicketStepStatus(step.status),
+                    approver_user_ids_json=json.dumps(step.approver_user_ids, sort_keys=True),
+                    decided_by_id=step.decided_by_id,
+                    decided_by_username=step.decided_by_username,
+                    decided_at=step.decided_at,
+                    decision_reason=step.decision_reason,
+                )
+                self._session.add(model)
+            else:
+                model.status = SQLAlchemyTicketStepStatus(step.status)
+                model.approver_user_ids_json = json.dumps(step.approver_user_ids, sort_keys=True)
+                model.decided_by_id = step.decided_by_id
+                model.decided_by_username = step.decided_by_username
+                model.decided_at = step.decided_at
+                model.decision_reason = step.decision_reason
+                model.ticket_flow_id = request.ticket_flow_id
+
 
 
 def _json_dict(raw: str) -> dict[str, Any]:
@@ -579,6 +663,7 @@ class WorkflowService:
         now: Callable[[], datetime] | None = None,
         request_id_factory: Callable[[], str] | None = None,
         grant_id_factory: Callable[[], str] | None = None,
+        ticket_flow_loader: Callable[[str], Any] | None = None,
     ) -> None:
         self.store = store or InMemoryWorkflowStore()
         self.audit_sink = audit_sink or NoopAuditSink()
@@ -586,6 +671,24 @@ class WorkflowService:
         self.now = now or (lambda: datetime.now(UTC))
         self.request_id_factory = request_id_factory or (lambda: f"wr_{uuid.uuid4().hex}")
         self.grant_id_factory = grant_id_factory or (lambda: f"jg_{uuid.uuid4().hex}")
+        self.ticket_flow_loader = ticket_flow_loader
+        self._enabled_flows: dict[str, TicketFlowSnapshot] = {}
+
+    def set_enabled_ticket_flow(self, tenant_id: str, flow: TicketFlowSnapshot | None) -> None:
+        """Test helper: bind an enabled asset_grant flow for a tenant."""
+
+        if flow is None:
+            self._enabled_flows.pop(tenant_id, None)
+        else:
+            self._enabled_flows[tenant_id] = flow
+
+    async def _resolve_enabled_flow(self, tenant_id: str) -> TicketFlowSnapshot | None:
+        if self.ticket_flow_loader is not None:
+            flow = self.ticket_flow_loader(tenant_id)
+            if hasattr(flow, "__await__"):
+                flow = await flow
+            return flow
+        return self._enabled_flows.get(tenant_id)
 
     async def create_request(
         self,
@@ -632,6 +735,25 @@ class WorkflowService:
             raise PermissionError("WORKFLOW_REQUESTER_MISMATCH")
         self._transition(request, WorkflowRequestStatus.PENDING)
         request.submitted_at = self.now()
+        flow = await self._resolve_enabled_flow(tenant_id)
+        if flow is not None and flow.levels:
+            request.ticket_flow_id = flow.id
+            request.total_levels = flow.level_count
+            request.current_level = 1
+            request.steps = [
+                TicketStepRecord(
+                    id=f"ts_{uuid.uuid4().hex}",
+                    level=level.level,
+                    status="pending" if level.level == 1 else "not_started",
+                    approver_user_ids=list(level.approver_user_ids),
+                )
+                for level in flow.levels
+            ]
+        else:
+            request.ticket_flow_id = ""
+            request.current_level = 0
+            request.total_levels = 0
+            request.steps = []
         await self.store.save_request(request)
         await self._publish(
             "workflow.request.submitted",
@@ -649,11 +771,79 @@ class WorkflowService:
         decision_reason: str,
         grant_ttl_seconds: int,
     ) -> WorkflowRequestRecord:
-        self._require_approve_permission(actor)
         self._validate_ttl(grant_ttl_seconds)
         request = await self._get_request_for_tenant(request_id, str(actor.get("tenant_id", "default")))
         if request.requester_id == str(actor["id"]):
             raise PermissionError("SELF_APPROVAL_NOT_ALLOWED")
+        if request.total_levels > 0 and request.ticket_flow_id:
+            return await self._approve_multi_level(
+                request,
+                actor=actor,
+                decision_reason=decision_reason,
+                grant_ttl_seconds=grant_ttl_seconds,
+            )
+        self._require_approve_permission(actor)
+        return await self._finalize_approval(
+            request,
+            actor=actor,
+            decision_reason=decision_reason,
+            grant_ttl_seconds=grant_ttl_seconds,
+        )
+
+    async def _approve_multi_level(
+        self,
+        request: WorkflowRequestRecord,
+        *,
+        actor: dict[str, Any],
+        decision_reason: str,
+        grant_ttl_seconds: int,
+    ) -> WorkflowRequestRecord:
+        if request.status is not WorkflowRequestStatus.PENDING:
+            raise ValueError(f"INVALID_WORKFLOW_TRANSITION:{request.status}->{WorkflowRequestStatus.APPROVED}")
+        current = next((step for step in request.steps if step.level == request.current_level), None)
+        if current is None or current.status != "pending":
+            raise ValueError("TICKET_STEP_NOT_PENDING")
+        actor_id = str(actor["id"])
+        if actor_id not in {str(uid) for uid in current.approver_user_ids}:
+            raise PermissionError("TICKET_STEP_APPROVER_MISMATCH")
+        now = self.now()
+        current.status = "approved"
+        current.decided_by_id = actor_id
+        current.decided_by_username = str(actor.get("username", ""))
+        current.decided_at = now
+        current.decision_reason = decision_reason
+        request.approver_id = actor_id
+        request.approver_username = str(actor.get("username", ""))
+        request.decision_reason = decision_reason
+        if request.current_level < request.total_levels:
+            request.current_level += 1
+            nxt = next((step for step in request.steps if step.level == request.current_level), None)
+            if nxt is not None:
+                nxt.status = "pending"
+            await self.store.save_request(request)
+            await self._publish(
+                "workflow.request.step_approved",
+                request,
+                decision_reason=decision_reason,
+                actor=actor,
+            )
+            await self.store.commit()
+            return request
+        return await self._finalize_approval(
+            request,
+            actor=actor,
+            decision_reason=decision_reason,
+            grant_ttl_seconds=grant_ttl_seconds,
+        )
+
+    async def _finalize_approval(
+        self,
+        request: WorkflowRequestRecord,
+        *,
+        actor: dict[str, Any],
+        decision_reason: str,
+        grant_ttl_seconds: int,
+    ) -> WorkflowRequestRecord:
         self._transition(request, WorkflowRequestStatus.APPROVED)
         now = self.now()
         grant = JitGrantRecord(
@@ -704,12 +894,33 @@ class WorkflowService:
         actor: dict[str, Any],
         decision_reason: str,
     ) -> WorkflowRequestRecord:
-        self._require_approve_permission(actor)
         if not decision_reason:
             raise ValueError("DECISION_REASON_REQUIRED")
         request = await self._get_request_for_tenant(request_id, str(actor.get("tenant_id", "default")))
         if request.requester_id == str(actor["id"]):
             raise PermissionError("SELF_APPROVAL_NOT_ALLOWED")
+        if request.total_levels > 0 and request.ticket_flow_id:
+            if request.status is not WorkflowRequestStatus.PENDING:
+                raise ValueError(
+                    f"INVALID_WORKFLOW_TRANSITION:{request.status}->{WorkflowRequestStatus.REJECTED}"
+                )
+            current = next((step for step in request.steps if step.level == request.current_level), None)
+            if current is None or current.status != "pending":
+                raise ValueError("TICKET_STEP_NOT_PENDING")
+            actor_id = str(actor["id"])
+            if actor_id not in {str(uid) for uid in current.approver_user_ids}:
+                raise PermissionError("TICKET_STEP_APPROVER_MISMATCH")
+            now = self.now()
+            current.status = "rejected"
+            current.decided_by_id = actor_id
+            current.decided_by_username = str(actor.get("username", ""))
+            current.decided_at = now
+            current.decision_reason = decision_reason
+            for step in request.steps:
+                if step.level > request.current_level and step.status == "not_started":
+                    step.status = "not_started"
+        else:
+            self._require_approve_permission(actor)
         self._transition(request, WorkflowRequestStatus.REJECTED)
         request.decided_at = self.now()
         request.decision_reason = decision_reason

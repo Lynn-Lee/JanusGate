@@ -37,6 +37,17 @@ export type Platform = {
   is_active: boolean;
 };
 
+export type TicketStep = {
+  id?: string;
+  level: number;
+  status: string;
+  approver_user_ids: string[];
+  decided_by_id?: string;
+  decided_by_username?: string;
+  decided_at?: string | null;
+  decision_reason?: string;
+};
+
 export type WorkflowRequest = {
   id: string;
   tenant_id: string;
@@ -59,6 +70,19 @@ export type WorkflowRequest = {
   approver_username: string;
   grant_id: string;
   metadata: Record<string, unknown>;
+  ticket_flow_id?: string;
+  current_level?: number;
+  total_levels?: number;
+  steps?: TicketStep[];
+};
+
+export type TicketFlow = {
+  id: string;
+  name: string;
+  flow_type: string;
+  enabled: boolean;
+  level_count: number;
+  levels: Array<{ level: number; approver_user_ids: string[] }>;
 };
 
 export type JitGrant = {

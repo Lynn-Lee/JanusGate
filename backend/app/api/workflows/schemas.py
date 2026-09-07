@@ -7,7 +7,13 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
-from app.api.workflows.service import JitGrantRecord, WorkflowRequestRecord, WorkflowRequestStatus
+from app.api.workflows.service import (
+    JitGrantRecord,
+    TicketStepRecord,
+    WorkflowRequestRecord,
+    WorkflowRequestStatus,
+)
+from app.workflows.ticket_flows import TicketFlowSnapshot
 from app.models.workflow import ApprovalPolicyModel, ApproverMode
 
 
@@ -95,6 +101,21 @@ class WorkflowRevokeRequest(BaseModel):
     reason: str = Field(default="revoked", min_length=1, max_length=500)
 
 
+class TicketStepResponse(BaseModel):
+    id: str = ""
+    level: int
+    status: str
+    approver_user_ids: list[str]
+    decided_by_id: str = ""
+    decided_by_username: str = ""
+    decided_at: datetime | None = None
+    decision_reason: str = ""
+
+    @classmethod
+    def from_record(cls, record: TicketStepRecord) -> TicketStepResponse:
+        return cls(**record.model_dump())
+
+
 class WorkflowRequestResponse(BaseModel):
     id: str
     tenant_id: str
@@ -117,10 +138,65 @@ class WorkflowRequestResponse(BaseModel):
     approver_username: str
     grant_id: str
     metadata: dict[str, Any]
+    ticket_flow_id: str = ""
+    current_level: int = 0
+    total_levels: int = 0
+    steps: list[TicketStepResponse] = []
 
     @classmethod
     def from_record(cls, record: WorkflowRequestRecord) -> WorkflowRequestResponse:
-        return cls(**record.model_dump())
+        data = record.model_dump()
+        data["steps"] = [TicketStepResponse.from_record(step) for step in record.steps]
+        return cls(**data)
+
+
+class TicketFlowLevelInput(BaseModel):
+    approver_user_ids: list[str] = Field(min_length=1, max_length=3)
+
+
+class TicketFlowCreate(BaseModel):
+    name: str = Field(min_length=1, max_length=100)
+    enabled: bool = False
+    levels: list[TicketFlowLevelInput] = Field(min_length=1, max_length=3)
+
+
+class TicketFlowUpdate(BaseModel):
+    name: str = Field(min_length=1, max_length=100)
+    enabled: bool = False
+    levels: list[TicketFlowLevelInput] = Field(min_length=1, max_length=3)
+
+
+class TicketFlowLevelResponse(BaseModel):
+    level: int
+    approver_user_ids: list[str]
+
+
+class TicketFlowResponse(BaseModel):
+    id: str
+    name: str
+    flow_type: str
+    enabled: bool
+    level_count: int
+    levels: list[TicketFlowLevelResponse]
+
+    @classmethod
+    def from_snapshot(cls, flow: TicketFlowSnapshot) -> TicketFlowResponse:
+        return cls(
+            id=flow.id,
+            name=flow.name,
+            flow_type=flow.flow_type,
+            enabled=flow.enabled,
+            level_count=flow.level_count,
+            levels=[
+                TicketFlowLevelResponse(level=item.level, approver_user_ids=item.approver_user_ids)
+                for item in flow.levels
+            ],
+        )
+
+
+class TicketFlowListResponse(BaseModel):
+    items: list[TicketFlowResponse]
+    total: int
 
 
 class WorkflowRequestListResponse(BaseModel):

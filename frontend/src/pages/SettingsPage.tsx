@@ -6,6 +6,7 @@ import { useAuth } from '../auth/AuthContext';
 import { ErrorState, LoadingState } from '../components/StatusView';
 import { UserSelect, type DirectoryUser } from '../components/UserSelect';
 import { getErrorMessage, useApiData, useApiMessage } from './pageUtils';
+import { TicketFlowPanels } from './settings/TicketFlowPanels';
 import type { AccountTemplate, Asset, AssetNode, GatewayCandidate, ListResponse, Zone } from './types';
 
 type Health = { status: string; version?: string };
@@ -111,6 +112,15 @@ function canWriteAcls(isSuperuser: boolean, permissions: string[]): boolean {
   return isSuperuser || permissions.includes('admin') || permissions.includes('acl:write');
 }
 
+function canReadTicketFlows(isSuperuser: boolean, permissions: string[]): boolean {
+  return isSuperuser || permissions.includes('admin') || permissions.includes('workflow:admin');
+}
+
+function canWriteTicketFlows(isSuperuser: boolean, permissions: string[]): boolean {
+  return isSuperuser || permissions.includes('admin') || permissions.includes('workflow:admin');
+}
+
+
 function actionLabel(action: OverlayAction): string {
   return action === 'accept' ? '允许' : '拒绝';
 }
@@ -149,6 +159,8 @@ export function SettingsPage() {
   const writeOverlayAcls = canWriteAcls(Boolean(user?.is_superuser), permissions);
   const showAccountTemplates = canReadAccountTemplates(Boolean(user?.is_superuser), permissions);
   const writeAccountTemplates = canWriteAccountTemplates(Boolean(user?.is_superuser), permissions);
+  const showTicketFlows = canReadTicketFlows(Boolean(user?.is_superuser), permissions);
+  const writeTicketFlows = canWriteTicketFlows(Boolean(user?.is_superuser), permissions);
 
   const saveLicenseConfig = async (values: LicenseConfigForm) => {
     setLicenseSubmitting(true);
@@ -289,6 +301,7 @@ export function SettingsPage() {
           </Descriptions>
         </Card>
         {showAccountTemplates ? <AccountTemplatePanels canWrite={writeAccountTemplates} /> : null}
+        {showTicketFlows ? <TicketFlowPanels canWrite={writeTicketFlows} /> : null}
         {showOverlayAcls ? <ZonePanels canWrite={writeOverlayAcls} /> : null}
         {showOverlayAcls ? <OverlayAclPanels canWrite={writeOverlayAcls} /> : null}
       </div>

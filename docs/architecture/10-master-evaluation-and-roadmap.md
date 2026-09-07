@@ -863,7 +863,7 @@ User ──┬── WorkflowRequest ──── JitGrant
 
 | 任务 ID | 任务 | Owner | 范围 | 优先级 |
 |---------|------|-------|------|--------|
-| **#t74** | 多级审批工单流 | backend + frontend | 审批流模板（按工单类型 + 审批级数）+ 分级审批规则 + 工单步骤状态机；工单类型对标：资产授权申请 / 登录申请 / 命令复核 / 资产登录复核。与现有 #t48 审批策略 DSL 的关系：DSL 决定**是否需要审批**，工单流决定**由谁按什么顺序审批**，二者串联不重复。**约束**：审批步骤与授权签发解耦，保留防自审批与对象级校验（对应关闭 P0#13） | 高 |
+| **#t74** | 多级审批工单流 | backend + frontend | **✅ 已完成**：`TicketFlow` / `ApprovalRule` / `TicketStep`（本切片 `asset_grant`）；迁移 `d4e5f6a7b8c9`；每流 1–3 级、每级最多 3 审批人；启用流租户内唯一。`TicketFlowRepository` + 无启用流时保持单级审批；多级全过才签发 Grant、任一级拒绝关单不签发；保留防自审批与对象级步骤审批人校验。`GET/POST/PATCH/DELETE /api/v1/workflows/ticket-flows`；WorkflowPage 步骤进度；设置页「审批流」`TicketFlowPanels` + `UserSelect`。测试 `test_ticket_flow_t74.py` + `mvp-pages.test.tsx`。**asset_grant TicketFlow 多级审批已 QA SHIP**（对应约束：审批与授权签发解耦 / 防自审批）；其余工单类型（登录申请 / 命令复核 / 资产登录复核）可后续切片 | 高 |
 | **#t75** | 通知渠道扩展 | backend | 在 #t47 已有的 WebHook / 通知规则 / 投递队列基础上扩展 IM sender：钉钉 / 飞书 / Lark / 企业微信 / Slack / SMS / 邮件 / 站内信；系统消息订阅。**约束**：沿用 #t47 已建立的脱敏 payload 与 dead-letter 契约 | 中 |
 | **#t76** | 认证源与 MFA 扩展 | architect + security | 认证源：LDAP / OIDC / OAuth2 / SAML2 / CAS / RADIUS / passkey；OAuth2 Provider。MFA：TOTP / 邮件 / SMS / RADIUS / passkey；人脸识别不做。**约束**：强制 PKCE + 完整 state 校验、禁止关闭 SSL 校验与 monkey-patch、回调地址走 `safe_next_url` 白名单（对应关闭 P0#12 / P0#14 / P1#7）。本任务承接 §9.2 #t39 中挂起的 OAuth/OIDC 项 | 高 |
 
@@ -898,14 +898,14 @@ User ──┬── WorkflowRequest ──── JitGrant
 | M2：资产与协议广度 | 3-4 周 | #t66 + #t67 + #t68 | ✅ **3/3 完成** | 依赖 M1 授权模型 |
 | M3：真实连接通道 | 6-8 周 | #t69 + #t70 + #t71 + #t72 | 🟡 #t69/#t72 完成；#t70/#t71 未开始 | 风险最高，#t70 图形通道为其中最重 |
 | M4：账号自动化 | 3-4 周 | #t73 | ✅ **完成** | 依赖 #t69 SSH 通道（前置已满足） |
-| M5：工单、通知、认证源 | 4-5 周 | #t74 + #t75 + #t76 | ⬜ 未开始 | 可与 M3 并行 |
+| M5：工单、通知、认证源 | 4-5 周 | #t74 + #t75 + #t76 | 🟡 #t74 完成；#t75/#t76 未开始 | 可与 M3 并行 |
 | M6：运维与平台治理 | 3-4 周 | #t77 + #t78 + #t79 | ⬜ 未开始 | 收口阶段 |
 
 > **周期为规模估算而非承诺**，未考虑团队规模与并行度。M3 的估算不确定性最大，建议在预研切片完成后重估。
 
 > **v2.4 排期修订**：M3 预研切片（#t69）已完成并解除全局单点关键路径，M0 三项前置阻塞项全部关闭；**#t69 / #t72 生产 SessionConnectionResolver 已 QA SHIP**。
 > M3 剩余两项性质已分化——#t71 的 #t65 脱敏依赖已解除，剩协议实现难度；#t70 需外部图形基建，建议独立立项（见其任务行）。
-> 因此后续排序建议为：**M5 工单/通知/认证源**（#t66/#t67/#t68、#t69/#t72 与 **#t73 AccountTemplate / account.verify** 已 QA SHIP；#t70 建议独立立项），而非按里程碑编号顺序推进。
+> 因此后续排序建议为：**#t75 通知渠道扩展** 或 **#t76 认证源与 MFA**（#t66/#t67/#t68、#t69/#t72、**#t73 AccountTemplate / account.verify** 与 **#t74 asset_grant TicketFlow** 已 QA SHIP；#t70 建议独立立项），而非按里程碑编号顺序推进。
 
 #### 11.4.5 Phase 6 验收标准
 
@@ -1070,7 +1070,7 @@ P1（15 项）/ P2（18 项）：架构性问题（xpack 侵入、common 大杂�
 | 9 | 会话网关 | 🟡 会话生命周期 + 策略校验 + 短期 connection token + grant 绑定 + **会话已持久化** + SSH/K8s 真实通道 + **生产 `AssetVaultSessionConnectionResolver`（QA SHIP）** | RDP/VNC/DB 通道、会话共享与监控、端点路由；连接列表展示 k8s（#t72 建连弹层选 Pod） | 是 | P1 已有 → **P6 #t62、#t69-72、#t78** |
 | 10 | 会话录制与命令检索 | 🟡 录制元数据 + 命令事件 + 全文检索 + 只读回放时间线 | 录像本体采集与回放、多存储后端（S3/OSS/ES） | 是 | P4 #t46 → **P6 #t70、#t78** |
 | 11 | 连接组件 / 终端 | 🟡 Connector Registry + 心跳租约 + mTLS 指纹 + attestation + key rotation + SDK + **SSH/SFTP/PTY 与 K8s exec 真实通道** + #t65 执行前守卫 + **生产 `AssetVaultSessionConnectionResolver`** | RDP / VNC / 数据库协议实现；连接列表展示 k8s（#t72 建连弹层选 Pod） | 是 | P4 #t45 → **P6 #t69-72** |
-| 12 | 工单与审批 | 🟡 JIT 申请/审批/Grant 状态机 + 审批策略 DSL + 灰度 + 版本回滚 | 多级审批流程、审批规则分级、工单类型（命令复核 / 资产登录复核等） | 是 | P2 已有 / P4 #t48 → **P6 #t74** |
+| 12 | 工单与审批 | 🟡 JIT 申请/审批/Grant 状态机 + 审批策略 DSL + 灰度 + 版本回滚 + **`TicketFlow` / `TicketStep` 多级审批（#t74 asset_grant QA SHIP）** | 其余工单类型（登录申请 / 命令复核 / 资产登录复核）、更广审批规则扩展 | 是 | P2 已有 / P4 #t48 → **P6 #t74** |
 | 13 | 审计 | 🟡 统一审计事件 + **已持久化 append-only** + 库层强制有序 hash chain + SIEM + 合规报表 + WORM 归档 | 分类日志（操作/活动/文件传输/改密/在线会话/作业）；#t78 文件传输日志端点未建 | 是 | P1 已有 → **P6 #t61、#t78** |
 | 14 | 通知 | 🟡 WebHook endpoint + 通知规则 + 投递队列 + 重试/死信 + HTTPS sender | IM 渠道（钉钉/飞书/Lark/企微/Slack）、SMS、邮件、站内信、消息订阅 | 是 | P4 #t47 → **P6 #t75** |
 | 15 | 作业中心 | 🟡 JSON-only 队列 + worker + Ansible runner + 执行记录 | 作业/Playbook 管理模型、临时命令、周期任务、参数化、执行身份策略 | 是 | P4 #t52 → **P6 #t77** |
@@ -1113,7 +1113,7 @@ P1（15 项）/ P2（18 项）：架构性问题（xpack 侵入、common 大杂�
 | 原交汇点 | ~~**#t69 真实连接通道**~~——**已于 v2.4 解除**，4 项 P0 已关闭，SSH / K8s 运行时已走通 | |
 
 **结论（v2.4 修订）**：v2.3 判定的全局单点关键路径 #t69 **已解除**。两条路线不再强耦合于同一任务——
-安全侧剩余 2 项 P0 全部收敛到 #t76 SSO；#t65 判定已接到 SSH/K8s/PTY 执行前与交互式登录/资产连接 overlay。功能侧 #t63 RBAC、#t64 资产树与 AssetPermission、#t65 overlay ACL、#t66 资产类型与协议、**#t67 网域与网关 ProxyJump 已 QA SHIP**、**#t68 TokenRequest 已 QA SHIP**、**#t69 / #t72 生产 SessionConnectionResolver 已 QA SHIP**、**#t73 AccountTemplate / account.verify 已 QA SHIP**；下一刀是 M5 工单/通知/认证源。
+安全侧剩余 2 项 P0 全部收敛到 #t76 SSO；#t65 判定已接到 SSH/K8s/PTY 执行前与交互式登录/资产连接 overlay。功能侧 #t63 RBAC、#t64 资产树与 AssetPermission、#t65 overlay ACL、#t66 资产类型与协议、**#t67 网域与网关 ProxyJump 已 QA SHIP**、**#t68 TokenRequest 已 QA SHIP**、**#t69 / #t72 生产 SessionConnectionResolver 已 QA SHIP**、**#t73 AccountTemplate / account.verify 已 QA SHIP**、**#t74 asset_grant TicketFlow 已 QA SHIP**；下一刀是 #t75 通知渠道或 #t76 认证源/MFA。
 
 **表述边界仍然有效**：#t69 的走通只解除了运行时前提，功能替代完成度仍为 **0/19 等价**。
 在 §14.2 矩阵出现第一个 ✅ 之前，「功能替代进度过半」的表述依然不成立；

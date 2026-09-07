@@ -14,6 +14,10 @@ from app.api.workflows.schemas import (
     ApprovalPolicyResponse,
     JitGrantListResponse,
     JitGrantResponse,
+    TicketFlowCreate,
+    TicketFlowListResponse,
+    TicketFlowResponse,
+    TicketFlowUpdate,
     WorkflowDecisionRequest,
     WorkflowRejectRequest,
     WorkflowRequestCreate,
@@ -22,6 +26,7 @@ from app.api.workflows.schemas import (
     WorkflowRevokeRequest,
 )
 from app.api.workflows.service import SQLAlchemyWorkflowStore, WorkflowService
+from app.workflows.ticket_flows import TicketFlowRepository
 from app.connectors.host_key_trust import HostKeyTrustService
 from app.core.database import AsyncSessionLocal, get_db, get_read_db
 from app.core.deps import current_user
@@ -36,11 +41,21 @@ _workflow_audit_sink = WorkflowAuditSink(audit_service)
 _host_key_trust = HostKeyTrustService(session_factory=AsyncSessionLocal)
 
 
+def _ticket_flow_loader(db: AsyncSession):
+    repo = TicketFlowRepository(db)
+
+    async def loader(tenant_id: str):
+        return await repo.get_enabled_asset_grant_flow(tenant_id=tenant_id)
+
+    return loader
+
+
 def get_workflow_service(db: AsyncSession = Depends(get_db)) -> WorkflowService:
     return WorkflowService(
         store=SQLAlchemyWorkflowStore(db),
         audit_sink=_workflow_audit_sink,
         session_revoker=get_session_revoker(),
+        ticket_flow_loader=_ticket_flow_loader(db),
     )
 
 
@@ -49,8 +64,94 @@ def get_read_workflow_service(db: AsyncSession = Depends(get_read_db)) -> Workfl
         store=SQLAlchemyWorkflowStore(db),
         audit_sink=_workflow_audit_sink,
         session_revoker=get_session_revoker(),
+        ticket_flow_loader=_ticket_flow_loader(db),
     )
 
+
+
+
+@router.get("/ticket-flows", response_model=TicketFlowListResponse)
+async def list_ticket_flows(
+    db: AsyncSession = Depends(get_read_db),
+    user: dict[str, Any] = Depends(current_user),
+) -> TicketFlowListResponse:
+    _require_workflow_admin_permission(user)
+    repo = TicketFlowRepository(db)
+    flows = await repo.list_flows(tenant_id=str(user.get("tenant_id", "default")))
+    items = [TicketFlowResponse.from_snapshot(flow) for flow in flows]
+    return TicketFlowListResponse(items=items, total=len(items))
+
+
+@router.post(
+    "/ticket-flows",
+    response_model=TicketFlowResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+async def create_ticket_flow(
+    data: TicketFlowCreate,
+    db: AsyncSession = Depends(get_db),
+    user: dict[str, Any] = Depends(current_user),
+) -> TicketFlowResponse:
+    _require_workflow_admin_permission(user)
+    repo = TicketFlowRepository(db)
+    try:
+        flow = await repo.create_flow(
+            tenant_id=str(user.get("tenant_id", "default")),
+            name=data.name,
+            enabled=data.enabled,
+            levels=[level.approver_user_ids for level in data.levels],
+        )
+    except ValueError as exc:
+        raise _ticket_flow_value_error_to_http(exc) from exc
+    await db.commit()
+    return TicketFlowResponse.from_snapshot(flow)
+
+
+@router.patch("/ticket-flows/{flow_id}", response_model=TicketFlowResponse)
+async def update_ticket_flow(
+    flow_id: str,
+    data: TicketFlowUpdate,
+    db: AsyncSession = Depends(get_db),
+    user: dict[str, Any] = Depends(current_user),
+) -> TicketFlowResponse:
+    _require_workflow_admin_permission(user)
+    repo = TicketFlowRepository(db)
+    try:
+        flow = await repo.update_flow(
+            flow_id,
+            tenant_id=str(user.get("tenant_id", "default")),
+            name=data.name,
+            enabled=data.enabled,
+            levels=[level.approver_user_ids for level in data.levels],
+        )
+    except ValueError as exc:
+        raise _ticket_flow_value_error_to_http(exc) from exc
+    await db.commit()
+    return TicketFlowResponse.from_snapshot(flow)
+
+
+@router.delete("/ticket-flows/{flow_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_ticket_flow(
+    flow_id: str,
+    db: AsyncSession = Depends(get_db),
+    user: dict[str, Any] = Depends(current_user),
+) -> None:
+    _require_workflow_admin_permission(user)
+    repo = TicketFlowRepository(db)
+    try:
+        await repo.delete_flow(flow_id, tenant_id=str(user.get("tenant_id", "default")))
+    except ValueError as exc:
+        raise _ticket_flow_value_error_to_http(exc) from exc
+    await db.commit()
+
+
+def _ticket_flow_value_error_to_http(exc: ValueError) -> HTTPException:
+    detail = str(exc)
+    if detail == "TICKET_FLOW_NOT_FOUND":
+        return HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=detail)
+    if detail == "TICKET_FLOW_IN_PROGRESS":
+        return HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="有进行中的工单")
+    return HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=detail)
 
 @router.get("/approval-policies", response_model=ApprovalPolicyListResponse)
 async def list_approval_policies(
@@ -264,14 +365,15 @@ async def approve_workflow_request(
             decision_reason=data.decision_reason,
             grant_ttl_seconds=data.grant_ttl_seconds,
         )
-        await _host_key_trust.apply_workflow_decision(
-            tenant_id=record.tenant_id,
-            asset_id=record.asset_id,
-            approved=True,
-            metadata=record.metadata,
-            workflow_request_id=record.id,
-            db=db,
-        )
+        if record.status.value == "approved":
+            await _host_key_trust.apply_workflow_decision(
+                tenant_id=record.tenant_id,
+                asset_id=record.asset_id,
+                approved=True,
+                metadata=record.metadata,
+                workflow_request_id=record.id,
+                db=db,
+            )
     except PermissionError as exc:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
     except ValueError as exc:

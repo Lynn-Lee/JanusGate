@@ -57,6 +57,9 @@ class WorkflowRequestModel(Base):
     approver_id: Mapped[str] = mapped_column(String(64), default="")
     approver_username: Mapped[str] = mapped_column(String(100), default="")
     metadata_json: Mapped[str] = mapped_column(Text, default="{}")
+    ticket_flow_id: Mapped[str] = mapped_column(String(64), default="", index=True)
+    current_level: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    total_levels: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
 
 
 class JitGrantModel(Base):
@@ -109,3 +112,64 @@ class ApprovalPolicyModel(Base):
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )
+
+
+class TicketFlowType(StrEnum):
+    asset_grant = "asset_grant"
+
+
+class TicketStepStatus(StrEnum):
+    not_started = "not_started"
+    pending = "pending"
+    approved = "approved"
+    rejected = "rejected"
+
+
+class TicketFlowModel(Base):
+    """#t74 multi-level approval flow definition (asset_grant)."""
+
+    __tablename__ = "ticket_flows"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    tenant_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    name: Mapped[str] = mapped_column(String(100), nullable=False)
+    flow_type: Mapped[str] = mapped_column(
+        String(40), nullable=False, default=TicketFlowType.asset_grant
+    )
+    enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+
+class ApprovalRuleModel(Base):
+    """#t74 per-level approver users for a TicketFlow."""
+
+    __tablename__ = "approval_rules"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    tenant_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    ticket_flow_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    level: Mapped[int] = mapped_column(Integer, nullable=False)
+    approver_user_ids_json: Mapped[str] = mapped_column(Text, nullable=False, default="[]")
+
+
+class TicketStepModel(Base):
+    """#t74 per-level progress snapshot bound to a WorkflowRequest."""
+
+    __tablename__ = "ticket_steps"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    tenant_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    workflow_request_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    ticket_flow_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    level: Mapped[int] = mapped_column(Integer, nullable=False)
+    status: Mapped[str] = mapped_column(
+        String(20), nullable=False, default=TicketStepStatus.not_started
+    )
+    approver_user_ids_json: Mapped[str] = mapped_column(Text, nullable=False, default="[]")
+    decided_by_id: Mapped[str] = mapped_column(String(64), default="")
+    decided_by_username: Mapped[str] = mapped_column(String(100), default="")
+    decided_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    decision_reason: Mapped[str] = mapped_column(Text, default="")

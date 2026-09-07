@@ -9,10 +9,12 @@ export type DirectoryUser = {
 };
 
 type UserSelectProps = {
-  value?: string;
-  onChange?: (value: string) => void;
+  value?: string | string[];
+  onChange?: (value: string | string[]) => void;
   disabled?: boolean;
   placeholder?: string;
+  mode?: 'multiple';
+  maxCount?: number;
 };
 
 function userLabel(user: DirectoryUser): string {
@@ -24,7 +26,9 @@ export function UserSelect({
   value,
   onChange,
   disabled,
-  placeholder = '请选择用户'
+  placeholder = '请选择用户',
+  mode,
+  maxCount
 }: UserSelectProps) {
   const { api } = useAuth();
   const users = useApiData(() => api.get<{ items: DirectoryUser[]; total: number }>(
@@ -38,12 +42,14 @@ export function UserSelect({
 
   return (
     <Select
+      mode={mode}
       value={value}
       onChange={onChange}
       disabled={disabled}
       placeholder={placeholder}
       loading={users.loading}
       options={options}
+      maxCount={maxCount}
       showSearch
       optionFilterProp="label"
       filterOption={(input, option) =>

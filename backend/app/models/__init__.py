@@ -24,7 +24,14 @@ from app.models.user import ApiKey, User
 from app.models.vault import SecretRecordModel
 from app.models.zone import Zone, ZoneGateway
 from app.models.webhook import NotificationDelivery, NotificationRule, WebhookEndpoint
-from app.models.workflow import ApprovalPolicyModel, JitGrantModel, WorkflowRequestModel
+from app.models.workflow import (
+    ApprovalPolicyModel,
+    ApprovalRuleModel,
+    JitGrantModel,
+    TicketFlowModel,
+    TicketStepModel,
+    WorkflowRequestModel,
+)
 
 __all__ = [
     "ApiKey",
@@ -32,6 +39,9 @@ __all__ = [
     "AssetHostKeyModel",
     "AssetPermissionModel",
     "ApprovalPolicyModel",
+    "TicketStepModel",
+    "TicketFlowModel",
+    "ApprovalRuleModel",
     "Account",
     "AccountTemplate",
     "AccountRisk",

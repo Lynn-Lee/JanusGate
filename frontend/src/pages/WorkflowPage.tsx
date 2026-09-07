@@ -4,7 +4,7 @@ import { createSessionWithConnectionToken } from '../api/sessionTokens';
 import { useAuth } from '../auth/AuthContext';
 import { ErrorState, LoadingState } from '../components/StatusView';
 import { getErrorMessage, useApiData, useApiMessage, useSessionCache } from './pageUtils';
-import type { JitGrant, ListResponse, WorkflowRequest } from './types';
+import type { JitGrant, ListResponse, TicketStep, WorkflowRequest } from './types';
 
 type WorkflowFormValues = {
   asset_id: string;
@@ -33,6 +33,47 @@ function hostKeyMeta(request: WorkflowRequest): HostKeyMeta | null {
     return null;
   }
   return raw as HostKeyMeta;
+}
+
+function hasTicketFlow(request: WorkflowRequest): boolean {
+  return Boolean(request.ticket_flow_id) && (request.total_levels ?? 0) > 0;
+}
+
+function stepStatusLabel(status: string): { text: string; color: string } {
+  if (status === 'approved') return { text: '通过', color: 'green' };
+  if (status === 'pending') return { text: '进行中', color: 'blue' };
+  if (status === 'rejected') return { text: '拒绝', color: 'red' };
+  return { text: '未开始', color: 'default' };
+}
+
+function FlowProgress({ request }: { request: WorkflowRequest }) {
+  if (!hasTicketFlow(request)) {
+    return null;
+  }
+  const steps = [...(request.steps ?? [])].sort((a, b) => a.level - b.level);
+  const current = request.current_level ?? 1;
+  const total = request.total_levels ?? steps.length;
+  const currentStep = steps.find((step) => step.level === current);
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+      <Typography.Text>
+        当前：第 {current} 级 / 共 {total} 级
+      </Typography.Text>
+      <Typography.Text type="secondary">
+        本级审批人：{(currentStep?.approver_user_ids ?? []).join('、') || '-'}
+      </Typography.Text>
+      <Space size={[4, 4]} wrap>
+        {steps.map((step: TicketStep) => {
+          const meta = stepStatusLabel(step.status);
+          return (
+            <Tag key={step.level} color={meta.color} style={step.status === 'not_started' ? { color: '#999', borderColor: '#d9d9d9' } : undefined}>
+              第{step.level}级·{meta.text}
+            </Tag>
+          );
+        })}
+      </Space>
+    </div>
+  );
 }
 
 export function WorkflowPage() {
@@ -67,6 +108,21 @@ export function WorkflowPage() {
 
   const decide = async (request: WorkflowRequest, action: 'approve' | 'reject') => {
     const hostKey = hostKeyMeta(request);
+    if (action === 'reject' && hasTicketFlow(request)) {
+      const confirmed = await new Promise<boolean>((resolve) => {
+        Modal.confirm({
+          title: '确定拒绝？整单将关闭且不签发授权。',
+          okText: '拒绝',
+          okType: 'danger',
+          cancelText: '取消',
+          onOk: () => resolve(true),
+          onCancel: () => resolve(false)
+        });
+      });
+      if (!confirmed) {
+        return;
+      }
+    }
     if (action === 'approve' && hostKey?.state === 'changed') {
       const confirmed = await new Promise<boolean>((resolve) => {
         Modal.warning({
@@ -108,8 +164,13 @@ export function WorkflowPage() {
       }
     }
     try {
-      await api.post<WorkflowRequest>(`/api/v1/workflows/requests/${request.id}/${action}`, action === 'approve' ? { decision_reason: 'MVP 控制台审批通过', grant_ttl_seconds: 1800 } : { decision_reason: 'MVP 控制台拒绝' });
-      msg.success(action === 'approve' ? '申请已批准' : '申请已拒绝');
+      await api.post<WorkflowRequest>(
+        `/api/v1/workflows/requests/${request.id}/${action}`,
+        action === 'approve'
+          ? { decision_reason: 'MVP 控制台审批通过', grant_ttl_seconds: 1800 }
+          : { decision_reason: 'MVP 控制台拒绝' }
+      );
+      msg.success(action === 'approve' ? (hasTicketFlow(request) ? '本级已通过' : '申请已批准') : '申请已拒绝');
       refresh();
     } catch (err) {
       msg.error(getErrorMessage(err));
@@ -197,6 +258,11 @@ export function WorkflowPage() {
               { title: '账号', dataIndex: 'account_id' },
               { title: '理由', dataIndex: 'reason', ellipsis: true },
               {
+                title: '审批进度',
+                render: (_: unknown, record: WorkflowRequest) =>
+                  hasTicketFlow(record) ? <FlowProgress request={record} /> : '-'
+              },
+              {
                 title: '主机密钥',
                 render: (_: unknown, record: WorkflowRequest) => {
                   const hostKey = hostKeyMeta(record);
@@ -215,7 +281,27 @@ export function WorkflowPage() {
               },
               { title: '状态', dataIndex: 'status', render: (status: string) => <Tag color={status === 'approved' ? 'green' : status === 'rejected' ? 'red' : 'blue'}>{status}</Tag> },
               { title: 'Grant', dataIndex: 'grant_id', ellipsis: true, render: (value: string) => value || '-' },
-              { title: '操作', render: (_: unknown, record: WorkflowRequest) => <Space><Button disabled={record.status !== 'pending'} onClick={() => void decide(record, 'approve')}>批准</Button><Button disabled={record.status !== 'pending'} onClick={() => void decide(record, 'reject')}>拒绝</Button><Button disabled={!['approved', 'pending'].includes(record.status)} danger onClick={() => void revoke(record)}>撤销</Button></Space> }
+              {
+                title: '操作',
+                render: (_: unknown, record: WorkflowRequest) => {
+                  const withFlow = hasTicketFlow(record);
+                  const approveLabel = withFlow ? '通过' : '批准';
+                  const rejectLabel = withFlow ? '拒绝' : '拒绝';
+                  return (
+                    <Space>
+                      <Button disabled={record.status !== 'pending'} onClick={() => void decide(record, 'approve')}>
+                        {approveLabel}
+                      </Button>
+                      <Button disabled={record.status !== 'pending'} onClick={() => void decide(record, 'reject')}>
+                        {rejectLabel}
+                      </Button>
+                      <Button disabled={!['approved', 'pending'].includes(record.status)} danger onClick={() => void revoke(record)}>
+                        撤销
+                      </Button>
+                    </Space>
+                  );
+                }
+              }
             ]}
           />
         ) : null}
