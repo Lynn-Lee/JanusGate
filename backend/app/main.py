@@ -24,6 +24,7 @@ from app.api import (
     connectors,
     notification_deliveries,
     notification_rules,
+    notification_channels,
     rbac,
     protocols,
     session_recordings,
@@ -85,6 +86,9 @@ app.include_router(rbac.router, prefix="/api/v1")
 app.include_router(connectors.router, prefix="/api/v1")
 app.include_router(notification_deliveries.router, prefix="/api/v1")
 app.include_router(notification_rules.router, prefix="/api/v1")
+app.include_router(notification_channels.channels_router, prefix="/api/v1")
+app.include_router(notification_channels.subscriptions_router, prefix="/api/v1")
+app.include_router(notification_channels.inbox_router, prefix="/api/v1")
 app.include_router(session_recordings.router, prefix="/api/v1")
 app.include_router(ssh_certificate_authorities.router, prefix="/api/v1")
 app.include_router(ssh_certificates.router, prefix="/api/v1")

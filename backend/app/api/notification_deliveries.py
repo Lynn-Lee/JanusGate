@@ -1,6 +1,5 @@
 """Phase 4 notification delivery queue API routes."""
 import json
-import re
 from datetime import UTC, datetime
 from typing import Any
 
@@ -16,14 +15,12 @@ from app.api.webhook_schemas import (
 )
 from app.core.database import get_db, get_read_db
 from app.core.deps import current_user
+from app.models.notification_channel import NotificationChannel
 from app.models.webhook import NotificationDelivery, NotificationRule, WebhookEndpoint
+from app.services.notification_redaction import redact_payload
+from app.services.system_msg_fanout import fanout_inbox_subscriptions
 
 router = APIRouter(tags=["Notification Deliveries"])
-
-_SENSITIVE_KEY_PARTS = ("authorization", "cookie", "credential", "password", "secret", "token")
-_SENSITIVE_ASSIGNMENT = re.compile(
-    r"(?i)\\b(token|password|passwd|secret|credential)\\s*=\\s*[^\\s,;]+"
-)
 
 
 @router.get(
@@ -59,22 +56,32 @@ async def enqueue_notification_delivery(
 ) -> NotificationDeliveryResponse:
     _require_notification_permission(user, "notifications:write")
     tenant_id = str(user.get("tenant_id") or "default")
-    rule, endpoint = await _get_active_rule_and_endpoint(db=db, tenant_id=tenant_id, rule_id=rule_id)
-    if not _event_type_allowed(data.event_type, rule=rule, endpoint=endpoint):
+    rule, endpoint, channel = await _get_active_rule_and_sink(
+        db=db, tenant_id=tenant_id, rule_id=rule_id
+    )
+    if not _event_type_allowed(data.event_type, rule=rule, endpoint=endpoint, channel=channel):
         raise HTTPException(status_code=400, detail="NOTIFICATION_EVENT_NOT_ALLOWED")
 
     now = datetime.now(UTC)
+    redacted = redact_payload(data.payload)
     delivery = NotificationDelivery(
         tenant_id=tenant_id,
         notification_rule_id=rule.id,
-        webhook_endpoint_id=endpoint.id,
+        webhook_endpoint_id=endpoint.id if endpoint is not None else None,
+        channel_id=channel.id if channel is not None else None,
         event_type=data.event_type,
-        payload_json=json.dumps(_redact_payload(data.payload), sort_keys=True, default=str),
+        payload_json=json.dumps(redacted, sort_keys=True, default=str),
         status=NotificationDeliveryStatus.PENDING.value,
         attempts=0,
         next_attempt_at=now,
     )
     db.add(delivery)
+    await fanout_inbox_subscriptions(
+        db,
+        tenant_id=tenant_id,
+        event_type=data.event_type,
+        payload=redacted if isinstance(redacted, dict) else {},
+    )
     await db.commit()
     await db.refresh(delivery)
     return _notification_delivery_response(delivery)
@@ -87,36 +94,63 @@ def _require_notification_permission(user: dict[str, Any], permission: str) -> N
     raise HTTPException(status_code=403, detail=f"缺少权限: {permission}")
 
 
-async def _get_active_rule_and_endpoint(
+async def _get_active_rule_and_sink(
     *, db: AsyncSession, tenant_id: str, rule_id: int
-) -> tuple[NotificationRule, WebhookEndpoint]:
+) -> tuple[NotificationRule, WebhookEndpoint | None, NotificationChannel | None]:
     result = await db.execute(
-        select(NotificationRule, WebhookEndpoint)
-        .join(
-            WebhookEndpoint,
-            (WebhookEndpoint.id == NotificationRule.webhook_endpoint_id)
-            & (WebhookEndpoint.tenant_id == NotificationRule.tenant_id),
-        )
-        .where(
+        select(NotificationRule).where(
             NotificationRule.id == rule_id,
             NotificationRule.tenant_id == tenant_id,
             NotificationRule.status == "active",
-            WebhookEndpoint.status == "active",
         )
     )
-    row = result.one_or_none()
-    if row is None:
+    rule = result.scalar_one_or_none()
+    if rule is None:
         raise HTTPException(status_code=404, detail="NOTIFICATION_RULE_NOT_FOUND")
-    rule, endpoint = row
-    return rule, endpoint
+
+    endpoint: WebhookEndpoint | None = None
+    channel: NotificationChannel | None = None
+    if rule.webhook_endpoint_id is not None:
+        endpoint_result = await db.execute(
+            select(WebhookEndpoint).where(
+                WebhookEndpoint.id == rule.webhook_endpoint_id,
+                WebhookEndpoint.tenant_id == tenant_id,
+                WebhookEndpoint.status == "active",
+            )
+        )
+        endpoint = endpoint_result.scalar_one_or_none()
+        if endpoint is None:
+            raise HTTPException(status_code=404, detail="NOTIFICATION_RULE_NOT_FOUND")
+    elif rule.channel_id is not None:
+        channel_result = await db.execute(
+            select(NotificationChannel).where(
+                NotificationChannel.id == rule.channel_id,
+                NotificationChannel.tenant_id == tenant_id,
+                NotificationChannel.status == "active",
+            )
+        )
+        channel = channel_result.scalar_one_or_none()
+        if channel is None:
+            raise HTTPException(status_code=404, detail="NOTIFICATION_RULE_NOT_FOUND")
+    else:
+        raise HTTPException(status_code=404, detail="NOTIFICATION_RULE_NOT_FOUND")
+    return rule, endpoint, channel
 
 
 def _event_type_allowed(
-    event_type: str, *, rule: NotificationRule, endpoint: WebhookEndpoint
+    event_type: str,
+    *,
+    rule: NotificationRule,
+    endpoint: WebhookEndpoint | None,
+    channel: NotificationChannel | None,
 ) -> bool:
-    return event_type in _event_types(rule.event_types_json) and event_type in _event_types(
-        endpoint.event_types_json
-    )
+    if event_type not in _event_types(rule.event_types_json):
+        return False
+    if endpoint is not None:
+        return event_type in _event_types(endpoint.event_types_json)
+    if channel is not None:
+        return event_type in _event_types(channel.event_types_json)
+    return False
 
 
 def _notification_delivery_response(
@@ -127,6 +161,7 @@ def _notification_delivery_response(
         tenant_id=delivery.tenant_id,
         notification_rule_id=delivery.notification_rule_id,
         webhook_endpoint_id=delivery.webhook_endpoint_id,
+        channel_id=delivery.channel_id,
         event_type=delivery.event_type,
         status=NotificationDeliveryStatus(delivery.status),
         attempts=delivery.attempts,
@@ -142,23 +177,6 @@ def _event_types(value: str) -> list[str]:
     if not isinstance(parsed, list):
         return []
     return [str(item) for item in parsed]
-
-
-def _redact_payload(value: Any) -> Any:
-    if isinstance(value, dict):
-        redacted: dict[str, Any] = {}
-        for key, item in value.items():
-            normalized_key = str(key).lower()
-            if any(part in normalized_key for part in _SENSITIVE_KEY_PARTS):
-                redacted[str(key)] = "[REDACTED]"
-            else:
-                redacted[str(key)] = _redact_payload(item)
-        return redacted
-    if isinstance(value, list):
-        return [_redact_payload(item) for item in value]
-    if isinstance(value, str):
-        return _SENSITIVE_ASSIGNMENT.sub(r"\\1=[REDACTED]", value)
-    return value
 
 
 def _as_utc(value: datetime | None) -> datetime | None:

@@ -15,6 +15,11 @@ from app.api.automation import router as automation_router
 from app.api.connectors import router as connectors_router
 from app.api.notification_deliveries import router as notification_deliveries_router
 from app.api.notification_rules import router as notification_rules_router
+from app.api.notification_channels import (
+    channels_router as notification_channels_router,
+    inbox_router as inbox_messages_router,
+    subscriptions_router as system_msg_subscriptions_router,
+)
 from app.api.session_recordings import router as session_recordings_router
 from app.api.sessions.routes import router as sessions_router
 from app.api.ssh_certificate_authorities import router as ssh_ca_router
@@ -48,6 +53,9 @@ DB_BACKED_GET_ROUTE_ROUTING_INVENTORY = {
     ("GET", "/connectors/"),
     ("GET", "/notification-deliveries/"),
     ("GET", "/notification-rules/"),
+    ("GET", "/notification-channels/"),
+    ("GET", "/system-msg-subscriptions/me"),
+    ("GET", "/inbox-messages/"),
     ("GET", "/session-recordings/{recording_id}/commands"),
     ("GET", "/session-recordings/commands"),
     ("GET", "/sessions/"),
@@ -59,6 +67,7 @@ DB_BACKED_GET_ROUTE_ROUTING_INVENTORY = {
     ("GET", "/tenancy/teams"),
     ("GET", "/webhook-endpoints/"),
     ("GET", "/workflows/approval-policies"),
+    ("GET", "/workflows/ticket-flows"),
     ("GET", "/workflows/grants/active"),
     ("GET", "/workflows/requests"),
     ("GET", "/workflows/requests/{request_id}"),
@@ -87,6 +96,9 @@ ROUTERS_WITH_GET_ROUTES = [
     connectors_router,
     notification_deliveries_router,
     notification_rules_router,
+    notification_channels_router,
+    system_msg_subscriptions_router,
+    inbox_messages_router,
     session_recordings_router,
     sessions_router,
     ssh_ca_router,

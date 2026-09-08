@@ -26,10 +26,13 @@ class RecordingSender(NotificationDeliverySender):
     async def send(
         self,
         *,
-        endpoint: WebhookEndpoint,
         delivery: NotificationDelivery,
         payload: dict[str, object],
+        endpoint: WebhookEndpoint | None = None,
+        channel: object | None = None,
     ) -> None:
+        del channel
+        assert endpoint is not None
         self.requests.append(
             {"endpoint_url": endpoint.url, "event_type": delivery.event_type, "payload": payload}
         )

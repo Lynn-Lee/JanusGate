@@ -25,6 +25,11 @@ from app.models.user import ApiKey, User
 from app.models.vault import SecretRecordModel
 from app.models.zone import Zone, ZoneGateway
 from app.models.webhook import NotificationDelivery, NotificationRule, WebhookEndpoint
+from app.models.notification_channel import (
+    InboxMessage,
+    NotificationChannel,
+    SystemMsgSubscription,
+)
 from app.models.workflow import (
     ApprovalPolicyModel,
     ApprovalRuleModel,
@@ -59,9 +64,12 @@ __all__ = [
     "LoginAclModel",
     "LoginAssetAclModel",
     "NotificationRule",
+    "NotificationChannel",
     "NodeModel",
     "OidcProvider",
     "NotificationDelivery",
+    "InboxMessage",
+    "SystemMsgSubscription",
     "Organization",
     "Platform",
     "PlatformProtocolModel",
