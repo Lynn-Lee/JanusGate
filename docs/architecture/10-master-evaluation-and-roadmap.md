@@ -864,7 +864,7 @@ User ──┬── WorkflowRequest ──── JitGrant
 | 任务 ID | 任务 | Owner | 范围 | 优先级 |
 |---------|------|-------|------|--------|
 | **#t74** | 多级审批工单流 | backend + frontend | **✅ 已完成**：`TicketFlow` / `ApprovalRule` / `TicketStep`（`asset_grant` + `command_review`）；迁移 `d4e5f6a7b8c9`；每流 1–3 级、每级最多 3 审批人；启用流按 `flow_type` 租户内唯一。`TicketFlowRepository` + 无启用流时保持单级审批；多级全过才签发、任一级拒绝关单不签发；保留防自审批与对象级步骤审批人校验。`GET/POST/PATCH/DELETE /api/v1/workflows/ticket-flows`（`flow_type`）；WorkflowPage 步骤进度；设置页「审批流」`TicketFlowPanels` + `UserSelect`。**asset_grant TicketFlow 多级审批已 QA SHIP**（审批与授权签发解耦 / 防自审批）。**command_review / 命令复核已 QA SHIP**：`TicketFlowType.command_review` + `command_review.py`；`CommandPolicyGuard` 对 `REVIEW` 开/复用工单（非 DENY-only）并返回 `command_review_pending`（终端「命令待复核」）；审批通过签发一次性 `command.allow` Grant（TTL 10min，重试消耗后需重新开单）；无启用流时 ACL 复核人单级、空复核人则 admin-only；WorkflowPage 命令复核文案 + 设置页「命令复核」流类型；测试 `test_command_review_t74.py` + `test_ticket_flow_t74.py` + `test_command_policy_guard.py` + `mvp-pages.test.tsx`。其余工单类型（登录申请 / 资产登录复核）可后续切片 | 高 |
-| **#t75** | 通知渠道扩展 | backend | 在 #t47 已有的 WebHook / 通知规则 / 投递队列基础上扩展 IM sender：钉钉 / 飞书 / Lark / 企业微信 / Slack / SMS / 邮件 / 站内信；系统消息订阅。**约束**：沿用 #t47 已建立的脱敏 payload 与 dead-letter 契约 | 中 |
+| **#t75** | 通知渠道扩展 | backend | **✅ 已完成（首切片）**：`NotificationChannel`（`webhook` / `dingtalk` / `feishu` / `lark` / `wecom` / `slack` / `inbox`；`sms`/`email` 创建期 fail-closed）；规则可绑 `channel_id` 或既有 `webhook_endpoint_id`；`ChannelAwareNotificationSender` 分发 HTTPS IM（MockTransport）与站内信；`SystemMsgSubscription` + enqueue 时 inbox fan-out；`InboxMessage` 列表/已读。沿用 #t47 脱敏 payload 与 pending→failed→dead_letter 契约，并修复 assignment 风格脱敏。迁移 `a7b8c9d0e1f2`（合并双 head）。测试 `test_notification_channels_t75.py` + 既有 webhook/worker。SMS/邮件真实网关与设置页 UI 可后续切片 | 中 |
 | **#t76** | 认证源与 MFA 扩展 | architect + security | **✅ 已完成**：`OidcProvider`（租户至多一行）；迁移 `e5f6a7b8c9d0`。`OidcService` discovery + 授权码 + mandatory PKCE (S256) + 完整 state（Redis TTL）；Issuer/IdP 请求强制 HTTPS/`verify=True`（禁止关 SSL / monkey-patch）；`safe_next_url` 拒绝 `//` 开放重定向；仅邮箱绑定已有用户（无账号 →「无法登录」）。`GET/PUT /api/v1/auth/oidc/settings`、`/login-options`、`/start`、`/callback`、`POST /exchange`；设置页 `OidcSettingsCard`、登录页 OIDC 按钮、`AuthContext` ticket 交换。测试 `test_oidc_api.py` + `LoginPage.oidc.test.tsx`。**OIDC 登录已 QA SHIP**（对应关闭 P0#12 / P0#14 / P1#7）；LDAP / OAuth2 / SAML2 / CAS / RADIUS / passkey 与 MFA 扩展可后续切片 | 高 |
 
 **M6：运维与平台治理**
@@ -898,14 +898,14 @@ User ──┬── WorkflowRequest ──── JitGrant
 | M2：资产与协议广度 | 3-4 周 | #t66 + #t67 + #t68 | ✅ **3/3 完成** | 依赖 M1 授权模型 |
 | M3：真实连接通道 | 6-8 周 | #t69 + #t70 + #t71 + #t72 | 🟡 #t69/#t72 完成；#t70/#t71 未开始 | 风险最高，#t70 图形通道为其中最重 |
 | M4：账号自动化 | 3-4 周 | #t73 | ✅ **完成** | 依赖 #t69 SSH 通道（前置已满足） |
-| M5：工单、通知、认证源 | 4-5 周 | #t74 + #t75 + #t76 | 🟡 #t74/#t76 完成；#t75 未开始 | 可与 M3 并行 |
+| M5：工单、通知、认证源 | 4-5 周 | #t74 + #t75 + #t76 | ✅ **完成** | 可与 M3 并行 |
 | M6：运维与平台治理 | 3-4 周 | #t77 + #t78 + #t79 | ⬜ 未开始 | 收口阶段 |
 
 > **周期为规模估算而非承诺**，未考虑团队规模与并行度。M3 的估算不确定性最大，建议在预研切片完成后重估。
 
 > **v2.4 排期修订**：M3 预研切片（#t69）已完成并解除全局单点关键路径，M0 三项前置阻塞项全部关闭；**#t69 / #t72 生产 SessionConnectionResolver 已 QA SHIP**。
 > M3 剩余两项性质已分化——#t71 的 #t65 脱敏依赖已解除，剩协议实现难度；#t70 需外部图形基建，建议独立立项（见其任务行）。
-> 因此后续排序建议为：**#t75 通知渠道扩展**（#t66/#t67/#t68、#t69/#t72、**#t73 AccountTemplate / account.verify**、**#t74 asset_grant / command_review TicketFlow** 与 **#t76 OIDC 登录** 已 QA SHIP；#t70 建议独立立项），而非按里程碑编号顺序推进。
+> 因此后续排序建议为：**#t77 作业中心**（#t66/#t67/#t68、#t69/#t72、**#t73 AccountTemplate / account.verify / account.push**、**#t74 asset_grant / command_review TicketFlow**、**#t75 通知渠道** 与 **#t76 OIDC 登录** 已落地；#t70 建议独立立项），而非按里程碑编号顺序推进。
 
 #### 11.4.5 Phase 6 验收标准
 
@@ -1072,7 +1072,7 @@ P1（15 项）/ P2（18 项）：架构性问题（xpack 侵入、common 大杂�
 | 11 | 连接组件 / 终端 | 🟡 Connector Registry + 心跳租约 + mTLS 指纹 + attestation + key rotation + SDK + **SSH/SFTP/PTY 与 K8s exec 真实通道** + #t65 执行前守卫 + **生产 `AssetVaultSessionConnectionResolver`** | RDP / VNC / 数据库协议实现；连接列表展示 k8s（#t72 建连弹层选 Pod） | 是 | P4 #t45 → **P6 #t69-72** |
 | 12 | 工单与审批 | 🟡 JIT 申请/审批/Grant 状态机 + 审批策略 DSL + 灰度 + 版本回滚 + **`TicketFlow` / `TicketStep` 多级审批（#t74 asset_grant / command_review QA SHIP）** | 其余工单类型（登录申请 / 资产登录复核）、更广审批规则扩展 | 是 | P2 已有 / P4 #t48 → **P6 #t74** |
 | 13 | 审计 | 🟡 统一审计事件 + **已持久化 append-only** + 库层强制有序 hash chain + SIEM + 合规报表 + WORM 归档 | 分类日志（操作/活动/文件传输/改密/在线会话/作业）；#t78 文件传输日志端点未建 | 是 | P1 已有 → **P6 #t61、#t78** |
-| 14 | 通知 | 🟡 WebHook endpoint + 通知规则 + 投递队列 + 重试/死信 + HTTPS sender | IM 渠道（钉钉/飞书/Lark/企微/Slack）、SMS、邮件、站内信、消息订阅 | 是 | P4 #t47 → **P6 #t75** |
+| 14 | 通知 | 🟡 WebHook endpoint + 通知规则 + 投递队列 + 重试/死信 + HTTPS sender + **IM 渠道 / 站内信 / 系统消息订阅（#t75）** | SMS / 邮件真实网关、设置页通知中心 UI | 是 | P4 #t47 → **P6 #t75** |
 | 15 | 作业中心 | 🟡 JSON-only 队列 + worker + Ansible runner + 执行记录 | 作业/Playbook 管理模型、临时命令、周期任务、参数化、执行身份策略 | 是 | P4 #t52 → **P6 #t77** |
 | 16 | 标签体系 | ⬜ 无 | 标签模型与资源标注 | 是 | **P6 #t79** |
 | 17 | 报表中心 | 🟡 审计汇总 API + SOC2 合规报表导出 | 通用报表模型与自定义报表 | 是 | P4 #t49 / P5 #t54 → **P6 #t79** |

@@ -8,9 +8,11 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import httpx
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+from sqlalchemy.orm import aliased
 
+from app.models.notification_channel import NotificationChannel
 from app.models.webhook import NotificationDelivery, NotificationRule, WebhookEndpoint
 
 
@@ -29,9 +31,10 @@ class NotificationDeliverySender(ABC):
     async def send(
         self,
         *,
-        endpoint: WebhookEndpoint,
         delivery: NotificationDelivery,
         payload: dict[str, object],
+        endpoint: WebhookEndpoint | None = None,
+        channel: NotificationChannel | None = None,
     ) -> None:
         """Deliver one already-redacted notification payload."""
 
@@ -50,10 +53,14 @@ class HttpWebhookNotificationSender(NotificationDeliverySender):
     async def send(
         self,
         *,
-        endpoint: WebhookEndpoint,
         delivery: NotificationDelivery,
         payload: dict[str, object],
+        endpoint: WebhookEndpoint | None = None,
+        channel: NotificationChannel | None = None,
     ) -> None:
+        del channel
+        if endpoint is None:
+            raise RuntimeError("webhook delivery missing endpoint")
         try:
             response = await self._client.post(
                 endpoint.url,
@@ -96,11 +103,15 @@ class NotificationDeliveryWorker:
 
         async with self._session_factory() as session:
             rows = await self._load_due_deliveries(session=session, now=effective_now)
-            for delivery, endpoint in rows:
+            for delivery, endpoint, channel in rows:
                 processed += 1
                 try:
+                    bind_session = getattr(self._sender, "bind_session", None)
+                    if callable(bind_session):
+                        bind_session(session)
                     await self._sender.send(
                         endpoint=endpoint,
+                        channel=channel,
                         delivery=delivery,
                         payload=_payload_dict(delivery.payload_json),
                     )
@@ -132,29 +143,45 @@ class NotificationDeliveryWorker:
 
     async def _load_due_deliveries(
         self, *, session: AsyncSession, now: datetime
-    ) -> list[tuple[NotificationDelivery, WebhookEndpoint]]:
+    ) -> list[tuple[NotificationDelivery, WebhookEndpoint | None, NotificationChannel | None]]:
+        channel_alias = aliased(NotificationChannel)
         result = await session.execute(
-            select(NotificationDelivery, WebhookEndpoint)
+            select(NotificationDelivery, WebhookEndpoint, channel_alias)
             .join(
                 NotificationRule,
                 (NotificationRule.id == NotificationDelivery.notification_rule_id)
                 & (NotificationRule.tenant_id == NotificationDelivery.tenant_id),
             )
-            .join(
+            .outerjoin(
                 WebhookEndpoint,
                 (WebhookEndpoint.id == NotificationDelivery.webhook_endpoint_id)
-                & (WebhookEndpoint.tenant_id == NotificationDelivery.tenant_id),
+                & (WebhookEndpoint.tenant_id == NotificationDelivery.tenant_id)
+                & (WebhookEndpoint.status == "active"),
+            )
+            .outerjoin(
+                channel_alias,
+                (channel_alias.id == NotificationDelivery.channel_id)
+                & (channel_alias.tenant_id == NotificationDelivery.tenant_id)
+                & (channel_alias.status == "active"),
             )
             .where(
                 NotificationDelivery.status.in_(("pending", "failed")),
                 NotificationDelivery.next_attempt_at <= now,
                 NotificationRule.status == "active",
-                WebhookEndpoint.status == "active",
+                or_(
+                    WebhookEndpoint.id.is_not(None),
+                    channel_alias.id.is_not(None),
+                ),
             )
             .order_by(NotificationDelivery.id)
             .limit(self._batch_size)
         )
-        return [(delivery, endpoint) for delivery, endpoint in result.all()]
+        rows: list[
+            tuple[NotificationDelivery, WebhookEndpoint | None, NotificationChannel | None]
+        ] = []
+        for delivery, endpoint, channel in result.all():
+            rows.append((delivery, endpoint, channel))
+        return rows
 
 
 def _payload_dict(value: str) -> dict[str, object]:

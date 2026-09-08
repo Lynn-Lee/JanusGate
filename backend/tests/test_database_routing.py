@@ -13,6 +13,15 @@ from app.api.audits.routes import router as audits_router
 from app.api.auth import router as auth_router
 from app.api.automation import router as automation_router
 from app.api.connectors import router as connectors_router
+from app.api.notification_channels import (
+    channels_router as notification_channels_router,
+)
+from app.api.notification_channels import (
+    inbox_router as inbox_messages_router,
+)
+from app.api.notification_channels import (
+    subscriptions_router as system_msg_subscriptions_router,
+)
 from app.api.notification_deliveries import router as notification_deliveries_router
 from app.api.notification_rules import router as notification_rules_router
 from app.api.session_recordings import router as session_recordings_router
@@ -48,6 +57,9 @@ DB_BACKED_GET_ROUTE_ROUTING_INVENTORY = {
     ("GET", "/connectors/"),
     ("GET", "/notification-deliveries/"),
     ("GET", "/notification-rules/"),
+    ("GET", "/notification-channels/"),
+    ("GET", "/system-msg-subscriptions/me"),
+    ("GET", "/inbox-messages/"),
     ("GET", "/session-recordings/{recording_id}/commands"),
     ("GET", "/session-recordings/commands"),
     ("GET", "/sessions/"),
@@ -59,6 +71,7 @@ DB_BACKED_GET_ROUTE_ROUTING_INVENTORY = {
     ("GET", "/tenancy/teams"),
     ("GET", "/webhook-endpoints/"),
     ("GET", "/workflows/approval-policies"),
+    ("GET", "/workflows/ticket-flows"),
     ("GET", "/workflows/grants/active"),
     ("GET", "/workflows/requests"),
     ("GET", "/workflows/requests/{request_id}"),
@@ -87,6 +100,9 @@ ROUTERS_WITH_GET_ROUTES = [
     connectors_router,
     notification_deliveries_router,
     notification_rules_router,
+    notification_channels_router,
+    system_msg_subscriptions_router,
+    inbox_messages_router,
     session_recordings_router,
     sessions_router,
     ssh_ca_router,
@@ -465,6 +481,7 @@ def test_session_write_routes_keep_writer_service_dependency() -> None:
 def test_workflow_approval_policy_read_routes_use_read_database_dependency() -> None:
     read_routes = [
         ("GET", "/workflows/approval-policies"),
+        ("GET", "/workflows/ticket-flows"),
     ]
 
     for method, path in read_routes:
@@ -478,6 +495,9 @@ def test_workflow_approval_policy_write_routes_keep_writer_database_dependency()
         ("POST", "/workflows/approval-policies"),
         ("POST", "/workflows/approval-policies/{policy_id}/versions"),
         ("POST", "/workflows/approval-policies/{policy_id}/rollback"),
+        ("POST", "/workflows/ticket-flows"),
+        ("PATCH", "/workflows/ticket-flows/{flow_id}"),
+        ("DELETE", "/workflows/ticket-flows/{flow_id}"),
     ]
 
     for method, path in write_routes:
