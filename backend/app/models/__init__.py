@@ -14,6 +14,11 @@ from app.models.audit import AuditEventModel
 from app.models.automation import AutomationJobRun
 from app.models.connector import Connector
 from app.models.host_key import AssetHostKeyModel
+from app.models.notification_channel import (
+    InboxMessage,
+    NotificationChannel,
+    SystemMsgSubscription,
+)
 from app.models.oidc import OidcProvider
 from app.models.protocol import PlatformProtocolModel, ProtocolModel
 from app.models.rbac import RoleBindingModel, RoleModel, RoleObjectPermissionModel
@@ -24,11 +29,6 @@ from app.models.tenancy import Organization, Project, Team, Tenant
 from app.models.user import ApiKey, User
 from app.models.vault import SecretRecordModel
 from app.models.webhook import NotificationDelivery, NotificationRule, WebhookEndpoint
-from app.models.notification_channel import (
-    InboxMessage,
-    NotificationChannel,
-    SystemMsgSubscription,
-)
 from app.models.workflow import (
     ApprovalPolicyModel,
     ApprovalRuleModel,
