@@ -78,7 +78,7 @@ export function JobsPage() {
       playbookForm.resetFields();
       await playbooks.reload();
     } catch (error) {
-      toast.error(getErrorMessage(error, '创建 Playbook 失败'));
+      toast.error(getErrorMessage(error));
     } finally {
       setCreatingPlaybook(false);
     }
@@ -99,7 +99,7 @@ export function JobsPage() {
       jobForm.resetFields();
       await jobs.reload();
     } catch (error) {
-      toast.error(getErrorMessage(error, '创建作业失败'));
+      toast.error(getErrorMessage(error));
     } finally {
       setCreatingJob(false);
     }
@@ -112,7 +112,7 @@ export function JobsPage() {
       toast.success('作业已入队');
       await executions.reload();
     } catch (error) {
-      toast.error(getErrorMessage(error, '触发作业失败'));
+      toast.error(getErrorMessage(error));
     } finally {
       setRunningIds((prev) => {
         const next = new Set(prev);
@@ -123,7 +123,7 @@ export function JobsPage() {
   };
 
   if (playbooks.loading || jobs.loading || executions.loading || assets.loading) {
-    return <LoadingState tip="加载作业中心…" />;
+    return <LoadingState title="加载作业中心" />;
   }
   if (playbooks.error || jobs.error || executions.error || assets.error) {
     return <ErrorState message="无法加载作业中心数据" />;
