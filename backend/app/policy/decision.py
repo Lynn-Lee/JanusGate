@@ -1135,7 +1135,7 @@ class PolicyDecisionService:
             try:
                 current = datetime.fromisoformat(raw.replace("Z", "+00:00"))
             except ValueError:
-                current = None
+                pass
             else:
                 if current.tzinfo is None:
                     current = current.replace(tzinfo=UTC)

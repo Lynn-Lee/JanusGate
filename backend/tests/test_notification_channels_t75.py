@@ -261,10 +261,11 @@ async def test_system_msg_subscription_fans_out_redacted_inbox(
     assert marked.json()["read_at"] is not None
 
     async with session_factory() as session:
-        rows = (
-            await session.execute(select(SystemMsgSubscription, InboxMessage))
-        ).all()
-        assert len(rows) >= 1
+        messages = (await session.execute(select(InboxMessage))).scalars().all()
+        subscriptions = (await session.execute(select(SystemMsgSubscription))).scalars().all()
+    assert len(messages) == 1
+    assert len(subscriptions) == 1
+    assert "super-secret" not in messages[0].body_json
 
 
 @pytest.mark.asyncio

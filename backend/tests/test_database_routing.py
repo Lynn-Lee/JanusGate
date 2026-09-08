@@ -477,6 +477,7 @@ def test_session_write_routes_keep_writer_service_dependency() -> None:
 def test_workflow_approval_policy_read_routes_use_read_database_dependency() -> None:
     read_routes = [
         ("GET", "/workflows/approval-policies"),
+        ("GET", "/workflows/ticket-flows"),
     ]
 
     for method, path in read_routes:
@@ -490,6 +491,9 @@ def test_workflow_approval_policy_write_routes_keep_writer_database_dependency()
         ("POST", "/workflows/approval-policies"),
         ("POST", "/workflows/approval-policies/{policy_id}/versions"),
         ("POST", "/workflows/approval-policies/{policy_id}/rollback"),
+        ("POST", "/workflows/ticket-flows"),
+        ("PATCH", "/workflows/ticket-flows/{flow_id}"),
+        ("DELETE", "/workflows/ticket-flows/{flow_id}"),
     ]
 
     for method, path in write_routes:
