@@ -16,7 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.core.config import Settings, settings
 from app.models.asset import Asset
-from app.models.automation import AutomationJobRun
+from app.models.automation import AutomationJobRun, JobExecution
 from app.services.automation_worker import JsonValue
 
 
@@ -158,6 +158,7 @@ class AnsiblePlaybookWorkerHandler:
         playbook_name = _payload_str(payload, "playbook_name")
         target_asset_ids = _payload_int_list(payload, "target_asset_ids")
         check_mode = _payload_bool(payload, "check_mode")
+        job_execution_id = _payload_optional_positive_int(payload, "job_execution_id")
 
         async with self._session_factory() as session:
             assets = await _get_active_assets(
@@ -196,6 +197,7 @@ class AnsiblePlaybookWorkerHandler:
             target_count=len(targets),
             status="running",
             error_code=None,
+            job_execution_id=job_execution_id,
         )
         try:
             await self._runner.run(run)
@@ -209,6 +211,7 @@ class AnsiblePlaybookWorkerHandler:
                 target_count=len(targets),
                 status="failed",
                 error_code=_safe_error_code(exc),
+                job_execution_id=job_execution_id,
             )
             raise
         await self._record_run(
@@ -220,6 +223,7 @@ class AnsiblePlaybookWorkerHandler:
             target_count=len(targets),
             status="completed",
             error_code=None,
+            job_execution_id=job_execution_id,
         )
 
     async def _record_run(
@@ -233,6 +237,7 @@ class AnsiblePlaybookWorkerHandler:
         target_count: int,
         status: str,
         error_code: str | None,
+        job_execution_id: int | None = None,
     ) -> None:
         async with self._session_factory() as session:
             run = await session.get(AutomationJobRun, message_id)
@@ -249,6 +254,18 @@ class AnsiblePlaybookWorkerHandler:
             run.check_mode = check_mode
             run.target_count = target_count
             run.error_code = error_code
+            if job_execution_id is not None:
+                execution = await session.get(JobExecution, job_execution_id)
+                if (
+                    execution is not None
+                    and execution.tenant_id == tenant_id
+                    and execution.message_id == message_id
+                ):
+                    execution.status = status
+                    execution.playbook_name = playbook_name
+                    execution.check_mode = check_mode
+                    execution.target_count = target_count
+                    execution.error_code = error_code
             await session.commit()
 
 
@@ -289,6 +306,15 @@ def _payload_int_list(payload: dict[str, JsonValue], key: str) -> list[int]:
 def _payload_str(payload: dict[str, JsonValue], key: str) -> str:
     value = payload.get(key)
     if not isinstance(value, str) or value == "":
+        raise ValueError("AUTOMATION_JOB_PAYLOAD_INVALID")
+    return value
+
+
+def _payload_optional_positive_int(payload: dict[str, JsonValue], key: str) -> int | None:
+    if key not in payload:
+        return None
+    value = payload.get(key)
+    if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
         raise ValueError("AUTOMATION_JOB_PAYLOAD_INVALID")
     return value
 

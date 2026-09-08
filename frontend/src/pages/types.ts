@@ -245,6 +245,37 @@ export type AutomationJobRun = {
   reason?: string | null;
 };
 
+export type JobPlaybook = {
+  id: number;
+  name: string;
+  playbook_name: string;
+  description: string;
+  is_active: boolean;
+};
+
+export type Job = {
+  id: number;
+  name: string;
+  playbook_id: number;
+  playbook_name?: string | null;
+  target_asset_ids: number[];
+  check_mode: boolean;
+  description: string;
+  is_active: boolean;
+};
+
+export type JobExecution = {
+  id: number;
+  job_id: number;
+  message_id: string;
+  status: string;
+  requested_by: string;
+  playbook_name: string;
+  check_mode: boolean;
+  target_count: number;
+  error_code: string | null;
+};
+
 export type CredentialRotation = {
   id: number;
   tenant_id: string;

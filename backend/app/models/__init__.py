@@ -11,7 +11,7 @@ from app.models.admin import LicenseConfigurationModel
 from app.models.asset import Asset, Platform
 from app.models.asset_tree import AssetPermissionModel, NodeModel
 from app.models.audit import AuditEventModel
-from app.models.automation import AutomationJobRun
+from app.models.automation import AutomationJobRun, Job, JobExecution, JobPlaybook
 from app.models.connector import Connector
 from app.models.host_key import AssetHostKeyModel
 from app.models.oidc import OidcProvider
@@ -23,7 +23,6 @@ from app.models.ssh_ca import SshCertificate, SshCertificateAuthority
 from app.models.tenancy import Organization, Project, Team, Tenant
 from app.models.user import ApiKey, User
 from app.models.vault import SecretRecordModel
-from app.models.zone import Zone, ZoneGateway
 from app.models.webhook import NotificationDelivery, NotificationRule, WebhookEndpoint
 from app.models.workflow import (
     ApprovalPolicyModel,
@@ -33,6 +32,7 @@ from app.models.workflow import (
     TicketStepModel,
     WorkflowRequestModel,
 )
+from app.models.zone import Zone, ZoneGateway
 
 __all__ = [
     "ApiKey",
@@ -54,6 +54,9 @@ __all__ = [
     "Connector",
     "DataMaskingRuleModel",
     "CredentialRotation",
+    "Job",
+    "JobExecution",
+    "JobPlaybook",
     "JitGrantModel",
     "LicenseConfigurationModel",
     "LoginAclModel",

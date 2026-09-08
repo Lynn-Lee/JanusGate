@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Awaitable, Callable
-from random import choice
+from secrets import choice
 from typing import Protocol
 
 from sqlalchemy import select
@@ -101,8 +101,8 @@ class AssetVaultSessionConnectionResolver:
         secrets: SessionSecretUnwrapper,
         host_keys: HostKeyTrustStore,
         scanner: HostKeyScanner,
-        k8s_pod_lister=list_namespaced_pods,
-        k8s_token_requester=request_service_account_token,
+        k8s_pod_lister: Callable[..., Awaitable[list[K8sPodInfo]]] = list_namespaced_pods,
+        k8s_token_requester: Callable[..., Awaitable[str]] = request_service_account_token,
     ) -> None:
         self._session_factory = session_factory
         self._secrets = secrets
@@ -277,9 +277,12 @@ class AssetVaultSessionConnectionResolver:
                 if not approved_key.strip():
                     continue
                 # 连通性探测：对网关做主机密钥扫描且须与已批准密钥一致。
+                presented = None
                 try:
                     presented = await self._scanner.scan(gateway.address, gateway.port)
                 except Exception:
+                    presented = None
+                if presented is None:
                     continue
                 classification = classify_presented_key(
                     approved_public_key=approved_key, presented=presented
