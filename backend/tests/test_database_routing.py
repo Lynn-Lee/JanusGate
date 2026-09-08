@@ -13,13 +13,17 @@ from app.api.audits.routes import router as audits_router
 from app.api.auth import router as auth_router
 from app.api.automation import router as automation_router
 from app.api.connectors import router as connectors_router
-from app.api.notification_deliveries import router as notification_deliveries_router
-from app.api.notification_rules import router as notification_rules_router
 from app.api.notification_channels import (
     channels_router as notification_channels_router,
+)
+from app.api.notification_channels import (
     inbox_router as inbox_messages_router,
+)
+from app.api.notification_channels import (
     subscriptions_router as system_msg_subscriptions_router,
 )
+from app.api.notification_deliveries import router as notification_deliveries_router
+from app.api.notification_rules import router as notification_rules_router
 from app.api.session_recordings import router as session_recordings_router
 from app.api.sessions.routes import router as sessions_router
 from app.api.ssh_certificate_authorities import router as ssh_ca_router
