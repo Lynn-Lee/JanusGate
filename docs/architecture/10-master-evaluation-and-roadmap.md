@@ -848,7 +848,7 @@ User ──┬── WorkflowRequest ──── JitGrant
 
 | 任务 ID | 任务 | Owner | 范围 | 优先级 |
 |---------|------|-------|------|--------|
-| **#t69** | SSH / SFTP 通道 | backend + security | **✅ 已完成**：Connector 侧真实 SSH 通道（`asyncssh`）；PTY 交互、命令流解析并接入 #t46 命令事件；SFTP 文件传输并接入 #t78 文件传输审计。**约束**：强制现代算法套件、主机密钥强校验、私钥仅内存传递不落盘、凭据不经命令行（对应关闭 P0#7 / P0#15 / P0#16 / P0#17）。**连接器层已收口**：7 个模块全部落地并有进程内端到端测试（asyncssh 进程内 server，无外部依赖）——`ssh_channel`（exec 通道，四条安全约束逐条有断言）、`ssh_session`（会话编排）、`command_event_sink`（命令事件投递 #t46 端点）、`ssh_interactive`（PTY + 从键盘输入流重建命令 + 读超时）、`ssh_sftp`（传输 + 带 sha256 的 `FileTransferEvent`，失败也发事件）、`ssh_hostkey`（scan → 审批 → 固定，闭环补齐 P0#17 前提）、`session_runtime`（接线到会话网关，`ConnectorScheduler` 即连接器进程边界，网关只传身份、凭据在 resolver 侧）。**生产 SessionConnectionResolver 已 QA SHIP**：`AssetVaultSessionConnectionResolver`（资产注册表 + Vault + 已批准主机密钥）为默认 HTTP 装配，测试仍注入 Noop/Fake；仅 SSH（exec / interactive / sftp）。主机密钥 scan-then-compare、fail-closed、无 TOFU。审批留在现有 WorkflowPage：未知密钥轻确认「确认这台主机」，密钥变更加重警告「这台主机的密钥变了」，无 type-to-confirm。未批准/拒绝/不匹配一律「无法连接」，从不「没有权限」。连接列表展示 k8s（#t72），无新页面。#t78 文件传输日志入库端点未建（属 M6），现以 sink 协议解耦 | 高 |
+| **#t69** | SSH / SFTP 通道 | backend + security | **✅ 已完成**：Connector 侧真实 SSH 通道（`asyncssh`）；PTY 交互、命令流解析并接入 #t46 命令事件；SFTP 文件传输并接入 #t78 文件传输审计。**约束**：强制现代算法套件、主机密钥强校验、私钥仅内存传递不落盘、凭据不经命令行（对应关闭 P0#7 / P0#15 / P0#16 / P0#17）。**连接器层已收口**：7 个模块全部落地并有进程内端到端测试（asyncssh 进程内 server，无外部依赖）——`ssh_channel`（exec 通道，四条安全约束逐条有断言）、`ssh_session`（会话编排）、`command_event_sink`（命令事件投递 #t46 端点）、`ssh_interactive`（PTY + 从键盘输入流重建命令 + 读超时）、`ssh_sftp`（传输 + 带 sha256 的 `FileTransferEvent`，失败也发事件）、`ssh_hostkey`（scan → 审批 → 固定，闭环补齐 P0#17 前提）、`session_runtime`（接线到会话网关，`ConnectorScheduler` 即连接器进程边界，网关只传身份、凭据在 resolver 侧）。**生产 SessionConnectionResolver 已 QA SHIP**：`AssetVaultSessionConnectionResolver`（资产注册表 + Vault + 已批准主机密钥）为默认 HTTP 装配，测试仍注入 Noop/Fake；仅 SSH（exec / interactive / sftp）。主机密钥 scan-then-compare、fail-closed、无 TOFU。审批留在现有 WorkflowPage：未知密钥轻确认「确认这台主机」，密钥变更加重警告「这台主机的密钥变了」，无 type-to-confirm。未批准/拒绝/不匹配一律「无法连接」，从不「没有权限」。连接列表展示 k8s（#t72），无新页面。#t78 文件传输日志入库端点与 `HttpFileTransferEventSink` 已落地（FTPLog 切片），SFTP 通道继续只依赖 sink 协议 | 高 |
 | **#t70** | RDP / VNC 图形通道与录像 | backend + devops | 图形协议网关；会话录像采集、转码与回放；录像存储后端抽象（本地 / S3 / OSS）。**注**：本任务是 Windows 资产直连的前提，与 §3.6.2 不做的 Applet 发布层无关。**排期说明（v2.4）**：本任务需 FreeRDP / guacd 等外部二进制与录像转码存储后端，无法沿用 #t69/#t72 已验证的「进程内、无外部依赖端到端」模式，成本结构与 M3 其余任务不同量级，建议独立立项而非排入常规切片队列 | 高 |
 | **#t71** | 数据库协议代理 | backend | 数据库协议代理通道，SQL 语句级审计并接入命令事件；与 #t65 数据脱敏规则联动。**依赖状态（v2.4）**：所依赖的 #t65 数据脱敏规则已就绪（`PolicyDecisionService.mask`），阻塞已解除；剩余难点是 MySQL / PostgreSQL wire protocol 代理需从零实现，端到端验证需自建协议 server | 中 |
 | **#t72** | K8s exec 通道 | backend | **✅ 已完成**：`kubectl exec` 语义通道（SPDY / WebSocket），命令审计复用统一管线；namespace 作用域强制生效。`app/connectors/k8s_exec.py` 走 WebSocket `v4.channel.k8s.io` 子协议（stdin/stdout/stderr/error 单字节通道帧多路复用），每条 exec 命令复用 #t69 已建的 `CommandEvent` 管线；退出码从 error 通道 `metav1.Status` 解析。三条安全约束逐条有测试：**namespace 作用域在建连前强制**（越权抛 `K8S_NAMESPACE_FORBIDDEN`，服务端收不到请求）、**API Server TLS 强校验**（预置 CA + check_hostname，缺 CA 拒绝 TOFU，https-only）、**token 仅内存经 Authorization 头**（绝不进 URL/argv，repr 屏蔽）。端到端测试用 `websockets` 进程内 wss server + 自签证书，无外部集群依赖。**生产 SessionConnectionResolver（K8s）已 QA SHIP**：`AssetVaultSessionConnectionResolver` 在 `protocol=k8s` 时从资产读取 API URL、预置 CA、单一 namespace，从建连弹层接收 pod（必选）与 container（可选），并从 Vault 解开 token（仅内存）；HTTPS/CA 缺失一律「无法连接（需要 HTTPS 和 CA）」且不打开弹层；缺 namespace 或 namespace 越权一律「无法连接」；连接列表在 AssetPermission connect + 连接方式 ACL 允许时展示 k8s；pod 不落库。**仍待**：交互式 PTY exec（stdin+tty+resize）与 attach（短期 token 签发已由 #t68 TokenRequest QA SHIP） | 中 |
@@ -872,7 +872,7 @@ User ──┬── WorkflowRequest ──── JitGrant
 | 任务 ID | 任务 | Owner | 范围 | 优先级 |
 |---------|------|-------|------|--------|
 | **#t77** | 作业中心 | backend + frontend | 作业 / Playbook / 临时命令 / 变量 / 执行记录；批量命令下发、周期任务、参数化、执行身份策略。复用 #t52 已建立的队列与 Ansible runner。**约束**：JSON-only 队列，无 pickle（P0#10 已由 #t52 关闭，本任务不得回退） | 中 |
-| **#t78** | 审计类型补全与会话高级能力 | backend + frontend | 审计类型：操作日志 / 活动日志 / 文件传输日志 / 改密日志 / 在线会话 / 作业日志；会话共享与监控联机；连接端点与端点路由规则；命令存储与录像存储多后端（含 ES 命令检索）。**约束**：全部审计类型并入 #t61 的 hash chain 与 WORM 归档 | 中 |
+| **#t78** | 审计类型补全与会话高级能力 | backend + frontend | **🟡 文件传输日志首切片已完成**：`FileTransferLog`（迁移 `f6a7b8c9d0e1`）+ 入库/连接器上报/租户列表 API；每条日志先写入 #t61 hash chain 再回指 `audit_event_id`；`HttpFileTransferEventSink` 对接 #t69 SFTP sink；前端 `/audits` 与 `/sessions` 只读列表。**约束**：全部审计类型并入 #t61 的 hash chain 与 WORM 归档。**仍待**：操作/活动/改密/在线会话/作业日志、会话共享与监控联机、端点路由、命令/录像多存储后端（含 ES） | 中 |
 | **#t79** | 平台治理能力 | backend + frontend | 标签体系；报表中心（在 #t49 / #t54 基础上扩展）；数据库驱动的动态系统配置；用户偏好；泄露密码库校验（与 #t65 弱密码策略联动） | 低 |
 
 #### 11.4.3 Phase 6 任务 DoD（每个任务必须满足）
@@ -899,7 +899,7 @@ User ──┬── WorkflowRequest ──── JitGrant
 | M3：真实连接通道 | 6-8 周 | #t69 + #t70 + #t71 + #t72 | 🟡 #t69/#t72 完成；#t70/#t71 未开始 | 风险最高，#t70 图形通道为其中最重 |
 | M4：账号自动化 | 3-4 周 | #t73 | ✅ **完成** | 依赖 #t69 SSH 通道（前置已满足） |
 | M5：工单、通知、认证源 | 4-5 周 | #t74 + #t75 + #t76 | 🟡 #t74/#t76 完成；#t75 未开始 | 可与 M3 并行 |
-| M6：运维与平台治理 | 3-4 周 | #t77 + #t78 + #t79 | ⬜ 未开始 | 收口阶段 |
+| M6：运维与平台治理 | 3-4 周 | #t77 + #t78 + #t79 | 🟡 #t78 文件传输日志首切片 | 收口阶段；#t77/#t75 另有未合并 PR |
 
 > **周期为规模估算而非承诺**，未考虑团队规模与并行度。M3 的估算不确定性最大，建议在预研切片完成后重估。
 
@@ -1071,7 +1071,7 @@ P1（15 项）/ P2（18 项）：架构性问题（xpack 侵入、common 大杂�
 | 10 | 会话录制与命令检索 | 🟡 录制元数据 + 命令事件 + 全文检索 + 只读回放时间线 | 录像本体采集与回放、多存储后端（S3/OSS/ES） | 是 | P4 #t46 → **P6 #t70、#t78** |
 | 11 | 连接组件 / 终端 | 🟡 Connector Registry + 心跳租约 + mTLS 指纹 + attestation + key rotation + SDK + **SSH/SFTP/PTY 与 K8s exec 真实通道** + #t65 执行前守卫 + **生产 `AssetVaultSessionConnectionResolver`** | RDP / VNC / 数据库协议实现；连接列表展示 k8s（#t72 建连弹层选 Pod） | 是 | P4 #t45 → **P6 #t69-72** |
 | 12 | 工单与审批 | 🟡 JIT 申请/审批/Grant 状态机 + 审批策略 DSL + 灰度 + 版本回滚 + **`TicketFlow` / `TicketStep` 多级审批（#t74 asset_grant / command_review QA SHIP）** | 其余工单类型（登录申请 / 资产登录复核）、更广审批规则扩展 | 是 | P2 已有 / P4 #t48 → **P6 #t74** |
-| 13 | 审计 | 🟡 统一审计事件 + **已持久化 append-only** + 库层强制有序 hash chain + SIEM + 合规报表 + WORM 归档 | 分类日志（操作/活动/文件传输/改密/在线会话/作业）；#t78 文件传输日志端点未建 | 是 | P1 已有 → **P6 #t61、#t78** |
+| 13 | 审计 | 🟡 统一审计事件 + **已持久化 append-only** + 库层强制有序 hash chain + SIEM + 合规报表 + WORM 归档 + **文件传输日志（#t78 FTPLog 切片）** | 其余分类日志（操作/活动/改密/在线会话/作业）；会话共享与存储后端 | 是 | P1 已有 → **P6 #t61、#t78** |
 | 14 | 通知 | 🟡 WebHook endpoint + 通知规则 + 投递队列 + 重试/死信 + HTTPS sender | IM 渠道（钉钉/飞书/Lark/企微/Slack）、SMS、邮件、站内信、消息订阅 | 是 | P4 #t47 → **P6 #t75** |
 | 15 | 作业中心 | 🟡 JSON-only 队列 + worker + Ansible runner + 执行记录 | 作业/Playbook 管理模型、临时命令、周期任务、参数化、执行身份策略 | 是 | P4 #t52 → **P6 #t77** |
 | 16 | 标签体系 | ⬜ 无 | 标签模型与资源标注 | 是 | **P6 #t79** |

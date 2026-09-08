@@ -132,6 +132,23 @@ export type SessionCommandEvent = {
   occurred_at: string | null;
 };
 
+export type FileTransferLog = {
+  id: number;
+  tenant_id: string;
+  recording_id: number;
+  session_id: string;
+  asset_id: string;
+  account_id: string;
+  remote_path: string;
+  direction: string;
+  size_bytes: number;
+  sha256: string;
+  status: string;
+  error_code: string;
+  audit_event_id: string;
+  occurred_at: string | null;
+};
+
 export type AuditEvent = {
   id: string;
   tenant_id: string;
