@@ -76,12 +76,28 @@ def clear_dependency_overrides() -> None:
 
 @pytest.fixture(autouse=True)
 def allow_login_overlay(monkeypatch: pytest.MonkeyPatch) -> None:
-    """FakeDB 无法加载 overlay ACL；与 test_auth_api_and_service 一样旁路加载路径。"""
+    """FakeDB 无法加载 overlay ACL 与 RBAC；与 test_auth_api_and_service 一样旁路。"""
 
     async def _allow(*_args: Any, **_kwargs: Any) -> None:
         return None
 
     monkeypatch.setattr(auth_api, "_enforce_login_acl", _allow)
+
+    async def _token_data(db: Any, user: User, *, extra: dict[str, Any] | None = None) -> dict[str, Any]:
+        del db
+        payload: dict[str, Any] = {
+            "sub": str(user.id),
+            "username": user.username,
+            "tenant_id": getattr(user, "tenant_id", None) or "default",
+            "permissions": [],
+            "menu_permissions": [],
+            "role_ids": [],
+        }
+        if extra:
+            payload.update(extra)
+        return payload
+
+    monkeypatch.setattr(auth_api, "_token_data_for_user", _token_data)
 
 
 def user(**overrides: Any) -> User:
