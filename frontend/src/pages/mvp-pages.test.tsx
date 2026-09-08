@@ -413,11 +413,11 @@ describe('MVP pages', () => {
       expect(fetchMock).toHaveBeenCalledWith('/api/v1/admin/license-summary', expect.any(Object))
     );
     expect(await screen.findByText('账号模板')).toBeInTheDocument();
-    expect(screen.getByText('还没有账号模板')).toBeInTheDocument();
+    expect(await screen.findByText('还没有账号模板')).toBeInTheDocument();
     expect(await screen.findByText('审批流')).toBeInTheDocument();
-    expect(screen.getByText('还没有审批流')).toBeInTheDocument();
+    expect(await screen.findByText('还没有审批流')).toBeInTheDocument();
     expect(await screen.findByText('网域')).toBeInTheDocument();
-    expect(screen.getByText('还没有网域')).toBeInTheDocument();
+    expect(await screen.findByText('还没有网域')).toBeInTheDocument();
     expect(await screen.findByText('登录 ACL')).toBeInTheDocument();
     expect(screen.getByText('资产登录 ACL')).toBeInTheDocument();
     expect(screen.getByText('连接方式 ACL')).toBeInTheDocument();
@@ -476,7 +476,7 @@ describe('MVP pages', () => {
 
     expect(screen.queryByText('账号模板')).not.toBeInTheDocument();
     expect(await screen.findByText('网域')).toBeInTheDocument();
-    expect(screen.getByText('还没有网域')).toBeInTheDocument();
+    expect(await screen.findByText('还没有网域')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: '创建网域' })).not.toBeInTheDocument();
     expect(await screen.findByText('登录 ACL')).toBeInTheDocument();
     expect(screen.getByText('资产登录 ACL')).toBeInTheDocument();
