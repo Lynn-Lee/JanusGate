@@ -59,6 +59,22 @@ const sessionCommand = {
   output_excerpt: 'password=[REDACTED]',
   occurred_at: '2026-07-04T10:10:00Z'
 };
+const fileTransfer = {
+  id: 21,
+  tenant_id: 'tenant-a',
+  recording_id: 1,
+  session_id: 'session-1',
+  asset_id: '1',
+  account_id: 'root',
+  remote_path: '/var/tmp/secret=[REDACTED]/backup.tgz',
+  direction: 'upload',
+  size_bytes: 7,
+  sha256: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+  status: 'success',
+  error_code: '',
+  audit_event_id: 'audit-ft-1',
+  occurred_at: '2026-07-04T10:11:00Z'
+};
 const organization = { id: 'org-a', tenant_id: 'tenant-a', name: 'Tenant A Ops', status: 'active' };
 const team = { id: 'team-a', tenant_id: 'tenant-a', organization_id: 'org-a', name: 'Ops Team' };
 const project = { id: 'project-a', tenant_id: 'tenant-a', organization_id: 'org-a', team_id: 'team-a', name: 'Production Project', status: 'active' };
@@ -149,6 +165,8 @@ function installFetch() {
     if (url.endsWith('/api/v1/workflows/grants/active')) return Response.json({ items: [grant], total: 1 });
     if (url.endsWith('/api/v1/sessions/') && method === 'GET') return Response.json({ items: [session], total: 1 });
     if (url.endsWith('/api/v1/session-recordings/1/commands') && method === 'GET') return Response.json({ items: [sessionCommand], total: 1 });
+    if (url.endsWith('/api/v1/session-recordings/1/file-transfers') && method === 'GET') return Response.json({ items: [fileTransfer], total: 1 });
+    if (url.endsWith('/api/v1/file-transfers/') && method === 'GET') return Response.json({ items: [fileTransfer], total: 1 });
     if (url.endsWith('/api/v1/audits/events')) return Response.json({ items: [audit], total: 1, limit: 50, offset: 0 });
     if (url.endsWith('/api/v1/audits/reports/summary')) return Response.json(auditReportSummary);
     if (url.endsWith('/api/v1/audits/reports/compliance?template=soc2-access')) return Response.json(auditComplianceReport);
@@ -294,9 +312,17 @@ describe('MVP pages', () => {
     expect(await screen.findByText('sudo systemctl restart nginx')).toBeInTheDocument();
     expect(screen.getByText('password=[REDACTED]')).toBeInTheDocument();
     expect(screen.queryByText('raw-secret')).not.toBeInTheDocument();
+    expect(await screen.findByText('/var/tmp/secret=[REDACTED]/backup.tgz')).toBeInTheDocument();
+    expect(screen.getByText('1 Transfers')).toBeInTheDocument();
     await waitFor(() =>
       expect(fetchMock).toHaveBeenCalledWith(
         '/api/v1/session-recordings/1/commands',
+        expect.any(Object)
+      )
+    );
+    await waitFor(() =>
+      expect(fetchMock).toHaveBeenCalledWith(
+        '/api/v1/session-recordings/1/file-transfers',
         expect.any(Object)
       )
     );
@@ -326,6 +352,8 @@ describe('MVP pages', () => {
     expect(screen.getByText('高危事件')).toBeInTheDocument();
     expect(screen.getByText('SIEM failed')).toBeInTheDocument();
     expect(screen.getAllByText('3')).toHaveLength(2);
+    expect(screen.getByText('文件传输日志')).toBeInTheDocument();
+    expect(screen.getByText('/var/tmp/secret=[REDACTED]/backup.tgz')).toBeInTheDocument();
     expect(screen.queryByText('secret-token')).not.toBeInTheDocument();
     await waitFor(() =>
       expect(fetchMock).toHaveBeenCalledWith(

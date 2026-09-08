@@ -63,6 +63,7 @@
 - Audit/SIEM：`/api/v1/audits/events`、`/api/v1/audits/reports/summary` 与 `/api/v1/audits/reports/compliance`，审计事件创建、检索、当前租户报表汇总和合规报表导出基础；合规报表响应包含 append-only WORM 归档元数据，不包含原始审计 metadata/message/resource/session 明细。
 - Tenancy：`/api/v1/tenancy/*`，Phase 4 组织/团队/项目管理与租户隔离 API。
 - Session Recordings：`/api/v1/sessions/{session_id}/recordings` 与 `/api/v1/session-recordings/*`，Phase 4 会话录制元数据、命令事件上报与命令检索。
+- File Transfers：`/api/v1/file-transfers/` 与 `/api/v1/session-recordings/{recording_id}/file-transfers`，Phase 6 #t78 文件传输分类日志（并入 hash chain）。
 - Webhook Endpoints：`/api/v1/webhook-endpoints/*`，Phase 4 WebHook / 通知中心 endpoint 管理基础。
 - Notification Rules：`/api/v1/notification-rules/*`，Phase 4 WebHook / 通知规则管理基础。
 - Notification Deliveries：`/api/v1/notification-rules/{rule_id}/deliveries` 与 `/api/v1/notification-deliveries/*`，Phase 4 WebHook 可靠投递队列基础；`NotificationDeliveryWorker` 负责到期投递、失败重试和 dead-letter 状态推进，`HttpWebhookNotificationSender` 负责向 HTTPS WebHook endpoint 投递已脱敏 payload。
@@ -106,7 +107,7 @@ Approval policy DSL 当前支持 `context_equals`、`context_in`、`context_numb
 
 ## Phase 5 Database Read Routing（#t53）
 
-可配置只读副本通过 `DATABASE_READ_REPLICA_URL` 装配；未配置时 read session factory 复用 writer engine，不改变本地开发和单副本部署行为。资产列表、资产详情、平台列表、账号列表、账号轮换列表、会话列表、会话录制命令时间线、命令检索、Tenancy Organization/Team/Project 列表、WebHook endpoint 列表、通知规则列表、通知投递列表、Connector 列表、SSH CA 列表、SSH CA trust bundle、SSH certificate 列表、Automation job run 列表、approval policy 列表、认证态用户详情 `/api/v1/auth/me`、Workflow request 列表/详情以及 active JIT grant 列表 GET 路由已通过 read database dependency 或 read session service factory 读取。审计事件已持久化（#t61）：`AuditService` 自管读写会话，写入走 writer engine、读取走 read session factory（配置 `DATABASE_READ_REPLICA_URL` 时走只读副本），故 `GET /api/v1/audits/events`、`GET /api/v1/audits/reports/summary` 与 `GET /api/v1/audits/reports/compliance` 不挂请求级 `get_read_db` 依赖，而是通过审计服务内部的 read session factory 读取 `audit_events` 表；`tests/test_database_routing.py` 已把这些 audit 路由登记为「自管会话、无请求级 DB 依赖」，并覆盖所有 GET 路由必须被归类。会话生命周期状态也已持久化（#t62）：`SessionGatewayService` 经自管会话的 `SqlAlchemySessionStore` 落库到 `sessions` 表，会话跨副本共享、重启不丢；参与写流程的读（关闭前 `get`、按 JIT grant 撤销前列举）走主库以避免只读副本延迟漏掉刚变更的会话，仅面向用户的会话列表走只读副本；会话 create/close 路由仍经 `get_session_gateway_service` 装配 writer session（供 Workflow store 与 grant 消费共用请求事务），列表经 `get_read_session_gateway_service`。登录、2FA、refresh token、MFA/密码/API key 变更、Session connection token 签发、Session 创建和关闭，以及 Workflow request 创建、提交、审批、拒绝、撤销继续使用 writer session，以保证 token 消费、状态机变更、grant 生成、审计和 session revoke 相关路径强一致。
+可配置只读副本通过 `DATABASE_READ_REPLICA_URL` 装配；未配置时 read session factory 复用 writer engine，不改变本地开发和单副本部署行为。资产列表、资产详情、平台列表、账号列表、账号轮换列表、会话列表、会话录制命令时间线、命令检索、文件传输日志、Tenancy Organization/Team/Project 列表、WebHook endpoint 列表、通知规则列表、通知投递列表、Connector 列表、SSH CA 列表、SSH CA trust bundle、SSH certificate 列表、Automation job run 列表、approval policy 列表、认证态用户详情 `/api/v1/auth/me`、Workflow request 列表/详情以及 active JIT grant 列表 GET 路由已通过 read database dependency 或 read session service factory 读取。审计事件已持久化（#t61）：`AuditService` 自管读写会话，写入走 writer engine、读取走 read session factory（配置 `DATABASE_READ_REPLICA_URL` 时走只读副本），故 `GET /api/v1/audits/events`、`GET /api/v1/audits/reports/summary` 与 `GET /api/v1/audits/reports/compliance` 不挂请求级 `get_read_db` 依赖，而是通过审计服务内部的 read session factory 读取 `audit_events` 表；`tests/test_database_routing.py` 已把这些 audit 路由登记为「自管会话、无请求级 DB 依赖」，并覆盖所有 GET 路由必须被归类。会话生命周期状态也已持久化（#t62）：`SessionGatewayService` 经自管会话的 `SqlAlchemySessionStore` 落库到 `sessions` 表，会话跨副本共享、重启不丢；参与写流程的读（关闭前 `get`、按 JIT grant 撤销前列举）走主库以避免只读副本延迟漏掉刚变更的会话，仅面向用户的会话列表走只读副本；会话 create/close 路由仍经 `get_session_gateway_service` 装配 writer session（供 Workflow store 与 grant 消费共用请求事务），列表经 `get_read_session_gateway_service`。登录、2FA、refresh token、MFA/密码/API key 变更、Session connection token 签发、Session 创建和关闭，以及 Workflow request 创建、提交、审批、拒绝、撤销继续使用 writer session，以保证 token 消费、状态机变更、grant 生成、审计和 session revoke 相关路径强一致。
 
 支持的 `job_type` 白名单：
 
@@ -807,6 +808,50 @@ template=soc2-access
 - PostgreSQL 环境使用 `to_tsvector('simple', command || ' ' || output_excerpt) @@ plainto_tsquery('simple', query)`，并通过 `ix_session_command_events_search_vector` GIN 索引优化命令与输出摘要全文检索。
 - 非 PostgreSQL 测试环境保留 `ILIKE` fallback，便于 SQLite 单元测试覆盖相同租户隔离与脱敏响应契约。
 - 排序使用 `occurred_at DESC, id DESC`，并声明 `ix_session_command_events_tenant_occurred_id` 支撑同租户倒序读取。
+
+## Phase 6 File Transfer Audit API（#t78 FTPLog 切片）
+
+SFTP 文件传输分类日志对标 JumpServer `FTPLog`。文件正文不落库；每条日志先写入 `#t61` hash chain，再以 `audit_event_id` 回指。
+
+### POST `/api/v1/session-recordings/{recording_id}/file-transfers`
+
+用途：向当前租户可见且仍在录制中的会话写入一条文件传输日志。
+
+鉴权：需要登录态；`admin` 或 `session-recordings:write`。
+
+请求体：
+
+```json
+{
+  "remote_path": "/var/tmp/backup.tgz",
+  "direction": "upload",
+  "size_bytes": 12,
+  "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "status": "success",
+  "error_code": ""
+}
+```
+
+安全语义：
+
+- 跨租户、不存在或已关闭录制返回 `404 SESSION_RECORDING_NOT_FOUND`。
+- `remote_path` 脱敏 `token=` / `password=` / `secret=` / `credential=` 赋值片段。
+- 成功传输必须带 64 位 hex SHA-256；失败允许空摘要。非法摘要返回 `400 FILE_TRANSFER_SHA256_INVALID`。
+- 同时写入 `session.file_transfer` 审计事件（失败为 medium），响应包含 `audit_event_id`。
+
+### POST `/api/v1/connectors/{connector_id}/session-recordings/{recording_id}/file-transfers`
+
+用途：连接器上报文件传输事件。请求体同上。鉴权：`admin` 或 `connectors:write`。inactive connector 返回 `403 CONNECTOR_NOT_ACTIVE`；跨租户 connector 返回 `404 CONNECTOR_NOT_FOUND`。
+
+### GET `/api/v1/session-recordings/{recording_id}/file-transfers`
+
+用途：按录制列出文件传输日志。鉴权：`admin`、`session-recordings:read` 或 `audit:read`。
+
+### GET `/api/v1/file-transfers/`
+
+用途：当前租户文件传输日志列表，按发生时间倒序。鉴权同上。前端 `/audits` 与 `/sessions` 使用该只读面，不展示文件正文。
+
+连接器侧 `HttpFileTransferEventSink` 对接 `#t69` `FileTransferEventSink` 协议。
 
 ## Phase 4 Tenancy API（#t42）
 

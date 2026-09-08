@@ -49,6 +49,8 @@ DB_BACKED_GET_ROUTE_ROUTING_INVENTORY = {
     ("GET", "/notification-deliveries/"),
     ("GET", "/notification-rules/"),
     ("GET", "/session-recordings/{recording_id}/commands"),
+    ("GET", "/session-recordings/{recording_id}/file-transfers"),
+    ("GET", "/file-transfers/"),
     ("GET", "/session-recordings/commands"),
     ("GET", "/sessions/"),
     ("GET", "/ssh-certificate-authorities/"),
@@ -59,6 +61,7 @@ DB_BACKED_GET_ROUTE_ROUTING_INVENTORY = {
     ("GET", "/tenancy/teams"),
     ("GET", "/webhook-endpoints/"),
     ("GET", "/workflows/approval-policies"),
+    ("GET", "/workflows/ticket-flows"),
     ("GET", "/workflows/grants/active"),
     ("GET", "/workflows/requests"),
     ("GET", "/workflows/requests/{request_id}"),
@@ -229,6 +232,8 @@ def test_admin_license_routes_use_expected_database_dependencies() -> None:
 def test_session_recording_read_routes_use_read_database_dependency() -> None:
     read_routes = [
         ("GET", "/session-recordings/{recording_id}/commands"),
+        ("GET", "/session-recordings/{recording_id}/file-transfers"),
+        ("GET", "/file-transfers/"),
         ("GET", "/session-recordings/commands"),
     ]
 
@@ -245,6 +250,8 @@ def test_session_recording_write_routes_keep_writer_database_dependency() -> Non
         ("POST", "/sessions/{session_id}/recordings"),
         ("POST", "/session-recordings/{recording_id}/commands"),
         ("POST", "/connectors/{connector_id}/session-recordings/{recording_id}/commands"),
+        ("POST", "/session-recordings/{recording_id}/file-transfers"),
+        ("POST", "/connectors/{connector_id}/session-recordings/{recording_id}/file-transfers"),
         ("POST", "/session-recordings/{recording_id}/close"),
     ]
 
@@ -465,6 +472,7 @@ def test_session_write_routes_keep_writer_service_dependency() -> None:
 def test_workflow_approval_policy_read_routes_use_read_database_dependency() -> None:
     read_routes = [
         ("GET", "/workflows/approval-policies"),
+        ("GET", "/workflows/ticket-flows"),
     ]
 
     for method, path in read_routes:

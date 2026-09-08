@@ -3,7 +3,7 @@ import { useState } from 'react';
 import { useAuth } from '../auth/AuthContext';
 import { ErrorState, LoadingState } from '../components/StatusView';
 import { getErrorMessage, useApiData, useApiMessage } from './pageUtils';
-import type { ListResponse, SessionCommandEvent, SessionRecord } from './types';
+import type { FileTransferLog, ListResponse, SessionCommandEvent, SessionRecord } from './types';
 
 export function SessionsPage() {
   const { api } = useAuth();
@@ -16,6 +16,13 @@ export function SessionsPage() {
     () =>
       activeRecordingId
         ? api.get<ListResponse<SessionCommandEvent>>(`/api/v1/session-recordings/${activeRecordingId}/commands`)
+        : Promise.resolve({ items: [], total: 0 }),
+    [activeRecordingId]
+  );
+  const transfers = useApiData(
+    () =>
+      activeRecordingId
+        ? api.get<ListResponse<FileTransferLog>>(`/api/v1/session-recordings/${activeRecordingId}/file-transfers`)
         : Promise.resolve({ items: [], total: 0 }),
     [activeRecordingId]
   );
@@ -83,7 +90,9 @@ export function SessionsPage() {
             加载回放时间线
           </Button>
           <Tag color="cyan">{timeline.data?.total ?? 0} Commands</Tag>
+          <Tag color="geekblue">{transfers.data?.total ?? 0} Transfers</Tag>
         </Space>
+        {transfers.error ? <ErrorState message={transfers.error} onRetry={transfers.reload} /> : null}
         <Table
           rowKey="id"
           size="small"
@@ -96,6 +105,29 @@ export function SessionsPage() {
             { title: '命令', dataIndex: 'command', ellipsis: true },
             { title: '退出码', dataIndex: 'exit_code', render: (value: number | null) => value ?? '-' },
             { title: '输出摘要', dataIndex: 'output_excerpt', ellipsis: true },
+            { title: '发生时间', dataIndex: 'occurred_at', render: (value: string | null) => value ?? '-' }
+          ]}
+        />
+      </Card>
+
+      <Card title="文件传输日志">
+        <Table
+          rowKey="id"
+          size="small"
+          loading={transfers.loading}
+          dataSource={transfers.data?.items ?? []}
+          pagination={false}
+          locale={{ emptyText: '输入 Recording ID 后加载文件传输日志。' }}
+          columns={[
+            { title: '方向', dataIndex: 'direction', width: 90 },
+            { title: '路径', dataIndex: 'remote_path', ellipsis: true },
+            { title: '字节', dataIndex: 'size_bytes', width: 100 },
+            { title: 'SHA-256', dataIndex: 'sha256', ellipsis: true, render: (value: string) => value || '-' },
+            {
+              title: '状态',
+              dataIndex: 'status',
+              render: (value: string) => <Tag color={value === 'failed' ? 'red' : 'green'}>{value}</Tag>
+            },
             { title: '发生时间', dataIndex: 'occurred_at', render: (value: string | null) => value ?? '-' }
           ]}
         />

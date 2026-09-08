@@ -14,7 +14,7 @@
 
 - 资产页面用于查看平台、资产和 JIT 申请入口。
 - 账号托管页面只展示 Vault `secret_id` 引用，不展示凭据明文。
-- 会话页面展示当前用户可见会话，并支持读取指定录制 ID 的命令时间线。
+- 会话页面展示当前用户可见会话，并支持读取指定录制 ID 的命令时间线和文件传输日志。
 - 会话录制命令摘要会脱敏 token、password、secret、credential 等赋值文本。
 
 ## License / Edition
@@ -46,7 +46,7 @@ External license service evidence 固定在 `docs/site/fixtures/license-operatio
 
 ## 审计与报表
 
-- 审计日志页展示当前租户事件列表和报表摘要。
+- 审计日志页展示当前租户事件列表、报表摘要和文件传输日志（不展示文件正文）。
 - SOC2 合规报表导出只返回事件 ID、hash chain 边界、签名和 WORM 归档元数据，不返回原始 metadata、message、resource_id 或 session_id 明细。
 
 ## 运维门禁

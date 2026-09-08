@@ -3,7 +3,7 @@ import { useState } from 'react';
 import { useAuth } from '../auth/AuthContext';
 import { ErrorState, LoadingState } from '../components/StatusView';
 import { getErrorMessage, useApiData, useApiMessage } from './pageUtils';
-import type { AuditComplianceReport, AuditEvent, AuditListResponse, AuditReportSummary } from './types';
+import type { AuditComplianceReport, AuditEvent, AuditListResponse, AuditReportSummary, FileTransferLog, ListResponse } from './types';
 
 export const auditMetadataRedactedKeys = [
   'password',
@@ -39,6 +39,7 @@ export function AuditsPage() {
   const [complianceReport, setComplianceReport] = useState<AuditComplianceReport | null>(null);
   const summary = useApiData(() => api.get<AuditReportSummary>('/api/v1/audits/reports/summary'), []);
   const events = useApiData(() => api.get<AuditListResponse>('/api/v1/audits/events'), []);
+  const transfers = useApiData(() => api.get<ListResponse<FileTransferLog>>('/api/v1/file-transfers/'), []);
 
   const downloadComplianceReport = async () => {
     setDownloadingCompliance(true);
@@ -67,7 +68,7 @@ export function AuditsPage() {
       <div className="jg-page-header">
         <div>
           <Typography.Title level={2}>审计日志</Typography.Title>
-          <Typography.Text type="secondary">追踪登录、申请、审批、会话创建、撤销和断连等关键安全事件。</Typography.Text>
+          <Typography.Text type="secondary">追踪登录、申请、审批、会话创建、文件传输、撤销和断连等关键安全事件。</Typography.Text>
         </div>
         <Button type="primary" loading={downloadingCompliance} onClick={downloadComplianceReport}>
           下载 SOC2 报表
@@ -117,6 +118,30 @@ export function AuditsPage() {
               { title: '级别', dataIndex: 'severity', render: (value: string) => <Tag color={value === 'critical' || value === 'high' ? 'red' : 'blue'}>{value}</Tag> },
               { title: '结果', dataIndex: 'message', render: (value: string | null) => value || '-' },
               { title: '详情', render: (_: unknown, record: AuditEvent) => <a onClick={() => setSelected(record)}>查看脱敏 metadata</a> }
+            ]}
+          />
+        ) : null}
+      </Card>
+      <Card title="文件传输日志">
+        {transfers.loading ? <LoadingState /> : null}
+        {transfers.error ? <ErrorState message={transfers.error} onRetry={transfers.reload} /> : null}
+        {!transfers.loading && !transfers.error ? (
+          <Table
+            rowKey="id"
+            dataSource={transfers.data?.items ?? []}
+            pagination={{ pageSize: 10 }}
+            locale={{ emptyText: '暂无文件传输日志。SFTP 传输入库后会出现在这里。' }}
+            columns={[
+              { title: '时间', dataIndex: 'occurred_at' },
+              { title: '会话', dataIndex: 'session_id', ellipsis: true },
+              { title: '方向', dataIndex: 'direction' },
+              { title: '路径', dataIndex: 'remote_path', ellipsis: true },
+              { title: '字节', dataIndex: 'size_bytes' },
+              {
+                title: '状态',
+                dataIndex: 'status',
+                render: (value: string) => <Tag color={value === 'failed' ? 'red' : 'green'}>{value}</Tag>
+              }
             ]}
           />
         ) : null}

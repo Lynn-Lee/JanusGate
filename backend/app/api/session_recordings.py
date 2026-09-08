@@ -15,6 +15,9 @@ from sqlalchemy.sql.elements import ColumnElement
 from app.api.audits.schemas import AuditCategory, AuditEventCreate, AuditSeverity
 from app.api.audits.service import audit_service
 from app.api.session_recording_schemas import (
+    FileTransferLogCreate,
+    FileTransferLogListResponse,
+    FileTransferLogResponse,
     SessionCommandEventCreate,
     SessionCommandEventListResponse,
     SessionCommandEventResponse,
@@ -24,6 +27,7 @@ from app.api.session_recording_schemas import (
 from app.core.database import get_db, get_read_db
 from app.core.deps import current_user
 from app.models.connector import Connector
+from app.models.file_transfer import FileTransferLog
 from app.models.session_recording import SessionCommandEvent, SessionRecording
 from app.policy.repository import build_tenant_policy_service
 from app.policy.schemas import (
@@ -152,6 +156,89 @@ async def close_session_recording(
     return _recording_response(recording)
 
 
+@router.post(
+    "/session-recordings/{recording_id}/file-transfers",
+    response_model=FileTransferLogResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+async def append_session_file_transfer(
+    recording_id: int,
+    data: FileTransferLogCreate,
+    db: AsyncSession = Depends(get_db),
+    user: dict[str, Any] = Depends(current_user),
+) -> FileTransferLogResponse:
+    """把一次 SFTP 传输写入分类日志，并先并入 #t61 hash chain。"""
+
+    _require_recording_permission(user, "session-recordings:write")
+    recording = await _get_scoped_recording(db=db, user=user, recording_id=recording_id)
+    _ensure_recording_is_open(recording)
+    log = await _persist_file_transfer(db=db, user=user, recording=recording, data=data)
+    return _file_transfer_response(log)
+
+
+@router.post(
+    "/connectors/{connector_id}/session-recordings/{recording_id}/file-transfers",
+    response_model=FileTransferLogResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+async def ingest_connector_session_file_transfer(
+    connector_id: int,
+    recording_id: int,
+    data: FileTransferLogCreate,
+    db: AsyncSession = Depends(get_db),
+    user: dict[str, Any] = Depends(current_user),
+) -> FileTransferLogResponse:
+    """连接器上报文件传输事件；跨租户或 inactive connector fail-closed。"""
+
+    _require_recording_permission(user, "connectors:write")
+    await _get_active_scoped_connector(db=db, user=user, connector_id=connector_id)
+    recording = await _get_scoped_recording(db=db, user=user, recording_id=recording_id)
+    _ensure_recording_is_open(recording)
+    log = await _persist_file_transfer(db=db, user=user, recording=recording, data=data)
+    return _file_transfer_response(log)
+
+
+@router.get(
+    "/session-recordings/{recording_id}/file-transfers",
+    response_model=FileTransferLogListResponse,
+)
+async def list_session_recording_file_transfers(
+    recording_id: int,
+    db: AsyncSession = Depends(get_read_db),
+    user: dict[str, Any] = Depends(current_user),
+) -> FileTransferLogListResponse:
+    _require_any_recording_read_permission(user)
+    recording = await _get_scoped_recording(db=db, user=user, recording_id=recording_id)
+    result = await db.execute(
+        select(FileTransferLog)
+        .where(FileTransferLog.tenant_id == recording.tenant_id)
+        .where(FileTransferLog.recording_id == recording.id)
+        .order_by(FileTransferLog.occurred_at.asc(), FileTransferLog.id.asc())
+    )
+    logs = result.scalars().all()
+    items = [_file_transfer_response(log) for log in logs]
+    return FileTransferLogListResponse(items=items, total=len(items))
+
+
+@router.get("/file-transfers/", response_model=FileTransferLogListResponse)
+async def list_file_transfers(
+    db: AsyncSession = Depends(get_read_db),
+    user: dict[str, Any] = Depends(current_user),
+) -> FileTransferLogListResponse:
+    """当前租户文件传输日志列表（不返回文件正文）。"""
+
+    _require_any_recording_read_permission(user)
+    tenant_id = str(user.get("tenant_id") or "default")
+    result = await db.execute(
+        select(FileTransferLog)
+        .where(FileTransferLog.tenant_id == tenant_id)
+        .order_by(FileTransferLog.occurred_at.desc(), FileTransferLog.id.desc())
+    )
+    logs = result.scalars().all()
+    items = [_file_transfer_response(log) for log in logs]
+    return FileTransferLogListResponse(items=items, total=len(items))
+
+
 @router.get("/session-recordings/commands", response_model=SessionCommandEventListResponse)
 async def search_session_commands(
     query: str = Query(min_length=1, max_length=120),
@@ -243,6 +330,78 @@ async def _persist_command_event(
     return event
 
 
+async def _persist_file_transfer(
+    *,
+    db: AsyncSession,
+    user: dict[str, Any],
+    recording: SessionRecording,
+    data: FileTransferLogCreate,
+) -> FileTransferLog:
+    """先写 hash chain，再落分类日志；失败传输同样入库，不保存文件正文。
+
+    路径中的 ``token=/password=/secret=/credential=`` 赋值片段会脱敏。审计 metadata
+    只保留路径、方向、字节数、摘要和状态，不落文件内容。
+    """
+
+    digest = _validate_file_transfer_sha256(data)
+    remote_path = _redact_command_excerpt(data.remote_path)
+    severity = (
+        AuditSeverity.medium if data.status == "failed" else AuditSeverity.low
+    )
+    audit = await audit_service.create_event(
+        AuditEventCreate(
+            event_type="session.file_transfer",
+            category=AuditCategory.session,
+            action=f"file.{data.direction}",
+            resource_type="session_recording",
+            resource_id=str(recording.id),
+            session_id=recording.session_id,
+            severity=severity,
+            message="File transfer recorded",
+            metadata={
+                "remote_path": remote_path,
+                "direction": data.direction,
+                "size_bytes": data.size_bytes,
+                "sha256": digest,
+                "status": data.status,
+                "error_code": data.error_code,
+            },
+        ),
+        user,
+    )
+    log = FileTransferLog(
+        tenant_id=recording.tenant_id,
+        recording_id=recording.id,
+        session_id=recording.session_id,
+        asset_id=recording.asset_id,
+        account_id=recording.account_id,
+        remote_path=remote_path,
+        direction=data.direction,
+        size_bytes=data.size_bytes,
+        sha256=digest,
+        status=data.status,
+        error_code=data.error_code,
+        audit_event_id=audit.id,
+    )
+    db.add(log)
+    await db.commit()
+    await db.refresh(log)
+    return log
+
+
+def _validate_file_transfer_sha256(data: FileTransferLogCreate) -> str:
+    """成功传输必须带 64 位 hex 摘要；失败允许空摘要，拒绝把正文当摘要传入。"""
+
+    digest = data.sha256.strip().lower()
+    if data.status == "success":
+        if len(digest) != 64 or any(ch not in "0123456789abcdef" for ch in digest):
+            raise HTTPException(status_code=400, detail="FILE_TRANSFER_SHA256_INVALID")
+        return digest
+    if digest and (len(digest) != 64 or any(ch not in "0123456789abcdef" for ch in digest)):
+        raise HTTPException(status_code=400, detail="FILE_TRANSFER_SHA256_INVALID")
+    return digest
+
+
 async def _audit_rejected_command(
     *,
     user: dict[str, Any],
@@ -312,6 +471,17 @@ def _require_recording_permission(user: dict[str, Any], permission: str) -> None
     raise HTTPException(status_code=403, detail=f"缺少权限: {permission}")
 
 
+def _require_any_recording_read_permission(user: dict[str, Any]) -> None:
+    """文件传输列表对审计员与录制读者均可见，admin 仍作通配符。"""
+
+    permissions = user.get("permissions", [])
+    if "admin" in permissions:
+        return
+    if "session-recordings:read" in permissions or "audit:read" in permissions:
+        return
+    raise HTTPException(status_code=403, detail="缺少权限: session-recordings:read")
+
+
 def _ensure_recording_is_open(recording: SessionRecording) -> None:
     if recording.status != "recording":
         raise HTTPException(status_code=404, detail="SESSION_RECORDING_NOT_FOUND")
@@ -345,6 +515,25 @@ def _recording_response(recording: SessionRecording) -> SessionRecordingResponse
         storage_uri=recording.storage_uri,
         started_at=_as_utc(recording.started_at),
         ended_at=_as_utc(recording.ended_at),
+    )
+
+
+def _file_transfer_response(log: FileTransferLog) -> FileTransferLogResponse:
+    return FileTransferLogResponse(
+        id=log.id,
+        tenant_id=log.tenant_id,
+        recording_id=log.recording_id,
+        session_id=log.session_id,
+        asset_id=log.asset_id,
+        account_id=log.account_id,
+        remote_path=log.remote_path,
+        direction=log.direction,
+        size_bytes=log.size_bytes,
+        sha256=log.sha256,
+        status=log.status,
+        error_code=log.error_code,
+        audit_event_id=log.audit_event_id,
+        occurred_at=_as_utc(log.occurred_at),
     )
 
 

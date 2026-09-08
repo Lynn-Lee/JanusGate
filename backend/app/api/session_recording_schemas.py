@@ -49,3 +49,36 @@ class SessionCommandEventResponse(BaseModel):
 class SessionCommandEventListResponse(BaseModel):
     items: list[SessionCommandEventResponse]
     total: int
+
+
+class FileTransferLogCreate(BaseModel):
+    """连接器/控制台上报的一次文件传输；不包含文件正文。"""
+
+    remote_path: str = Field(min_length=1, max_length=1024)
+    direction: str = Field(pattern="^(upload|download)$")
+    size_bytes: int = Field(ge=0)
+    sha256: str = Field(default="", max_length=64)
+    status: str = Field(pattern="^(success|failed)$")
+    error_code: str = Field(default="", max_length=64)
+
+
+class FileTransferLogResponse(BaseModel):
+    id: int
+    tenant_id: str
+    recording_id: int
+    session_id: str
+    asset_id: str
+    account_id: str
+    remote_path: str
+    direction: str
+    size_bytes: int
+    sha256: str
+    status: str
+    error_code: str
+    audit_event_id: str
+    occurred_at: datetime | None
+
+
+class FileTransferLogListResponse(BaseModel):
+    items: list[FileTransferLogResponse]
+    total: int
