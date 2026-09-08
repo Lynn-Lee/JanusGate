@@ -19,9 +19,7 @@ def is_command_review_request(request: Any) -> bool:
     if action == COMMAND_REVIEW_ACTION:
         return True
     metadata = getattr(request, "metadata", None) or {}
-    if isinstance(metadata, dict) and metadata.get("ticket_type") == "command_review":
-        return True
-    return False
+    return isinstance(metadata, dict) and metadata.get("ticket_type") == "command_review"
 
 
 def command_from_request(request: Any) -> str:

@@ -204,6 +204,35 @@ function installFetch() {
       return Response.json({ items: [], total: 0 });
     }
     if (url.endsWith('/api/v1/automation/jobs/runs')) return Response.json({ items: [], total: 0 });
+    if (url.endsWith('/api/v1/job-center/playbooks/') && method === 'GET') {
+      return Response.json({
+        items: [{ id: 1, name: 'noop', playbook_name: 'noop.yml', description: 'safe', is_active: true }],
+        total: 1
+      });
+    }
+    if (url.endsWith('/api/v1/job-center/jobs/') && method === 'GET') {
+      return Response.json({
+        items: [
+          {
+            id: 1,
+            name: 'nightly-noop',
+            playbook_id: 1,
+            playbook_name: 'noop.yml',
+            target_asset_ids: [1],
+            check_mode: true,
+            description: '',
+            is_active: true
+          }
+        ],
+        total: 1
+      });
+    }
+    if (url.endsWith('/api/v1/job-center/executions/') && method === 'GET') {
+      return Response.json({ items: [], total: 0 });
+    }
+    if (url.endsWith('/api/v1/job-center/jobs/1/run') && method === 'POST') {
+      return Response.json({ execution_id: 9, job_id: 1, message_id: '1700000000001-0', status: 'queued' }, { status: 202 });
+    }
     if (url.endsWith('/api/v1/zones/')) return Response.json({ items: [], total: 0 });
     if (url.includes('/api/v1/workflows/ticket-flows')) return Response.json({ items: [], total: 0 });
     if (url.endsWith('/api/v1/zones/gateway-candidates/')) return Response.json([]);
@@ -549,6 +578,29 @@ describe('MVP pages', () => {
         expect.objectContaining({
           method: 'POST',
           body: JSON.stringify({ reason: 'console requested rotation' })
+        })
+      )
+    );
+  });
+
+  it('shows job center playbooks and enqueues a run without secrets', async () => {
+    const fetchMock = installFetch();
+    vi.stubGlobal('fetch', fetchMock);
+    history.pushState(null, '', '/jobs');
+    render(<App />);
+
+    expect(await screen.findByRole('heading', { name: '作业中心' })).toBeInTheDocument();
+    expect(screen.getByText('nightly-noop')).toBeInTheDocument();
+    expect(screen.getAllByText('noop.yml').length).toBeGreaterThan(0);
+    expect(screen.queryByText('password')).not.toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole('button', { name: /立即执行/ }));
+    await waitFor(() =>
+      expect(fetchMock).toHaveBeenCalledWith(
+        '/api/v1/job-center/jobs/1/run',
+        expect.objectContaining({
+          method: 'POST',
+          body: JSON.stringify({})
         })
       )
     );
