@@ -64,7 +64,7 @@
 - Tenancy：`/api/v1/tenancy/*`，Phase 4 组织/团队/项目管理与租户隔离 API。
 - Session Recordings：`/api/v1/sessions/{session_id}/recordings` 与 `/api/v1/session-recordings/*`，Phase 4 会话录制元数据、命令事件上报与命令检索。
 - File Transfers：`/api/v1/file-transfers/` 与 `/api/v1/session-recordings/{recording_id}/file-transfers`，Phase 6 #t78 文件传输分类日志（并入 hash chain）。
-- Operate / Password Change Logs：`/api/v1/operate-logs/` 与 `/api/v1/password-change-logs/`，Phase 6 #t78 操作日志与改密日志（并入 hash chain）。
+- Operate / Password Change / Activity / Online Session Logs：`/api/v1/operate-logs/`、`/api/v1/password-change-logs/`、`/api/v1/activity-logs/` 与 `/api/v1/online-sessions/`，Phase 6 #t78 分类审计（并入 hash chain）。
 - Webhook Endpoints：`/api/v1/webhook-endpoints/*`，Phase 4 WebHook / 通知中心 endpoint 管理基础。
 - Notification Rules：`/api/v1/notification-rules/*`，Phase 4 WebHook / 通知规则管理基础。
 - Notification Deliveries：`/api/v1/notification-rules/{rule_id}/deliveries` 与 `/api/v1/notification-deliveries/*`，Phase 4 WebHook 可靠投递队列基础；`NotificationDeliveryWorker` 负责到期投递、失败重试和 dead-letter 状态推进，`HttpWebhookNotificationSender` 负责向 HTTPS WebHook endpoint 投递已脱敏 payload。
@@ -854,9 +854,9 @@ SFTP 文件传输分类日志对标 JumpServer `FTPLog`。文件正文不落库�
 
 连接器侧 `HttpFileTransferEventSink` 对接 `#t69` `FileTransferEventSink` 协议。
 
-## Phase 6 Operate / Password Change Audit API（#t78 第二切片）
+## Phase 6 Classified Audit API（#t78）
 
-对标 JumpServer `OperateLog` / `PasswordChangeLog`。分类日志先写入 `#t61` hash chain，再以 `audit_event_id` 回指。摘要与 metadata 不含密码、secret、token 或凭据正文。
+对标 JumpServer `OperateLog` / `PasswordChangeLog` / `ActivityLog` / `UserSession`。分类日志先写入 `#t61` hash chain，再以 `audit_event_id` 回指。摘要、detail 与 metadata 不含密码、secret、token 或凭据正文。
 
 ### GET `/api/v1/operate-logs/`
 
@@ -865,6 +865,18 @@ SFTP 文件传输分类日志对标 JumpServer `FTPLog`。文件正文不落库�
 ### GET `/api/v1/password-change-logs/`
 
 用途：当前租户改密日志列表。鉴权同上。`POST /api/v1/auth/password/change` 成功后写入 `auth.password_change` 审计事件（medium）并回指本表。
+
+### GET `/api/v1/activity-logs/`
+
+用途：当前租户活动时间线。操作、改密、登录与结束在线会话会复用对应 hash chain 事件写入本表，不另开第二条审计事件。鉴权同上。
+
+### GET `/api/v1/online-sessions/`
+
+用途：当前租户交互式登录会话列表。响应不含 access/refresh token。鉴权同上。
+
+### POST `/api/v1/online-sessions/{session_id}/end`
+
+用途：结束当前租户在线会话。鉴权：仅 `admin`。跨租户 `404 ONLINE_SESSION_NOT_FOUND`。成功时写入 `auth.session_end` 并回指 `ended_audit_event_id`。已结束会话幂等返回当前行。
 
 ## Phase 4 Tenancy API（#t42）
 

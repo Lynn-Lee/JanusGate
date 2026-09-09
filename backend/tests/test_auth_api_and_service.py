@@ -14,6 +14,7 @@ from app.core.database import get_db, get_read_db
 from app.core.deps import current_user, get_redis, require_permission
 from app.core.security import create_access_token, create_refresh_token
 from app.main import app
+from app.models.classified_log import ActivityLog, OnlineUserSession
 from app.models.user import ApiKey, User
 from app.services import auth as auth_service_module
 from app.services.auth import AuthService
@@ -160,7 +161,8 @@ def async_raise(error: Exception) -> Any:
 
 
 def test_login_returns_access_and_refresh_tokens(monkeypatch: pytest.MonkeyPatch) -> None:
-    install_db(FakeDB())
+    fake = FakeDB()
+    install_db(fake)
     monkeypatch.setattr(AuthService, "authenticate", async_value(user()))
     monkeypatch.setattr(auth_api, "create_access_token", lambda payload: f"access:{payload['sub']}")
     monkeypatch.setattr(auth_api, "create_refresh_token", lambda payload: f"refresh:{payload['sub']}")
@@ -175,10 +177,17 @@ def test_login_returns_access_and_refresh_tokens(monkeypatch: pytest.MonkeyPatch
     assert response.json()["access_token"] == "access:1"
     assert response.json()["refresh_token"] == "refresh:1"
     assert response.json()["requires_2fa"] is False
+    sessions = [obj for obj in fake.added if isinstance(obj, OnlineUserSession)]
+    assert len(sessions) == 1
+    assert sessions[0].username == "alice"
+    assert sessions[0].status == "active"
+    assert "access_token" not in sessions[0].__dict__
+    assert any(isinstance(obj, ActivityLog) and obj.action == "login" for obj in fake.added)
 
 
 def test_login_requires_2fa_when_totp_is_enabled(monkeypatch: pytest.MonkeyPatch) -> None:
-    install_db(FakeDB())
+    fake = FakeDB()
+    install_db(fake)
     monkeypatch.setattr(AuthService, "authenticate", async_value(user(totp_enabled=True)))
     monkeypatch.setattr(auth_api, "create_mfa_token", lambda payload: f"mfa:{payload['sub']}")
 
@@ -192,10 +201,12 @@ def test_login_requires_2fa_when_totp_is_enabled(monkeypatch: pytest.MonkeyPatch
     assert response.json()["requires_2fa"] is True
     assert response.json()["two_fa_token"] == "mfa:1"
     assert response.json()["access_token"] == ""
+    assert not any(isinstance(obj, OnlineUserSession) for obj in fake.added)
 
 
 def test_login_rejects_bad_credentials(monkeypatch: pytest.MonkeyPatch) -> None:
-    install_db(FakeDB())
+    fake = FakeDB()
+    install_db(fake)
     monkeypatch.setattr(AuthService, "authenticate", async_value(None))
 
     with TestClient(app) as client:
@@ -206,10 +217,12 @@ def test_login_rejects_bad_credentials(monkeypatch: pytest.MonkeyPatch) -> None:
 
     assert response.status_code == 401
     assert response.json()["detail"] == "用户名或密码错误"
+    assert fake.added == []
 
 
 def test_login_2fa_exchanges_valid_challenge_for_session_tokens(monkeypatch: pytest.MonkeyPatch) -> None:
-    install_db(FakeDB(ScalarResult(user(totp_enabled=True))))
+    fake = FakeDB(ScalarResult(user(totp_enabled=True)))
+    install_db(fake)
     redis = install_redis()
     issued_access_payloads: list[dict[str, Any]] = []
     monkeypatch.setattr(auth_api, "decode_token", lambda _token: {"sub": "1", "type": "mfa", "jti": "mfa-jti", "requires_2fa": True})
@@ -232,6 +245,7 @@ def test_login_2fa_exchanges_valid_challenge_for_session_tokens(monkeypatch: pyt
     assert response.json()["refresh_token"] == "refresh:1"
     assert redis.last_set == ("mfa:challenge:consumed:mfa-jti", "1", 300, True)
     assert "assets:read" in issued_access_payloads[0]["permissions"]
+    assert any(isinstance(obj, OnlineUserSession) for obj in fake.added)
 
 
 def test_login_2fa_rejects_invalid_challenge_and_bad_totp(monkeypatch: pytest.MonkeyPatch) -> None:

@@ -96,6 +96,30 @@ const passwordChangeLog = {
   audit_event_id: 'audit-pw-1',
   occurred_at: '2026-07-04T10:13:00Z'
 };
+const activityLog = {
+  id: 51,
+  tenant_id: 'tenant-a',
+  actor_id: '1',
+  actor_username: 'admin',
+  resource_type: 'user',
+  resource_id: '1',
+  action: 'login',
+  detail: 'interactive login from 203.0.113.10',
+  audit_event_id: 'audit-login-1',
+  occurred_at: '2026-07-04T10:14:00Z'
+};
+const onlineUserSession = {
+  id: 61,
+  tenant_id: 'tenant-a',
+  user_id: '1',
+  username: 'admin',
+  client_ip: '203.0.113.10',
+  status: 'active',
+  audit_event_id: 'audit-login-1',
+  ended_audit_event_id: '',
+  occurred_at: '2026-07-04T10:14:00Z',
+  ended_at: null
+};
 const organization = { id: 'org-a', tenant_id: 'tenant-a', name: 'Tenant A Ops', status: 'active' };
 const team = { id: 'team-a', tenant_id: 'tenant-a', organization_id: 'org-a', name: 'Ops Team' };
 const project = { id: 'project-a', tenant_id: 'tenant-a', organization_id: 'org-a', team_id: 'team-a', name: 'Production Project', status: 'active' };
@@ -190,6 +214,8 @@ function installFetch() {
     if (url.endsWith('/api/v1/file-transfers/') && method === 'GET') return Response.json({ items: [fileTransfer], total: 1 });
     if (url.endsWith('/api/v1/operate-logs/') && method === 'GET') return Response.json({ items: [operateLog], total: 1 });
     if (url.endsWith('/api/v1/password-change-logs/') && method === 'GET') return Response.json({ items: [passwordChangeLog], total: 1 });
+    if (url.endsWith('/api/v1/activity-logs/') && method === 'GET') return Response.json({ items: [activityLog], total: 1 });
+    if (url.endsWith('/api/v1/online-sessions/') && method === 'GET') return Response.json({ items: [onlineUserSession], total: 1 });
     if (url.endsWith('/api/v1/audits/events')) return Response.json({ items: [audit], total: 1, limit: 50, offset: 0 });
     if (url.endsWith('/api/v1/audits/reports/summary')) return Response.json(auditReportSummary);
     if (url.endsWith('/api/v1/audits/reports/compliance?template=soc2-access')) return Response.json(auditComplianceReport);
@@ -381,6 +407,10 @@ describe('MVP pages', () => {
     expect(screen.getByText('create asset 生产 SSH 主机')).toBeInTheDocument();
     expect(screen.getByText('改密日志')).toBeInTheDocument();
     expect(screen.getByText('self')).toBeInTheDocument();
+    expect(screen.getByText('活动日志')).toBeInTheDocument();
+    expect(screen.getByText('interactive login from 203.0.113.10')).toBeInTheDocument();
+    expect(screen.getByText('在线会话')).toBeInTheDocument();
+    expect(screen.getByText('203.0.113.10')).toBeInTheDocument();
     expect(screen.queryByText('secret-token')).not.toBeInTheDocument();
     await waitFor(() =>
       expect(fetchMock).toHaveBeenCalledWith(

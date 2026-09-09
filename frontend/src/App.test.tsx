@@ -43,6 +43,12 @@ function mockFetch() {
     if (url.endsWith('/api/v1/password-change-logs/')) {
       return Response.json({ items: [], total: 0 });
     }
+    if (url.endsWith('/api/v1/activity-logs/')) {
+      return Response.json({ items: [], total: 0 });
+    }
+    if (url.endsWith('/api/v1/online-sessions/')) {
+      return Response.json({ items: [], total: 0 });
+    }
     if (url.endsWith('/health')) {
       return Response.json({ status: 'ok', version: '0.1.0' });
     }

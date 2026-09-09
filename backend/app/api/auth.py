@@ -7,7 +7,7 @@ from redis.asyncio import Redis
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.classified_logs import persist_password_change_log
+from app.api.classified_logs import persist_login_session, persist_password_change_log
 from app.core.database import get_db, get_read_db
 from app.core.deps import current_user, get_redis
 from app.core.security import (
@@ -72,6 +72,9 @@ async def login(
         )
 
     token_data = await _token_data_for_user(db, user)
+    await persist_login_session(
+        db=db, user=_login_actor(user), client_ip=_request_client_ip(request)
+    )
     return TokenResponse(
         access_token=create_access_token(token_data),
         refresh_token=create_refresh_token(token_data),
@@ -106,6 +109,9 @@ async def login_2fa(
         raise HTTPException(status_code=400, detail="TOTP 验证码错误")
     await _enforce_login_acl(db, user, request)
     token_data = await _token_data_for_user(db, user, extra={"2fa_verified": True})
+    await persist_login_session(
+        db=db, user=_login_actor(user), client_ip=_request_client_ip(request)
+    )
     return TokenResponse(
         access_token=create_access_token(token_data),
         refresh_token=create_refresh_token(token_data),
@@ -270,6 +276,20 @@ def _require_users_directory(user: dict[str, Any]) -> None:
 
 
 LOGIN_ACL_DENIED_COPY = "当前无法登录"
+
+
+def _login_actor(user: User) -> dict[str, Any]:
+    return {
+        "id": str(user.id),
+        "username": user.username,
+        "tenant_id": getattr(user, "tenant_id", None) or "default",
+    }
+
+
+def _request_client_ip(request: Request) -> str:
+    if request.client is None:
+        return ""
+    return request.client.host or ""
 
 
 async def _enforce_login_acl(

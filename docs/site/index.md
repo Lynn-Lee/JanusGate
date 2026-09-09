@@ -16,7 +16,7 @@ Phase 5 #t59 文档站 foundation 面向安装、运维和 API 集成读者，�
 - [资产树与 AssetPermission](asset-tree-authorization.md)：#t64 的节点树、资产挂载、用户/用户组授权、账号/协议/动作/有效期/来源工单选择器，以及会话授权 explain 链路。
 - [RBAC 角色与权限](rbac.md)：#t63 的 Role / RoleBinding / 对象级 Permission、system+org 双 scope、内置角色、菜单权限与登录 token 签发接入。
 - [文件传输审计](file-transfer-audit.md)：#t78 首切片——SFTP 文件传输日志入库、hash chain 回指与连接器 HTTP sink。
-- [操作日志与改密日志](classified-audit.md)：#t78 第二切片——OperateLog / PasswordChangeLog 分类审计与 hash chain 回指。
+- [分类审计](classified-audit.md)：#t78——OperateLog / PasswordChangeLog / ActivityLog / 在线会话分类审计与 hash chain 回指。
 
 ## 版本边界
 

@@ -21,4 +21,4 @@
 
 ## 本切片未覆盖
 
-活动日志、在线会话、作业日志、会话共享与监控联机、端点路由、命令/录像多存储后端（含 ES）。操作日志与改密日志见 [`classified-audit.md`](classified-audit.md)。
+作业日志、会话共享与监控联机、端点路由、命令/录像多存储后端（含 ES）。操作/改密/活动/在线会话日志见 [`classified-audit.md`](classified-audit.md)。
