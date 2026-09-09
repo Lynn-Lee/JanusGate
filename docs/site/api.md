@@ -34,6 +34,7 @@ scripts/build-docs-site.sh dist/docs-site
 - SSH CA：`/api/v1/ssh-certificate-authorities/`、trust bundle 和 `/api/v1/ssh-certificates/`。
 - Audit：`/api/v1/audits/events`、`/api/v1/audits/reports/summary`、`/api/v1/audits/reports/compliance`。
 - File transfers：`/api/v1/file-transfers/` 与 `/api/v1/session-recordings/{recording_id}/file-transfers`（#t78 FTPLog 切片；详见[文件传输审计](file-transfer-audit.md)）。
+- Operate / password-change logs：`/api/v1/operate-logs/` 与 `/api/v1/password-change-logs/`（#t78 第二切片；详见[操作日志与改密日志](classified-audit.md)）。
 - Automation：`/api/v1/automation/jobs/asset-scans`、credential rotations、playbooks 和 job runs。
 - Admin：`/api/v1/admin/license-summary` 与 admin-only `POST /api/v1/admin/license-config`。
 - ACL：`/api/v1/command-filter-acls/` 与 `/api/v1/data-masking-rules/`（租户隔离 CRUD，仅这两类；SSH/K8s/PTY 执行前与命令事件入库均走 PolicyDecisionService）。

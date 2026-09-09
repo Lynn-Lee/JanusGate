@@ -75,6 +75,27 @@ const fileTransfer = {
   audit_event_id: 'audit-ft-1',
   occurred_at: '2026-07-04T10:11:00Z'
 };
+const operateLog = {
+  id: 31,
+  tenant_id: 'tenant-a',
+  actor_id: '1',
+  actor_username: 'admin',
+  resource_type: 'asset',
+  resource_id: '1',
+  action: 'create',
+  summary: 'create asset 生产 SSH 主机',
+  audit_event_id: 'audit-op-1',
+  occurred_at: '2026-07-04T10:12:00Z'
+};
+const passwordChangeLog = {
+  id: 41,
+  tenant_id: 'tenant-a',
+  user_id: '1',
+  username: 'admin',
+  method: 'self',
+  audit_event_id: 'audit-pw-1',
+  occurred_at: '2026-07-04T10:13:00Z'
+};
 const organization = { id: 'org-a', tenant_id: 'tenant-a', name: 'Tenant A Ops', status: 'active' };
 const team = { id: 'team-a', tenant_id: 'tenant-a', organization_id: 'org-a', name: 'Ops Team' };
 const project = { id: 'project-a', tenant_id: 'tenant-a', organization_id: 'org-a', team_id: 'team-a', name: 'Production Project', status: 'active' };
@@ -167,6 +188,8 @@ function installFetch() {
     if (url.endsWith('/api/v1/session-recordings/1/commands') && method === 'GET') return Response.json({ items: [sessionCommand], total: 1 });
     if (url.endsWith('/api/v1/session-recordings/1/file-transfers') && method === 'GET') return Response.json({ items: [fileTransfer], total: 1 });
     if (url.endsWith('/api/v1/file-transfers/') && method === 'GET') return Response.json({ items: [fileTransfer], total: 1 });
+    if (url.endsWith('/api/v1/operate-logs/') && method === 'GET') return Response.json({ items: [operateLog], total: 1 });
+    if (url.endsWith('/api/v1/password-change-logs/') && method === 'GET') return Response.json({ items: [passwordChangeLog], total: 1 });
     if (url.endsWith('/api/v1/audits/events')) return Response.json({ items: [audit], total: 1, limit: 50, offset: 0 });
     if (url.endsWith('/api/v1/audits/reports/summary')) return Response.json(auditReportSummary);
     if (url.endsWith('/api/v1/audits/reports/compliance?template=soc2-access')) return Response.json(auditComplianceReport);
@@ -354,6 +377,10 @@ describe('MVP pages', () => {
     expect(screen.getAllByText('3')).toHaveLength(2);
     expect(screen.getByText('文件传输日志')).toBeInTheDocument();
     expect(screen.getByText('/var/tmp/secret=[REDACTED]/backup.tgz')).toBeInTheDocument();
+    expect(screen.getByText('操作日志')).toBeInTheDocument();
+    expect(screen.getByText('create asset 生产 SSH 主机')).toBeInTheDocument();
+    expect(screen.getByText('改密日志')).toBeInTheDocument();
+    expect(screen.getByText('self')).toBeInTheDocument();
     expect(screen.queryByText('secret-token')).not.toBeInTheDocument();
     await waitFor(() =>
       expect(fetchMock).toHaveBeenCalledWith(

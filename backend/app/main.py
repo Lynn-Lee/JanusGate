@@ -11,7 +11,6 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 
 from app.api import (
-    zones,
     account_templates,
     accounts,
     acl,
@@ -20,17 +19,19 @@ from app.api import (
     assets,
     auth,
     automation,
-    oidc,
+    classified_logs,
     connectors,
     notification_deliveries,
     notification_rules,
-    rbac,
+    oidc,
     protocols,
+    rbac,
     session_recordings,
     sessions,
     ssh_certificate_authorities,
     ssh_certificates,
     webhook_endpoints,
+    zones,
 )
 from app.api.audits.routes import router as audits_router
 from app.api.tenancy.routes import router as tenancy_router
@@ -70,6 +71,7 @@ app.add_middleware(
 register_exception_handlers(app)
 
 app.include_router(auth.router, prefix="/api/v1")
+app.include_router(classified_logs.router, prefix="/api/v1")
 app.include_router(auth.users_router, prefix="/api/v1")
 app.include_router(oidc.router, prefix="/api/v1")
 app.include_router(accounts.router, prefix="/api/v1")
