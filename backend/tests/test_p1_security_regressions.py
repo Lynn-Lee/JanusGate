@@ -41,9 +41,20 @@ class ScalarResult:
 class FakeDB:
     def __init__(self, value: Any = None) -> None:
         self.value = value
+        self.added: list[Any] = []
 
     async def execute(self, _statement: Any) -> ScalarResult:
         return ScalarResult(self.value)
+
+    def add(self, obj: Any) -> None:
+        self.added.append(obj)
+
+    async def commit(self) -> None:
+        return None
+
+    async def refresh(self, obj: Any) -> None:
+        if getattr(obj, "id", None) is None:
+            obj.id = 1
 
 
 class FakeRedis:

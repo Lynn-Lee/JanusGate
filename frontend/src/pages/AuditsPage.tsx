@@ -3,7 +3,7 @@ import { useState } from 'react';
 import { useAuth } from '../auth/AuthContext';
 import { ErrorState, LoadingState } from '../components/StatusView';
 import { getErrorMessage, useApiData, useApiMessage } from './pageUtils';
-import type { AuditComplianceReport, AuditEvent, AuditListResponse, AuditReportSummary, FileTransferLog, ListResponse, OperateLog, PasswordChangeLog } from './types';
+import type { ActivityLog, AuditComplianceReport, AuditEvent, AuditListResponse, AuditReportSummary, FileTransferLog, ListResponse, OnlineUserSession, OperateLog, PasswordChangeLog } from './types';
 
 export const auditMetadataRedactedKeys = [
   'password',
@@ -42,6 +42,8 @@ export function AuditsPage() {
   const transfers = useApiData(() => api.get<ListResponse<FileTransferLog>>('/api/v1/file-transfers/'), []);
   const operateLogs = useApiData(() => api.get<ListResponse<OperateLog>>('/api/v1/operate-logs/'), []);
   const passwordChanges = useApiData(() => api.get<ListResponse<PasswordChangeLog>>('/api/v1/password-change-logs/'), []);
+  const activityLogs = useApiData(() => api.get<ListResponse<ActivityLog>>('/api/v1/activity-logs/'), []);
+  const onlineSessions = useApiData(() => api.get<ListResponse<OnlineUserSession>>('/api/v1/online-sessions/'), []);
 
   const downloadComplianceReport = async () => {
     setDownloadingCompliance(true);
@@ -70,7 +72,7 @@ export function AuditsPage() {
       <div className="jg-page-header">
         <div>
           <Typography.Title level={2}>审计日志</Typography.Title>
-          <Typography.Text type="secondary">追踪登录、申请、审批、会话、文件传输、操作、改密、撤销和断连等关键安全事件。</Typography.Text>
+          <Typography.Text type="secondary">追踪登录、申请、审批、会话、文件传输、操作、改密、活动、在线会话、撤销和断连等关键安全事件。</Typography.Text>
         </div>
         <Button type="primary" loading={downloadingCompliance} onClick={downloadComplianceReport}>
           下载 SOC2 报表
@@ -180,6 +182,70 @@ export function AuditsPage() {
               { title: '时间', dataIndex: 'occurred_at' },
               { title: '用户', dataIndex: 'username' },
               { title: '方式', dataIndex: 'method' }
+            ]}
+          />
+        ) : null}
+      </Card>
+      <Card title="活动日志">
+        {activityLogs.loading ? <LoadingState /> : null}
+        {activityLogs.error ? <ErrorState message={activityLogs.error} onRetry={activityLogs.reload} /> : null}
+        {!activityLogs.loading && !activityLogs.error ? (
+          <Table
+            rowKey="id"
+            dataSource={activityLogs.data?.items ?? []}
+            pagination={{ pageSize: 10 }}
+            locale={{ emptyText: '暂无活动日志。登录与管理面写操作入库后会出现在这里。' }}
+            columns={[
+              { title: '时间', dataIndex: 'occurred_at' },
+              { title: '操作者', dataIndex: 'actor_username' },
+              { title: '动作', dataIndex: 'action' },
+              { title: '资源', render: (_: unknown, record: ActivityLog) => `${record.resource_type}:${record.resource_id}` },
+              { title: '详情', dataIndex: 'detail', ellipsis: true }
+            ]}
+          />
+        ) : null}
+      </Card>
+      <Card title="在线会话">
+        {onlineSessions.loading ? <LoadingState /> : null}
+        {onlineSessions.error ? <ErrorState message={onlineSessions.error} onRetry={onlineSessions.reload} /> : null}
+        {!onlineSessions.loading && !onlineSessions.error ? (
+          <Table
+            rowKey="id"
+            dataSource={onlineSessions.data?.items ?? []}
+            pagination={{ pageSize: 10 }}
+            locale={{ emptyText: '暂无在线会话。交互式登录成功后会出现在这里。' }}
+            columns={[
+              { title: '时间', dataIndex: 'occurred_at' },
+              { title: '用户', dataIndex: 'username' },
+              { title: '来源 IP', dataIndex: 'client_ip' },
+              {
+                title: '状态',
+                dataIndex: 'status',
+                render: (value: string) => <Tag color={value === 'ended' ? 'default' : 'green'}>{value}</Tag>
+              },
+              {
+                title: '操作',
+                render: (_: unknown, record: OnlineUserSession) =>
+                  record.status === 'active' ? (
+                    <Button
+                      size="small"
+                      onClick={async () => {
+                        try {
+                          await api.post(`/api/v1/online-sessions/${record.id}/end`);
+                          onlineSessions.reload();
+                          activityLogs.reload();
+                          apiMessage.success('在线会话已结束');
+                        } catch (error) {
+                          apiMessage.error(getErrorMessage(error));
+                        }
+                      }}
+                    >
+                      结束
+                    </Button>
+                  ) : (
+                    '-'
+                  )
+              }
             ]}
           />
         ) : null}

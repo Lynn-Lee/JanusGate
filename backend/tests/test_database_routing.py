@@ -54,6 +54,8 @@ DB_BACKED_GET_ROUTE_ROUTING_INVENTORY = {
     ("GET", "/file-transfers/"),
     ("GET", "/operate-logs/"),
     ("GET", "/password-change-logs/"),
+    ("GET", "/activity-logs/"),
+    ("GET", "/online-sessions/"),
     ("GET", "/session-recordings/commands"),
     ("GET", "/sessions/"),
     ("GET", "/ssh-certificate-authorities/"),
@@ -253,6 +255,8 @@ def test_classified_log_read_routes_use_read_database_dependency() -> None:
     read_routes = [
         ("GET", "/operate-logs/"),
         ("GET", "/password-change-logs/"),
+        ("GET", "/activity-logs/"),
+        ("GET", "/online-sessions/"),
     ]
 
     for method, path in read_routes:
@@ -261,6 +265,14 @@ def test_classified_log_read_routes_use_read_database_dependency() -> None:
         )
         assert get_read_db in dependencies
         assert get_db not in dependencies
+
+
+def test_classified_log_kick_route_uses_write_database_dependency() -> None:
+    dependencies = _route_dependency_calls(
+        router=classified_logs_router, method="POST", path="/online-sessions/{session_id}/end"
+    )
+    assert get_db in dependencies
+    assert get_read_db not in dependencies
 
 
 def test_session_recording_write_routes_keep_writer_database_dependency() -> None:

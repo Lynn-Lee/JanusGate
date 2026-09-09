@@ -133,4 +133,8 @@ Phase 6 #t78 首切片已落地文件传输分类日志：`FileTransferLog` + �
 
 ### M6 操作日志与改密日志（#t78 第二切片）
 
-#t78 第二切片落地 `OperateLog` / `PasswordChangeLog`：资产与账号写操作、成功改密先写入 `#t61` hash chain，再回指分类表。前端 `/audits` 展示只读列表。详见 [`docs/site/classified-audit.md`](docs/site/classified-audit.md)。活动日志、在线会话、作业日志与会话高级能力仍待后续切片。
+#t78 第二切片落地 `OperateLog` / `PasswordChangeLog`：资产与账号写操作、成功改密先写入 `#t61` hash chain，再回指分类表。前端 `/audits` 展示只读列表。详见 [`docs/site/classified-audit.md`](docs/site/classified-audit.md)。
+
+### M6 活动日志与在线会话（#t78 第三切片）
+
+#t78 第三切片落地 `ActivityLog` / `OnlineUserSession`：操作与改密复用同一 hash chain 事件写入活动时间线；交互式登录成功写入在线会话（不含 token），管理员可结束会话。前端 `/audits` 展示活动日志与在线会话。作业日志与会话高级能力仍待后续切片。

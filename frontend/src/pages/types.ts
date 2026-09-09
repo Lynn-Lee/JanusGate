@@ -172,6 +172,32 @@ export type PasswordChangeLog = {
   occurred_at: string | null;
 };
 
+export type ActivityLog = {
+  id: number;
+  tenant_id: string;
+  actor_id: string;
+  actor_username: string;
+  resource_type: string;
+  resource_id: string;
+  action: string;
+  detail: string;
+  audit_event_id: string;
+  occurred_at: string | null;
+};
+
+export type OnlineUserSession = {
+  id: number;
+  tenant_id: string;
+  user_id: string;
+  username: string;
+  client_ip: string;
+  status: string;
+  audit_event_id: string;
+  ended_audit_event_id: string;
+  occurred_at: string | null;
+  ended_at: string | null;
+};
+
 export type AuditEvent = {
   id: string;
   tenant_id: string;

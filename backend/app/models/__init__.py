@@ -12,7 +12,12 @@ from app.models.asset import Asset, Platform
 from app.models.asset_tree import AssetPermissionModel, NodeModel
 from app.models.audit import AuditEventModel
 from app.models.automation import AutomationJobRun
-from app.models.classified_log import OperateLog, PasswordChangeLog
+from app.models.classified_log import (
+    ActivityLog,
+    OnlineUserSession,
+    OperateLog,
+    PasswordChangeLog,
+)
 from app.models.connector import Connector
 from app.models.file_transfer import FileTransferLog
 from app.models.host_key import AssetHostKeyModel
@@ -64,6 +69,8 @@ __all__ = [
     "NotificationRule",
     "NodeModel",
     "OidcProvider",
+    "ActivityLog",
+    "OnlineUserSession",
     "OperateLog",
     "PasswordChangeLog",
     "NotificationDelivery",
