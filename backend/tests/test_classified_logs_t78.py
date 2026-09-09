@@ -210,7 +210,7 @@ async def test_end_online_session_is_tenant_isolated(
     with TestClient(app) as client:
         forbidden = client.post(f"/api/v1/online-sessions/{session_id}/end")
 
-    install_user(tenant_id="tenant-a", permissions=["admin"])
+    install_user(tenant_id="tenant-a", permissions=["admin", "audit:read"])
     with TestClient(app) as client:
         ended = client.post(f"/api/v1/online-sessions/{session_id}/end")
         again = client.post(f"/api/v1/online-sessions/{session_id}/end")
