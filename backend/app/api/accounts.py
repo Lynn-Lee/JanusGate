@@ -16,6 +16,7 @@ from app.api.account_schemas import (
     CredentialRotationListResponse,
     CredentialRotationResponse,
 )
+from app.api.classified_logs import persist_operate_log
 from app.core.database import get_db, get_read_db
 from app.core.deps import current_user, get_redis
 from app.models.account import Account, AccountTemplate, CredentialRotation
@@ -88,6 +89,14 @@ async def create_account(
     db.add(account)
     await db.commit()
     await db.refresh(account)
+    await persist_operate_log(
+        db=db,
+        user=user,
+        resource_type="account",
+        resource_id=str(account.id),
+        action="create",
+        summary=f"create account {account.username}",
+    )
     return _account_response(account)
 
 
@@ -130,6 +139,14 @@ async def update_account(
             setattr(account, field, payload[field])
     await db.commit()
     await db.refresh(account)
+    await persist_operate_log(
+        db=db,
+        user=user,
+        resource_type="account",
+        resource_id=str(account.id),
+        action="update",
+        summary=f"update account {account.username}",
+    )
     return _account_response(account)
 
 

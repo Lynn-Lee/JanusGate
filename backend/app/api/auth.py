@@ -7,6 +7,7 @@ from redis.asyncio import Redis
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.classified_logs import persist_password_change_log
 from app.core.database import get_db, get_read_db
 from app.core.deps import current_user, get_redis
 from app.core.security import (
@@ -221,6 +222,7 @@ async def change_password(
         await AuthService.change_password(db, user["id"], data.old_password, data.new_password)
     except ValueError as e:
         raise HTTPException(400, str(e)) from e
+    await persist_password_change_log(db=db, user=user, method="self")
     return {"status": "ok", "msg": "密码已修改"}
 
 

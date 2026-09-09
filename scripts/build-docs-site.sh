@@ -25,6 +25,7 @@ cp "$repo_root/docs/site/acl-command-filter.md" "$output_abs/acl-command-filter.
 cp "$repo_root/docs/site/acl-data-masking.md" "$output_abs/acl-data-masking.md"
 cp "$repo_root/docs/site/asset-tree-authorization.md" "$output_abs/asset-tree-authorization.md"
 cp "$repo_root/docs/site/file-transfer-audit.md" "$output_abs/file-transfer-audit.md"
+cp "$repo_root/docs/site/classified-audit.md" "$output_abs/classified-audit.md"
 mkdir -p "$output_abs/assets"
 cp -R "$repo_root/docs/site/assets/screenshots" "$output_abs/assets/screenshots"
 mkdir -p "$output_abs/fixtures"
@@ -100,7 +101,8 @@ cat > "$output_abs/manifest.json" <<'JSON'
     "acl-command-filter.md",
     "acl-data-masking.md",
     "asset-tree-authorization.md",
-    "file-transfer-audit.md"
+    "file-transfer-audit.md",
+    "classified-audit.md"
   ]
 }
 JSON

@@ -12,6 +12,7 @@ from app.api.assets import router as assets_router
 from app.api.audits.routes import router as audits_router
 from app.api.auth import router as auth_router
 from app.api.automation import router as automation_router
+from app.api.classified_logs import router as classified_logs_router
 from app.api.connectors import router as connectors_router
 from app.api.notification_deliveries import router as notification_deliveries_router
 from app.api.notification_rules import router as notification_rules_router
@@ -51,6 +52,8 @@ DB_BACKED_GET_ROUTE_ROUTING_INVENTORY = {
     ("GET", "/session-recordings/{recording_id}/commands"),
     ("GET", "/session-recordings/{recording_id}/file-transfers"),
     ("GET", "/file-transfers/"),
+    ("GET", "/operate-logs/"),
+    ("GET", "/password-change-logs/"),
     ("GET", "/session-recordings/commands"),
     ("GET", "/sessions/"),
     ("GET", "/ssh-certificate-authorities/"),
@@ -87,6 +90,7 @@ ROUTERS_WITH_GET_ROUTES = [
     audits_router,
     auth_router,
     automation_router,
+    classified_logs_router,
     connectors_router,
     notification_deliveries_router,
     notification_rules_router,
@@ -240,6 +244,20 @@ def test_session_recording_read_routes_use_read_database_dependency() -> None:
     for method, path in read_routes:
         dependencies = _route_dependency_calls(
             router=session_recordings_router, method=method, path=path
+        )
+        assert get_read_db in dependencies
+        assert get_db not in dependencies
+
+
+def test_classified_log_read_routes_use_read_database_dependency() -> None:
+    read_routes = [
+        ("GET", "/operate-logs/"),
+        ("GET", "/password-change-logs/"),
+    ]
+
+    for method, path in read_routes:
+        dependencies = _route_dependency_calls(
+            router=classified_logs_router, method=method, path=path
         )
         assert get_read_db in dependencies
         assert get_db not in dependencies

@@ -8,6 +8,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.classified_logs import persist_operate_log
 from app.api.sessions.routes import _raise_connect_denied
 from app.api.sessions.service import ConnectorDispatchRequest
 from app.core.config import settings
@@ -23,8 +24,8 @@ from app.protocols.repository import ensure_builtin_protocols, sync_platform_pro
 from app.protocols.validation import ProtocolValidationError, validate_asset_protocol_binding
 from app.schemas.asset import (
     AssetCreate,
-    AssetUpdate,
     AssetResponse,
+    AssetUpdate,
     K8sPodListResponse,
     K8sPodResponse,
     PlatformCreate,
@@ -53,7 +54,7 @@ async def list_assets(
 
 @router.post("/", response_model=AssetResponse)
 async def create_asset(
-    data: AssetCreate, db: AsyncSession = Depends(get_db), _user: dict[str, Any] = Depends(require_permission("assets:write"))
+    data: AssetCreate, db: AsyncSession = Depends(get_db), user: dict[str, Any] = Depends(require_permission("assets:write"))
 ) -> AssetResponse:
     await ensure_builtin_protocols(db)
     try:
@@ -63,6 +64,14 @@ async def create_asset(
     except ProtocolValidationError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     asset = await AssetService.create_asset(db, data.model_dump())
+    await persist_operate_log(
+        db=db,
+        user=user,
+        resource_type="asset",
+        resource_id=str(asset.id),
+        action="create",
+        summary=f"create asset {asset.name}",
+    )
     return _asset_response(asset)
 
 
@@ -91,15 +100,31 @@ async def update_asset(
     asset = await AssetService.update_asset(db, asset_id, payload)
     if not asset:
         raise HTTPException(404, "资产不存在")
+    await persist_operate_log(
+        db=db,
+        user=user,
+        resource_type="asset",
+        resource_id=str(asset.id),
+        action="update",
+        summary=f"update asset {asset.name}",
+    )
     return _asset_response(asset)
 
 @router.delete("/{asset_id}")
 async def delete_asset(
-    asset_id: int, db: AsyncSession = Depends(get_db), _user: dict[str, Any] = Depends(require_permission("assets:write"))
+    asset_id: int, db: AsyncSession = Depends(get_db), user: dict[str, Any] = Depends(require_permission("assets:write"))
 ) -> dict[str, str]:
     deleted = await AssetService.delete_asset(db, asset_id)
     if not deleted:
         raise HTTPException(404, "资产不存在")
+    await persist_operate_log(
+        db=db,
+        user=user,
+        resource_type="asset",
+        resource_id=str(asset_id),
+        action="delete",
+        summary=f"delete asset {asset_id}",
+    )
     return {"status": "ok"}
 
 

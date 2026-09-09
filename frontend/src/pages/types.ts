@@ -149,6 +149,29 @@ export type FileTransferLog = {
   occurred_at: string | null;
 };
 
+export type OperateLog = {
+  id: number;
+  tenant_id: string;
+  actor_id: string;
+  actor_username: string;
+  resource_type: string;
+  resource_id: string;
+  action: string;
+  summary: string;
+  audit_event_id: string;
+  occurred_at: string | null;
+};
+
+export type PasswordChangeLog = {
+  id: number;
+  tenant_id: string;
+  user_id: string;
+  username: string;
+  method: string;
+  audit_event_id: string;
+  occurred_at: string | null;
+};
+
 export type AuditEvent = {
   id: string;
   tenant_id: string;

@@ -37,6 +37,12 @@ function mockFetch() {
     if (url.endsWith('/api/v1/file-transfers/')) {
       return Response.json({ items: [], total: 0 });
     }
+    if (url.endsWith('/api/v1/operate-logs/')) {
+      return Response.json({ items: [], total: 0 });
+    }
+    if (url.endsWith('/api/v1/password-change-logs/')) {
+      return Response.json({ items: [], total: 0 });
+    }
     if (url.endsWith('/health')) {
       return Response.json({ status: 'ok', version: '0.1.0' });
     }

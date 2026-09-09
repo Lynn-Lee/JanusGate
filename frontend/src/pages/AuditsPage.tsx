@@ -3,7 +3,7 @@ import { useState } from 'react';
 import { useAuth } from '../auth/AuthContext';
 import { ErrorState, LoadingState } from '../components/StatusView';
 import { getErrorMessage, useApiData, useApiMessage } from './pageUtils';
-import type { AuditComplianceReport, AuditEvent, AuditListResponse, AuditReportSummary, FileTransferLog, ListResponse } from './types';
+import type { AuditComplianceReport, AuditEvent, AuditListResponse, AuditReportSummary, FileTransferLog, ListResponse, OperateLog, PasswordChangeLog } from './types';
 
 export const auditMetadataRedactedKeys = [
   'password',
@@ -40,6 +40,8 @@ export function AuditsPage() {
   const summary = useApiData(() => api.get<AuditReportSummary>('/api/v1/audits/reports/summary'), []);
   const events = useApiData(() => api.get<AuditListResponse>('/api/v1/audits/events'), []);
   const transfers = useApiData(() => api.get<ListResponse<FileTransferLog>>('/api/v1/file-transfers/'), []);
+  const operateLogs = useApiData(() => api.get<ListResponse<OperateLog>>('/api/v1/operate-logs/'), []);
+  const passwordChanges = useApiData(() => api.get<ListResponse<PasswordChangeLog>>('/api/v1/password-change-logs/'), []);
 
   const downloadComplianceReport = async () => {
     setDownloadingCompliance(true);
@@ -68,7 +70,7 @@ export function AuditsPage() {
       <div className="jg-page-header">
         <div>
           <Typography.Title level={2}>审计日志</Typography.Title>
-          <Typography.Text type="secondary">追踪登录、申请、审批、会话创建、文件传输、撤销和断连等关键安全事件。</Typography.Text>
+          <Typography.Text type="secondary">追踪登录、申请、审批、会话、文件传输、操作、改密、撤销和断连等关键安全事件。</Typography.Text>
         </div>
         <Button type="primary" loading={downloadingCompliance} onClick={downloadComplianceReport}>
           下载 SOC2 报表
@@ -142,6 +144,42 @@ export function AuditsPage() {
                 dataIndex: 'status',
                 render: (value: string) => <Tag color={value === 'failed' ? 'red' : 'green'}>{value}</Tag>
               }
+            ]}
+          />
+        ) : null}
+      </Card>
+      <Card title="操作日志">
+        {operateLogs.loading ? <LoadingState /> : null}
+        {operateLogs.error ? <ErrorState message={operateLogs.error} onRetry={operateLogs.reload} /> : null}
+        {!operateLogs.loading && !operateLogs.error ? (
+          <Table
+            rowKey="id"
+            dataSource={operateLogs.data?.items ?? []}
+            pagination={{ pageSize: 10 }}
+            locale={{ emptyText: '暂无操作日志。管理面写操作入库后会出现在这里。' }}
+            columns={[
+              { title: '时间', dataIndex: 'occurred_at' },
+              { title: '操作者', dataIndex: 'actor_username' },
+              { title: '动作', dataIndex: 'action' },
+              { title: '资源', render: (_: unknown, record: OperateLog) => `${record.resource_type}:${record.resource_id}` },
+              { title: '摘要', dataIndex: 'summary', ellipsis: true }
+            ]}
+          />
+        ) : null}
+      </Card>
+      <Card title="改密日志">
+        {passwordChanges.loading ? <LoadingState /> : null}
+        {passwordChanges.error ? <ErrorState message={passwordChanges.error} onRetry={passwordChanges.reload} /> : null}
+        {!passwordChanges.loading && !passwordChanges.error ? (
+          <Table
+            rowKey="id"
+            dataSource={passwordChanges.data?.items ?? []}
+            pagination={{ pageSize: 10 }}
+            locale={{ emptyText: '暂无改密日志。用户改密成功后会出现在这里。' }}
+            columns={[
+              { title: '时间', dataIndex: 'occurred_at' },
+              { title: '用户', dataIndex: 'username' },
+              { title: '方式', dataIndex: 'method' }
             ]}
           />
         ) : null}

@@ -130,3 +130,7 @@ Phase 6 #t65 已落地命令过滤 ACL、数据脱敏规则，以及登录 ACL /
 ### M6 审计类型补全（#t78 文件传输日志首切片）
 
 Phase 6 #t78 首切片已落地文件传输分类日志：`FileTransferLog` + 入库/连接器上报/租户列表 API，每条日志先写入 `#t61` hash chain 再回指 `audit_event_id`。连接器使用 `HttpFileTransferEventSink` 对接 `#t69` SFTP `FileTransferEventSink`。前端 `/audits` 与 `/sessions` 展示传输列表，不展示文件正文。详见 [`docs/site/file-transfer-audit.md`](docs/site/file-transfer-audit.md)。其余分类日志、会话共享与存储后端仍待后续切片。
+
+### M6 操作日志与改密日志（#t78 第二切片）
+
+#t78 第二切片落地 `OperateLog` / `PasswordChangeLog`：资产与账号写操作、成功改密先写入 `#t61` hash chain，再回指分类表。前端 `/audits` 展示只读列表。详见 [`docs/site/classified-audit.md`](docs/site/classified-audit.md)。活动日志、在线会话、作业日志与会话高级能力仍待后续切片。
