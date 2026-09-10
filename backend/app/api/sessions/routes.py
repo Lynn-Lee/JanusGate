@@ -2,11 +2,16 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from datetime import UTC, datetime
 from typing import Any, NoReturn, cast
+from uuid import uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
+from pydantic import BaseModel, Field
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.audits.schemas import AuditCategory, AuditEventCreate, AuditSeverity
 from app.api.audits.service import audit_service
 from app.api.sessions.schemas import (
     SessionCloseRequest,
@@ -29,6 +34,8 @@ from app.core.config import settings
 from app.core.database import get_db, get_read_db
 from app.core.deps import current_user
 from app.core.redis import create_redis_client
+from app.models.session import SessionModel
+from app.models.session_ops import SessionShare
 from app.policy.decision import PolicyDecisionService
 from app.workflows.audit import WorkflowAuditSink
 
@@ -294,3 +301,111 @@ async def close_session(
         status_code = 404 if detail == "SESSION_NOT_FOUND" else 400
         raise HTTPException(status_code=status_code, detail=detail) from exc
     return SessionResponse.from_record(session)
+
+
+class SessionShareCreate(BaseModel):
+    guest_user_id: str = Field(min_length=1, max_length=64)
+    mode: str = Field(pattern="^(watch|join)$")
+
+
+@router.get("/{session_id}/shares")
+async def list_session_shares(
+    session_id: str,
+    db: AsyncSession = Depends(get_read_db),
+    user: dict[str, Any] = Depends(current_user),
+) -> dict[str, Any]:
+    tenant_id = str(user.get("tenant_id") or "default")
+    result = await db.execute(
+        select(SessionShare).where(
+            SessionShare.tenant_id == tenant_id,
+            SessionShare.session_id == session_id,
+        )
+    )
+    items = [
+        {
+            "id": share.id,
+            "guest_user_id": share.guest_user_id,
+            "mode": share.mode,
+            "status": share.status,
+            "joined_at": share.joined_at,
+        }
+        for share in result.scalars().all()
+        if share.owner_user_id == str(user["id"]) or share.guest_user_id == str(user["id"])
+    ]
+    return {"items": items, "total": len(items)}
+
+
+@router.post("/{session_id}/shares", status_code=status.HTTP_201_CREATED)
+async def create_session_share(
+    session_id: str,
+    data: SessionShareCreate,
+    db: AsyncSession = Depends(get_db),
+    user: dict[str, Any] = Depends(current_user),
+) -> dict[str, Any]:
+    session = await db.get(SessionModel, session_id)
+    tenant_id = str(user.get("tenant_id") or "default")
+    if session is None or session.tenant_id != tenant_id:
+        raise HTTPException(status_code=404, detail="SESSION_NOT_FOUND")
+    if session.subject_id != str(user["id"]):
+        raise HTTPException(status_code=403, detail="SESSION_SHARE_OWNER_ONLY")
+    if session.status != "active":
+        raise HTTPException(status_code=400, detail="SESSION_NOT_ACTIVE")
+    share = SessionShare(
+        id=f"ss_{uuid4().hex}",
+        tenant_id=tenant_id,
+        session_id=session_id,
+        owner_user_id=str(user["id"]),
+        guest_user_id=data.guest_user_id,
+        mode=data.mode,
+        status="pending",
+    )
+    db.add(share)
+    await db.commit()
+    await audit_service.create_event(
+        AuditEventCreate(
+            event_type="session.share",
+            category=AuditCategory.session,
+            action="share",
+            resource_type="session",
+            resource_id=session_id,
+            session_id=session_id,
+            severity=AuditSeverity.medium,
+            message="session shared",
+            metadata={"guest_user_id": data.guest_user_id, "mode": data.mode},
+        ),
+        user,
+    )
+    return {"id": share.id, "status": share.status, "mode": share.mode}
+
+
+@router.post("/{session_id}/shares/{share_id}/join")
+async def join_session_share(
+    session_id: str,
+    share_id: str,
+    db: AsyncSession = Depends(get_db),
+    user: dict[str, Any] = Depends(current_user),
+) -> dict[str, Any]:
+    share = await db.get(SessionShare, share_id)
+    tenant_id = str(user.get("tenant_id") or "default")
+    if share is None or share.tenant_id != tenant_id or share.session_id != session_id:
+        raise HTTPException(status_code=404, detail="SESSION_SHARE_NOT_FOUND")
+    if share.guest_user_id != str(user["id"]):
+        raise HTTPException(status_code=403, detail="SESSION_JOIN_FORBIDDEN")
+    share.status = "joined"
+    share.joined_at = datetime.now(UTC)
+    await db.commit()
+    await audit_service.create_event(
+        AuditEventCreate(
+            event_type="session.join",
+            category=AuditCategory.session,
+            action="join",
+            resource_type="session",
+            resource_id=session_id,
+            session_id=session_id,
+            severity=AuditSeverity.medium,
+            message="session joined",
+            metadata={"share_id": share_id, "mode": share.mode},
+        ),
+        user,
+    )
+    return {"id": share.id, "status": share.status, "mode": share.mode}

@@ -36,6 +36,7 @@ from app.connectors.ssh_channel import (
 from app.connectors.ssh_interactive import SshInteractiveSession
 from app.connectors.ssh_sftp import FileTransferEventSink, SftpChannel
 from app.policy.schemas import ResourceRef, SubjectRef
+from app.services.typed_audit import HashChainFileTransferSink
 
 
 class ConnectorSessionMode(StrEnum):
@@ -246,15 +247,22 @@ class ConnectorSessionRuntime:
                 policy=policy,
             )
         if spec.mode is ConnectorSessionMode.SFTP:
-            if self._transfer_sink is None:
-                raise SshChannelError(
-                    "CONNECTOR_TRANSFER_SINK_MISSING",
-                    "sftp mode requires a transfer_sink",
+            sink = self._transfer_sink
+            if sink is None or isinstance(sink, _NoopFileTransferEventSink):
+                sink = HashChainFileTransferSink(
+                    actor={
+                        "id": request.subject_id,
+                        "username": str(request.subject_id),
+                        "tenant_id": request.tenant_id,
+                        "permissions": ["audit:write"],
+                    },
+                    session_id=request.session_id,
+                    asset_id=str(request.asset_id),
                 )
             return await SftpChannel.open(
                 spec.target,
                 spec.credential,
-                self._transfer_sink,
+                sink,
                 jump_target=spec.jump_target,
                 jump_credential=spec.jump_credential,
             )

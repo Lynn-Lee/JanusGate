@@ -15,6 +15,11 @@ class AuditCategory(StrEnum):
     vault = "vault"
     workflow = "workflow"
     audit = "audit"
+    operate = "operate"
+    activity = "activity"
+    ftp = "ftp"
+    password = "password"
+    job = "job"
 
 
 class AuditSeverity(StrEnum):

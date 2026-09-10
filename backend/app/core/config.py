@@ -82,6 +82,7 @@ class Settings(BaseSettings):
     ANSIBLE_PLAYBOOK_TIMEOUT_SECONDS: float = 300.0
     ANSIBLE_PLAYBOOK_MEMORY_LIMIT_MB: int = 0
     ANSIBLE_PLAYBOOK_CPU_LIMIT_SECONDS: int = 0
+    SESSION_OBJECT_STORAGE_ROOT: str = "/var/lib/janusgate/session-storage"
 
     @model_validator(mode="after")
     def enforce_secrets(self) -> "Settings":

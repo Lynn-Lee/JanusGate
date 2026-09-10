@@ -27,6 +27,7 @@ from app.api import (
     rbac,
     protocols,
     session_recordings,
+    session_ops,
     sessions,
     ssh_certificate_authorities,
     ssh_certificates,
@@ -86,6 +87,7 @@ app.include_router(connectors.router, prefix="/api/v1")
 app.include_router(notification_deliveries.router, prefix="/api/v1")
 app.include_router(notification_rules.router, prefix="/api/v1")
 app.include_router(session_recordings.router, prefix="/api/v1")
+app.include_router(session_ops.router, prefix="/api/v1")
 app.include_router(ssh_certificate_authorities.router, prefix="/api/v1")
 app.include_router(ssh_certificates.router, prefix="/api/v1")
 app.include_router(webhook_endpoints.router, prefix="/api/v1")

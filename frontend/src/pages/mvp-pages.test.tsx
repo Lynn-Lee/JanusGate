@@ -148,8 +148,12 @@ function installFetch() {
     if (url.endsWith('/api/v1/workflows/requests') && method === 'GET') return Response.json({ items: [request], total: 1 });
     if (url.endsWith('/api/v1/workflows/grants/active')) return Response.json({ items: [grant], total: 1 });
     if (url.endsWith('/api/v1/sessions/') && method === 'GET') return Response.json({ items: [session], total: 1 });
+    if (url.includes('/shares') && method === 'POST') {
+      return Response.json({ id: 'ss-1', status: 'pending', mode: 'watch' }, { status: 201 });
+    }
     if (url.endsWith('/api/v1/session-recordings/1/commands') && method === 'GET') return Response.json({ items: [sessionCommand], total: 1 });
     if (url.endsWith('/api/v1/audits/events')) return Response.json({ items: [audit], total: 1, limit: 50, offset: 0 });
+    if (url.includes('/api/v1/audits/typed/')) return Response.json({ items: [audit], total: 1, limit: 50, offset: 0 });
     if (url.endsWith('/api/v1/audits/reports/summary')) return Response.json(auditReportSummary);
     if (url.endsWith('/api/v1/audits/reports/compliance?template=soc2-access')) return Response.json(auditComplianceReport);
     if (url.endsWith('/api/v1/admin/license-summary')) return Response.json(licenseSummary);
@@ -312,6 +316,15 @@ describe('MVP pages', () => {
     expect(within(drawer).getByText(/visible/)).toBeInTheDocument();
     expect(within(drawer).getByText(/\*\*\*\*\*\*/)).toBeInTheDocument();
     expect(screen.queryByText('secret-token')).not.toBeInTheDocument();
+  });
+
+  it('exposes typed audit log categories including file transfer', async () => {
+    history.pushState(null, '', '/audits');
+    render(<App />);
+
+    expect(await screen.findByRole('heading', { name: '审计日志' })).toBeInTheDocument();
+    expect(screen.getAllByLabelText('审计分类')[0]).toBeInTheDocument();
+    expect(screen.getByText('全部')).toBeInTheDocument();
   });
 
   it('shows audit report summary without exposing raw audit details', async () => {

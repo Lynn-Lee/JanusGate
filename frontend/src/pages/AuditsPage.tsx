@@ -38,7 +38,14 @@ export function AuditsPage() {
   const [downloadingCompliance, setDownloadingCompliance] = useState(false);
   const [complianceReport, setComplianceReport] = useState<AuditComplianceReport | null>(null);
   const summary = useApiData(() => api.get<AuditReportSummary>('/api/v1/audits/reports/summary'), []);
-  const events = useApiData(() => api.get<AuditListResponse>('/api/v1/audits/events'), []);
+  const [logKind, setLogKind] = useState('all');
+  const events = useApiData(
+    () =>
+      api.get<AuditListResponse>(
+        logKind === 'all' ? '/api/v1/audits/events' : `/api/v1/audits/typed/${logKind}`
+      ),
+    [logKind]
+  );
 
   const downloadComplianceReport = async () => {
     setDownloadingCompliance(true);
@@ -99,7 +106,23 @@ export function AuditsPage() {
       <Card>
         <Space className="jg-block" wrap>
           <Input.Search placeholder="关键词 / 资源 / actor" style={{ width: 260 }} />
-          <Select placeholder="事件类型" style={{ width: 180 }} allowClear options={[{ value: 'workflow', label: 'Workflow' }, { value: 'session', label: 'Session' }, { value: 'auth', label: 'Auth' }]} />
+          <Select
+            aria-label="审计分类"
+            placeholder="审计分类"
+            style={{ width: 180 }}
+            value={logKind}
+            onChange={(value) => setLogKind(value)}
+            options={[
+              { value: 'all', label: '全部' },
+              { value: 'operate', label: '操作日志' },
+              { value: 'activity', label: '活动日志' },
+              { value: 'ftp', label: '文件传输' },
+              { value: 'password', label: '改密日志' },
+              { value: 'online-sessions', label: '在线会话' },
+              { value: 'job', label: '作业日志' },
+              { value: 'session-shares', label: '会话共享' }
+            ]}
+          />
         </Space>
         {events.loading ? <LoadingState /> : null}
         {events.error ? <ErrorState message={events.error} onRetry={events.reload} /> : null}
