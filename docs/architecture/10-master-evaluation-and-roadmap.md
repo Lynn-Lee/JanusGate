@@ -873,7 +873,7 @@ User ──┬── WorkflowRequest ──── JitGrant
 |---------|------|-------|------|--------|
 | **#t77** | 作业中心 | backend + frontend | 作业 / Playbook / 临时命令 / 变量 / 执行记录；批量命令下发、周期任务、参数化、执行身份策略。复用 #t52 已建立的队列与 Ansible runner。**约束**：JSON-only 队列，无 pickle（P0#10 已由 #t52 关闭，本任务不得回退） | 中 |
 | **#t78** | 审计类型补全与会话高级能力 | backend + frontend | 审计类型：操作日志 / 活动日志 / 文件传输日志 / 改密日志 / 在线会话 / 作业日志；会话共享与监控联机；连接端点与端点路由规则；命令存储与录像存储多后端（含 ES 命令检索）。**约束**：全部审计类型并入 #t61 的 hash chain 与 WORM 归档 | 中 |
-| **#t79** | 平台治理能力 | backend + frontend | 标签体系；报表中心（在 #t49 / #t54 基础上扩展）；数据库驱动的动态系统配置；用户偏好；泄露密码库校验（与 #t65 弱密码策略联动） | 低 |
+| **#t79** | 平台治理能力 | backend + frontend | **✅ 已完成**：`ResourceLabel` / `TenantSetting` / `UserPreference` / `LeakPassword` / `ReportDefinition`；迁移 `c9d0e1f2a3b4`。标签仅标注资产；动态配置白名单四键 + 变更修订表；偏好 locale/page_size/theme；泄露库 SHA-256（内置 5 条 + 租户自定义），接入 `AuthService` 创建/改密；报表目录包装 #t49/#t54 汇总与 SOC2 导出。设置页与审计页报表中心；测试 `test_platform_governance_t79.py`。**平台治理已 QA SHIP**。更广资源类型标注、SMTP 账号池与自定义报表 SQL 不做 | 低 |
 
 #### 11.4.3 Phase 6 任务 DoD（每个任务必须满足）
 
@@ -899,13 +899,13 @@ User ──┬── WorkflowRequest ──── JitGrant
 | M3：真实连接通道 | 6-8 周 | #t69 + #t70 + #t71 + #t72 | 🟡 #t69/#t72 完成；#t70/#t71 未开始 | 风险最高，#t70 图形通道为其中最重 |
 | M4：账号自动化 | 3-4 周 | #t73 | ✅ **完成** | 依赖 #t69 SSH 通道（前置已满足） |
 | M5：工单、通知、认证源 | 4-5 周 | #t74 + #t75 + #t76 | 🟡 #t74/#t76 完成；#t75 未开始 | 可与 M3 并行 |
-| M6：运维与平台治理 | 3-4 周 | #t77 + #t78 + #t79 | ⬜ 未开始 | 收口阶段 |
+| M6：运维与平台治理 | 3-4 周 | #t77 + #t78 + #t79 | 🟡 #t79 完成；#t77/#t78 未合入 `dev` | 收口阶段 |
 
 > **周期为规模估算而非承诺**，未考虑团队规模与并行度。M3 的估算不确定性最大，建议在预研切片完成后重估。
 
 > **v2.4 排期修订**：M3 预研切片（#t69）已完成并解除全局单点关键路径，M0 三项前置阻塞项全部关闭；**#t69 / #t72 生产 SessionConnectionResolver 已 QA SHIP**。
 > M3 剩余两项性质已分化——#t71 的 #t65 脱敏依赖已解除，剩协议实现难度；#t70 需外部图形基建，建议独立立项（见其任务行）。
-> 因此后续排序建议为：**#t75 通知渠道扩展**（#t66/#t67/#t68、#t69/#t72、**#t73 AccountTemplate / account.verify**、**#t74 asset_grant / command_review TicketFlow** 与 **#t76 OIDC 登录** 已 QA SHIP；#t70 建议独立立项），而非按里程碑编号顺序推进。
+> 因此后续排序建议为：**#t75 通知渠道扩展**（#t66/#t67/#t68、#t69/#t72、**#t73 AccountTemplate / account.verify**、**#t74 asset_grant / command_review TicketFlow**、**#t76 OIDC 登录** 与 **#t79 平台治理** 已 QA SHIP；#t70 建议独立立项；#t75/#t77/#t78 另有未合入 PR），而非按里程碑编号顺序推进。
 
 #### 11.4.5 Phase 6 验收标准
 
@@ -1053,19 +1053,19 @@ P0#16 凭据作为库调用参数传入且显式关闭 agent / 默认密钥扫�
 关键观察（v2.4 修订 + #t76）：#t69 关闭连接通道侧 P0 后，剩余 SSO 两项（OAuth2 state / OIDC 关 SSL）已由 **#t76 OIDC 登录 QA SHIP** 关闭（强制 PKCE + 完整 state、Issuer HTTPS + `verify=True`、禁止 monkey-patch）。
 v2.3 所述「安全重构的最后 35% 与功能对标的起步是同一批工作」的判断已由 #t69 与 #t76 先后兑现。
 
-P1（15 项）/ P2（18 项）：架构性问题（xpack 侵入、common 大杂烩、4 种并发模型、多 DB 驱动、Django ORM 反模式）已由技术选型天然规避；工程实践问题（测试覆盖、CI 门禁、except:pass、类型注解）已由 §12.1 门禁与 §11.4.3 DoD 持续约束。开放重定向（P1#7）已由 #t76 `safe_next_url` 关闭；剩余未关闭项集中在弱密码策略（#t65/#t79）；其中**命令过滤缺失已由 #t65 的命令过滤 ACL + 命令组关闭**，**登录/资产登录/连接方式 overlay ACL 亦已 SHIP**（判定进 PolicyDecisionService，SSH/K8s/PTY 执行前守卫与交互式登录/连接 overlay 已接线，见 §11.4 #t65 行）。
+P1（15 项）/ P2（18 项）：架构性问题（xpack 侵入、common 大杂烩、4 种并发模型、多 DB 驱动、Django ORM 反模式）已由技术选型天然规避；工程实践问题（测试覆盖、CI 门禁、except:pass、类型注解）已由 §12.1 门禁与 §11.4.3 DoD 持续约束。开放重定向（P1#7）已由 #t76 `safe_next_url` 关闭；泄露密码库已由 #t79 关闭；剩余未关闭项集中在密码历史等账号治理扩展；其中**命令过滤缺失已由 #t65 的命令过滤 ACL + 命令组关闭**，**登录/资产登录/连接方式 overlay ACL 亦已 SHIP**（判定进 PolicyDecisionService，SSH/K8s/PTY 执行前守卫与交互式登录/连接 overlay 已接线，见 §11.4 #t65 行）。
 
 ### 14.2 功能等价矩阵
 
 | # | JumpServer 功能域 | JanusGate 当前状态 | 缺口 | 纳入目标 | Phase |
 |---|------------------|-------------------|------|----------|-------|
 | 1 | 身份认证 | 🟡 密码 + MFA + API Key + JWT 生命周期管理 + **OIDC 登录（#t76 QA SHIP）** | LDAP / OAuth2 / SAML2 / CAS / RADIUS / passkey；MFA 缺邮件 / SMS / RADIUS | 是 | P1 已有 → **P6 #t76** |
-| 2 | 用户与用户组 | 🟡 `User` 模型 | 用户组、认证源绑定、密码历史、用户偏好 | 是 | **P6 #t63、#t79** |
+| 2 | 用户与用户组 | 🟡 `User` 模型 + **用户偏好（#t79）** | 用户组、认证源绑定、密码历史 | 是 | **P6 #t63、#t79** |
 | 3 | RBAC 角色权限 | ⬜ 仅 `admin` / `workflow:admin` 字符串判断 | 角色模型、角色绑定、system/org 双 scope、对象级权限、内置角色、菜单权限 | 是 | **P6 #t63** |
 | 4 | 组织 / 多租户 | 🟡 `Organization`/`Team`/`Project` + `scoped_select()` 租户过滤 + 只读页 | 组织级角色绑定、组织切换、跨组织数据边界回归 | 是 | P4 #t42 → **P6 #t63** |
 | 5 | 资产管理 | 🟡 `Asset` + `Platform` + 八类资产类型/协议目录（#t66）+ **网域/网关 ProxyJump（#t67 QA SHIP）** + **K8s TokenRequest（#t68 QA SHIP）** + 资产树授权 | 收藏、标签 | 是 | P1 已有 → **P6 #t66、#t67、#t68** |
 | 6 | 资产授权 | 🟡 `NodeModel` / `AssetPermissionModel` + 祖先继承 + 使用面过滤 + `scoped_select()` | RBAC 角色/用户组管理、更多资产类型与协议 | 是 | **P6 #t64 已完成，域能力仍为部分实现** |
-| 7 | ACL 访问控制 | 🟡 命令过滤 ACL + 命令组 + 数据脱敏规则 + 登录/资产登录/连接方式 overlay ACL + 租户 CRUD + SSH/K8s/PTY 执行前守卫与登录/连接 overlay，判定统一进 PolicyDecisionService + **命令复核工单（#t74 command_review QA SHIP）** | 弱密码策略（#t79）；人脸核验不做 | 是 | **P6 #t65 已完成，域能力仍为部分实现** |
+| 7 | ACL 访问控制 | 🟡 命令过滤 ACL + 命令组 + 数据脱敏规则 + 登录/资产登录/连接方式 overlay ACL + 租户 CRUD + SSH/K8s/PTY 执行前守卫与登录/连接 overlay，判定统一进 PolicyDecisionService + **命令复核工单（#t74 command_review QA SHIP）** + **泄露密码库（#t79 QA SHIP）** | 密码历史；人脸核验不做 | 是 | **P6 #t65/#t79** |
 | 8 | 账号与凭据 | 🟡 `Account` + `CredentialRotation` + envelope 加密 + 审批后 unwrap + **`AccountTemplate` / `account.verify`（#t73 QA SHIP）** + `AccountRisk(verify_failed)` | 其余 7 类账号自动化作业、更广账号风险类型、真实云 KMS/HSM | 是 | P4 #t43/#t50 → **P6 #t73** |
 | 9 | 会话网关 | 🟡 会话生命周期 + 策略校验 + 短期 connection token + grant 绑定 + **会话已持久化** + SSH/K8s 真实通道 + **生产 `AssetVaultSessionConnectionResolver`（QA SHIP）** | RDP/VNC/DB 通道、会话共享与监控、端点路由；连接列表展示 k8s（#t72 建连弹层选 Pod） | 是 | P1 已有 → **P6 #t62、#t69-72、#t78** |
 | 10 | 会话录制与命令检索 | 🟡 录制元数据 + 命令事件 + 全文检索 + 只读回放时间线 | 录像本体采集与回放、多存储后端（S3/OSS/ES） | 是 | P4 #t46 → **P6 #t70、#t78** |
@@ -1074,9 +1074,9 @@ P1（15 项）/ P2（18 项）：架构性问题（xpack 侵入、common 大杂�
 | 13 | 审计 | 🟡 统一审计事件 + **已持久化 append-only** + 库层强制有序 hash chain + SIEM + 合规报表 + WORM 归档 | 分类日志（操作/活动/文件传输/改密/在线会话/作业）；#t78 文件传输日志端点未建 | 是 | P1 已有 → **P6 #t61、#t78** |
 | 14 | 通知 | 🟡 WebHook endpoint + 通知规则 + 投递队列 + 重试/死信 + HTTPS sender | IM 渠道（钉钉/飞书/Lark/企微/Slack）、SMS、邮件、站内信、消息订阅 | 是 | P4 #t47 → **P6 #t75** |
 | 15 | 作业中心 | 🟡 JSON-only 队列 + worker + Ansible runner + 执行记录 | 作业/Playbook 管理模型、临时命令、周期任务、参数化、执行身份策略 | 是 | P4 #t52 → **P6 #t77** |
-| 16 | 标签体系 | ⬜ 无 | 标签模型与资源标注 | 是 | **P6 #t79** |
-| 17 | 报表中心 | 🟡 审计汇总 API + SOC2 合规报表导出 | 通用报表模型与自定义报表 | 是 | P4 #t49 / P5 #t54 → **P6 #t79** |
-| 18 | 系统配置 | 🟡 环境变量 + License 配置持久化 | 数据库驱动的动态系统配置、配置变更审计 | 是 | P5 #t58 → **P6 #t79** |
+| 16 | 标签体系 | 🟡 租户 `ResourceLabel` + 资产绑定 | 账号/节点等更多资源类型 | 是 | **P6 #t79** |
+| 17 | 报表中心 | 🟡 审计汇总 API + SOC2 合规报表导出 + **具名报表目录（#t79）** | 自定义 SQL 报表 | 是 | P4 #t49 / P5 #t54 → **P6 #t79** |
+| 18 | 系统配置 | 🟡 环境变量 + License 配置持久化 + **白名单 DB Setting + 变更修订（#t79）** | 任意键动态配置 | 是 | P5 #t58 → **P6 #t79** |
 | 19 | K8s 容器纳管 | 🟡 exec 通道（WebSocket v4.channel）+ namespace 作用域强制 + API Server TLS 强校验 + **生产 `AssetVaultSessionConnectionResolver` K8s 路径（QA SHIP）** + **TokenRequest 短期令牌（#t68 QA SHIP）** | 交互式 PTY exec 与 attach | 是 | **P6 #t68、#t72** |
 | 20 | Applet / RemoteApp | ➖ | — | **否**（见 3.6.2） | — |
 | 21 | VirtualApp 容器应用发布 | ➖ | — | **否**（见 3.6.2） | — |
@@ -1113,7 +1113,7 @@ P1（15 项）/ P2（18 项）：架构性问题（xpack 侵入、common 大杂�
 | 原交汇点 | ~~**#t69 真实连接通道**~~——**已于 v2.4 解除**，4 项 P0 已关闭，SSH / K8s 运行时已走通 | |
 
 **结论（v2.4 修订）**：v2.3 判定的全局单点关键路径 #t69 **已解除**。两条路线不再强耦合于同一任务——
-安全侧 P0#12 / P0#14 / P1#7 已由 **#t76 OIDC 登录 QA SHIP** 关闭（强制 PKCE + state、HTTPS/`verify=True`、`safe_next_url`）；#t65 判定已接到 SSH/K8s/PTY 执行前与交互式登录/资产连接 overlay。功能侧 #t63 RBAC、#t64 资产树与 AssetPermission、#t65 overlay ACL、#t66 资产类型与协议、**#t67 网域与网关 ProxyJump 已 QA SHIP**、**#t68 TokenRequest 已 QA SHIP**、**#t69 / #t72 生产 SessionConnectionResolver 已 QA SHIP**、**#t73 AccountTemplate / account.verify 已 QA SHIP**、**#t74 asset_grant / command_review TicketFlow 已 QA SHIP**、**#t76 OIDC 登录已 QA SHIP**；下一刀是 #t75 通知渠道扩展。
+安全侧 P0#12 / P0#14 / P1#7 已由 **#t76 OIDC 登录 QA SHIP** 关闭（强制 PKCE + state、HTTPS/`verify=True`、`safe_next_url`）；#t65 判定已接到 SSH/K8s/PTY 执行前与交互式登录/资产连接 overlay。功能侧 #t63 RBAC、#t64 资产树与 AssetPermission、#t65 overlay ACL、#t66 资产类型与协议、**#t67 网域与网关 ProxyJump 已 QA SHIP**、**#t68 TokenRequest 已 QA SHIP**、**#t69 / #t72 生产 SessionConnectionResolver 已 QA SHIP**、**#t73 AccountTemplate / account.verify 已 QA SHIP**、**#t74 asset_grant / command_review TicketFlow 已 QA SHIP**、**#t76 OIDC 登录已 QA SHIP**、**#t79 平台治理已 QA SHIP**；主线下一刀仍是 #t75 通知渠道扩展（另有未合入 PR），#t70 建议独立立项。
 
 **表述边界仍然有效**：#t69 的走通只解除了运行时前提，功能替代完成度仍为 **0/19 等价**。
 在 §14.2 矩阵出现第一个 ✅ 之前，「功能替代进度过半」的表述依然不成立；

@@ -206,6 +206,61 @@ function installFetch() {
     if (url.endsWith('/api/v1/automation/jobs/runs')) return Response.json({ items: [], total: 0 });
     if (url.endsWith('/api/v1/zones/')) return Response.json({ items: [], total: 0 });
     if (url.includes('/api/v1/workflows/ticket-flows')) return Response.json({ items: [], total: 0 });
+    if (url.includes('/api/v1/governance/labels')) return Response.json({ items: [], total: 0 });
+    if (url.endsWith('/api/v1/governance/settings') || url.endsWith('/api/v1/governance/settings/revisions')) {
+      return Response.json({
+        items: [
+          { key: 'session_idle_timeout_minutes', value: 30 },
+          { key: 'password_min_length', value: 8 },
+          { key: 'weak_password_check_enabled', value: true },
+          { key: 'ui_timezone', value: 'Asia/Singapore' }
+        ],
+        total: 0
+      });
+    }
+    if (url.endsWith('/api/v1/governance/preferences')) {
+      return Response.json({
+        items: [
+          { key: 'locale', value: 'zh-CN' },
+          { key: 'page_size', value: 20 },
+          { key: 'theme', value: 'light' }
+        ]
+      });
+    }
+    if (url.endsWith('/api/v1/governance/leak-passwords')) {
+      return Response.json({ items: [], total: 0, builtin_count: 5 });
+    }
+    if (url.endsWith('/api/v1/governance/reports')) {
+      return Response.json({
+        items: [
+          {
+            id: null,
+            name: '审计汇总',
+            template_key: 'audit-summary',
+            description: '聚合计数',
+            builtin: true
+          },
+          {
+            id: null,
+            name: 'SOC2 访问合规',
+            template_key: 'soc2-access',
+            description: '合规导出',
+            builtin: true
+          }
+        ],
+        total: 2
+      });
+    }
+    if (url.endsWith('/api/v1/auth/oidc/settings')) {
+      return Response.json({
+        enabled: false,
+        display_name: '',
+        issuer_url: '',
+        client_id: '',
+        client_secret_configured: false,
+        scopes: 'openid profile email'
+      });
+    }
     if (url.endsWith('/api/v1/zones/gateway-candidates/')) return Response.json([]);
     return Response.json(session);
   });
@@ -326,6 +381,8 @@ describe('MVP pages', () => {
     expect(screen.getByText('高危事件')).toBeInTheDocument();
     expect(screen.getByText('SIEM failed')).toBeInTheDocument();
     expect(screen.getAllByText('3')).toHaveLength(2);
+    expect(await screen.findByText('报表中心')).toBeInTheDocument();
+    expect(screen.getByText('审计汇总（内置）')).toBeInTheDocument();
     expect(screen.queryByText('secret-token')).not.toBeInTheDocument();
     await waitFor(() =>
       expect(fetchMock).toHaveBeenCalledWith(
@@ -383,6 +440,12 @@ describe('MVP pages', () => {
     await waitFor(() =>
       expect(fetchMock).toHaveBeenCalledWith('/api/v1/admin/license-summary', expect.any(Object))
     );
+    expect(await screen.findByText('用户偏好')).toBeInTheDocument();
+    expect(screen.getByText('资源标签')).toBeInTheDocument();
+    expect(screen.getByText('还没有资源标签')).toBeInTheDocument();
+    expect(screen.getByText('系统配置')).toBeInTheDocument();
+    expect(screen.getByText('泄露密码库')).toBeInTheDocument();
+    expect(screen.getByText('内置哈希 5 条')).toBeInTheDocument();
     expect(await screen.findByText('账号模板')).toBeInTheDocument();
     expect(screen.getByText('还没有账号模板')).toBeInTheDocument();
     expect(await screen.findByText('审批流')).toBeInTheDocument();
@@ -447,7 +510,7 @@ describe('MVP pages', () => {
 
     expect(screen.queryByText('账号模板')).not.toBeInTheDocument();
     expect(await screen.findByText('网域')).toBeInTheDocument();
-    expect(screen.getByText('还没有网域')).toBeInTheDocument();
+    expect(await screen.findByText('还没有网域')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: '创建网域' })).not.toBeInTheDocument();
     expect(await screen.findByText('登录 ACL')).toBeInTheDocument();
     expect(screen.getByText('资产登录 ACL')).toBeInTheDocument();
