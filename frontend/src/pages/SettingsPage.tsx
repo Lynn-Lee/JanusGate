@@ -6,6 +6,7 @@ import { useAuth } from '../auth/AuthContext';
 import { ErrorState, LoadingState } from '../components/StatusView';
 import { UserSelect, type DirectoryUser } from '../components/UserSelect';
 import { getErrorMessage, useApiData, useApiMessage } from './pageUtils';
+import { NotificationPanels } from './settings/NotificationPanels';
 import { OidcSettingsCard } from './settings/OidcSettingsCard';
 import { TicketFlowPanels } from './settings/TicketFlowPanels';
 import type { AccountTemplate, Asset, AssetNode, GatewayCandidate, ListResponse, Zone } from './types';
@@ -113,6 +114,26 @@ function canWriteAcls(isSuperuser: boolean, permissions: string[]): boolean {
   return isSuperuser || permissions.includes('admin') || permissions.includes('acl:write');
 }
 
+function canReadNotifications(isSuperuser: boolean, permissions: string[]): boolean {
+  return (
+    isSuperuser ||
+    permissions.includes('admin') ||
+    permissions.includes('notifications:read') ||
+    permissions.includes('notifications:write') ||
+    permissions.includes('webhooks:read') ||
+    permissions.includes('webhooks:write')
+  );
+}
+
+function canWriteNotifications(isSuperuser: boolean, permissions: string[]): boolean {
+  return (
+    isSuperuser ||
+    permissions.includes('admin') ||
+    permissions.includes('notifications:write') ||
+    permissions.includes('webhooks:write')
+  );
+}
+
 function canReadTicketFlows(isSuperuser: boolean, permissions: string[]): boolean {
   return isSuperuser || permissions.includes('admin') || permissions.includes('workflow:admin');
 }
@@ -162,6 +183,8 @@ export function SettingsPage() {
   const writeAccountTemplates = canWriteAccountTemplates(Boolean(user?.is_superuser), permissions);
   const showTicketFlows = canReadTicketFlows(Boolean(user?.is_superuser), permissions);
   const writeTicketFlows = canWriteTicketFlows(Boolean(user?.is_superuser), permissions);
+  const showNotifications = canReadNotifications(Boolean(user?.is_superuser), permissions);
+  const writeNotifications = canWriteNotifications(Boolean(user?.is_superuser), permissions);
   const showOidc = Boolean(user?.is_superuser) || permissions.includes('admin');
 
   const saveLicenseConfig = async (values: LicenseConfigForm) => {
@@ -295,6 +318,7 @@ export function SettingsPage() {
           ) : null}
         </Card>
         {showOidc ? <OidcSettingsCard /> : null}
+        {showNotifications ? <NotificationPanels canWrite={writeNotifications} /> : null}
         <Card title="部署信息摘要">
           <Descriptions column={1} size="small">
             <Descriptions.Item label="环境">Docker Compose / Helm 均有基线</Descriptions.Item>

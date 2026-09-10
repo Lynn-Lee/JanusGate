@@ -23,6 +23,7 @@ cp "$repo_root/docs/site/connectors-ssh.md" "$output_abs/connectors-ssh.md"
 cp "$repo_root/docs/site/connectors-k8s.md" "$output_abs/connectors-k8s.md"
 cp "$repo_root/docs/site/acl-command-filter.md" "$output_abs/acl-command-filter.md"
 cp "$repo_root/docs/site/acl-data-masking.md" "$output_abs/acl-data-masking.md"
+cp "$repo_root/docs/site/notification-channels.md" "$output_abs/notification-channels.md"
 cp "$repo_root/docs/site/asset-tree-authorization.md" "$output_abs/asset-tree-authorization.md"
 mkdir -p "$output_abs/assets"
 cp -R "$repo_root/docs/site/assets/screenshots" "$output_abs/assets/screenshots"
@@ -98,6 +99,7 @@ cat > "$output_abs/manifest.json" <<'JSON'
     "connectors-k8s.md",
     "acl-command-filter.md",
     "acl-data-masking.md",
+    "notification-channels.md",
     "asset-tree-authorization.md"
   ]
 }

@@ -8,7 +8,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import httpx
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.models.webhook import NotificationDelivery, NotificationRule, WebhookEndpoint
@@ -106,7 +106,7 @@ class NotificationDeliveryWorker:
                     )
                 except Exception as exc:
                     delivery.attempts += 1
-                    delivery.last_error = str(exc)
+                    delivery.last_error = _safe_last_error(exc)
                     delivery.next_attempt_at = effective_now + self._retry_delay
                     if delivery.attempts >= self._max_attempts:
                         delivery.status = "dead_letter"
@@ -136,20 +136,23 @@ class NotificationDeliveryWorker:
         result = await session.execute(
             select(NotificationDelivery, WebhookEndpoint)
             .join(
-                NotificationRule,
-                (NotificationRule.id == NotificationDelivery.notification_rule_id)
-                & (NotificationRule.tenant_id == NotificationDelivery.tenant_id),
-            )
-            .join(
                 WebhookEndpoint,
                 (WebhookEndpoint.id == NotificationDelivery.webhook_endpoint_id)
                 & (WebhookEndpoint.tenant_id == NotificationDelivery.tenant_id),
             )
+            .outerjoin(
+                NotificationRule,
+                (NotificationRule.id == NotificationDelivery.notification_rule_id)
+                & (NotificationRule.tenant_id == NotificationDelivery.tenant_id),
+            )
             .where(
                 NotificationDelivery.status.in_(("pending", "failed")),
                 NotificationDelivery.next_attempt_at <= now,
-                NotificationRule.status == "active",
                 WebhookEndpoint.status == "active",
+                or_(
+                    NotificationDelivery.notification_rule_id.is_(None),
+                    NotificationRule.status == "active",
+                ),
             )
             .order_by(NotificationDelivery.id)
             .limit(self._batch_size)
@@ -162,3 +165,12 @@ def _payload_dict(value: str) -> dict[str, object]:
     if not isinstance(parsed, dict):
         return {}
     return {str(key): item for key, item in parsed.items()}
+
+
+def _safe_last_error(exc: BaseException) -> str:
+    """死信错误只保留稳定摘要，避免把 payload / token 写进 last_error。"""
+    message = str(exc)
+    lowered = message.lower()
+    if any(part in lowered for part in ("password", "secret", "token", "credential", "authorization")):
+        return "channel delivery failed"
+    return message

@@ -591,7 +591,21 @@ template=soc2-access
 - payload 入库前会脱敏 token/password/secret/credential 等敏感键或赋值片段；响应不返回 payload。
 - `NotificationDeliveryWorker` 只读取 `pending` / 到期 `failed` 记录，成功后标记 `delivered`，失败后更新 `attempts`、`last_error` 与下一次重试时间，达到最大尝试次数后标记 `dead_letter`。
 - `HttpWebhookNotificationSender` 使用 `POST` 向 endpoint URL 投递 `{event_type, delivery_id, payload}`，并附带 `X-JanusGate-Event-Type` 与 `X-JanusGate-Tenant-Id`。非 2xx 或网络错误会 fail-closed 抛出稳定错误，worker 随后进入重试/死信流程；错误信息不包含 payload、signing secret 或下游响应体。
-- 当前切片不内置 IM sender 或多级审批。
+- Phase 6 #t75：`channel_type` 扩展钉钉 / 飞书 / Lark / 企微 / Slack / SMS / 邮件 / 站内信；IM 渠道限制官方 host；响应 URL 去掉 query；系统消息订阅见 `POST /api/v1/notification-subscriptions/` 与 `POST /api/v1/notification-events/`。
+
+### POST `/api/v1/notification-subscriptions/`
+
+用途：在当前租户为指定用户订阅一条 active 通知渠道上的事件类型。
+
+鉴权：需要登录态；`admin` 或 `notifications:write` 权限可访问。
+
+### POST `/api/v1/notification-events/`
+
+用途：按当前租户 active 订阅扇出投递队列。payload 入库前脱敏；响应只返回 `enqueued` 与 `delivery_ids`。
+
+### GET `/api/v1/in-app-messages/`
+
+用途：返回当前用户在当前租户的站内信。跨用户不可见。
 
 ### GET `/api/v1/notification-deliveries/`
 
