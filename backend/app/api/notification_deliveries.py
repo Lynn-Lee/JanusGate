@@ -127,6 +127,7 @@ def _notification_delivery_response(
         tenant_id=delivery.tenant_id,
         notification_rule_id=delivery.notification_rule_id,
         webhook_endpoint_id=delivery.webhook_endpoint_id,
+        recipient_user_id=delivery.recipient_user_id or "",
         event_type=delivery.event_type,
         status=NotificationDeliveryStatus(delivery.status),
         attempts=delivery.attempts,

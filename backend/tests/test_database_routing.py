@@ -13,6 +13,7 @@ from app.api.audits.routes import router as audits_router
 from app.api.auth import router as auth_router
 from app.api.automation import router as automation_router
 from app.api.connectors import router as connectors_router
+from app.api.notification_channels import router as notification_channels_router
 from app.api.notification_deliveries import router as notification_deliveries_router
 from app.api.notification_rules import router as notification_rules_router
 from app.api.session_recordings import router as session_recordings_router
@@ -46,8 +47,10 @@ DB_BACKED_GET_ROUTE_ROUTING_INVENTORY = {
     ("GET", "/auth/me"),
     ("GET", "/automation/jobs/runs"),
     ("GET", "/connectors/"),
+    ("GET", "/in-app-messages/"),
     ("GET", "/notification-deliveries/"),
     ("GET", "/notification-rules/"),
+    ("GET", "/notification-subscriptions/"),
     ("GET", "/session-recordings/{recording_id}/commands"),
     ("GET", "/session-recordings/commands"),
     ("GET", "/sessions/"),
@@ -62,6 +65,7 @@ DB_BACKED_GET_ROUTE_ROUTING_INVENTORY = {
     ("GET", "/workflows/grants/active"),
     ("GET", "/workflows/requests"),
     ("GET", "/workflows/requests/{request_id}"),
+    ("GET", "/workflows/ticket-flows"),
 }
 
 # #t61：审计已持久化，但 AuditService 自管读写会话（独立 append-only 账本），故审计
@@ -85,6 +89,7 @@ ROUTERS_WITH_GET_ROUTES = [
     auth_router,
     automation_router,
     connectors_router,
+    notification_channels_router,
     notification_deliveries_router,
     notification_rules_router,
     session_recordings_router,
@@ -260,6 +265,8 @@ def test_notification_read_routes_use_read_database_dependency() -> None:
     read_routes = [
         (notification_rules_router, "GET", "/notification-rules/"),
         (notification_deliveries_router, "GET", "/notification-deliveries/"),
+        (notification_channels_router, "GET", "/notification-subscriptions/"),
+        (notification_channels_router, "GET", "/in-app-messages/"),
     ]
 
     for router, method, path in read_routes:
@@ -272,6 +279,9 @@ def test_notification_write_routes_keep_writer_database_dependency() -> None:
     write_routes = [
         (notification_rules_router, "POST", "/notification-rules/"),
         (notification_deliveries_router, "POST", "/notification-rules/{rule_id}/deliveries"),
+        (notification_channels_router, "POST", "/notification-subscriptions/"),
+        (notification_channels_router, "POST", "/notification-events/"),
+        (notification_channels_router, "POST", "/in-app-messages/{message_id}/read"),
     ]
 
     for router, method, path in write_routes:

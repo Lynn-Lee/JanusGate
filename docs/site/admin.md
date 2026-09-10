@@ -16,6 +16,7 @@
 - 账号托管页面只展示 Vault `secret_id` 引用，不展示凭据明文。
 - 会话页面展示当前用户可见会话，并支持读取指定录制 ID 的命令时间线。
 - 会话录制命令摘要会脱敏 token、password、secret、credential 等赋值文本。
+- Settings 页「通知渠道 / 系统消息订阅 / 站内信」用于配置 #t75 渠道；响应不回显机器人 token 或 SMTP 密码。详见 `notification-channels.md`。
 
 ## License / Edition
 
