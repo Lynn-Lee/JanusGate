@@ -20,6 +20,7 @@ from app.api import (
     assets,
     auth,
     automation,
+    job_center,
     oidc,
     connectors,
     notification_deliveries,
@@ -78,6 +79,7 @@ app.include_router(acl.router, prefix="/api/v1")
 app.include_router(zones.router, prefix="/api/v1")
 app.include_router(admin.router, prefix="/api/v1")
 app.include_router(automation.router, prefix="/api/v1")
+app.include_router(job_center.router, prefix="/api/v1")
 app.include_router(assets.router, prefix="/api/v1")
 app.include_router(protocols.router, prefix="/api/v1")
 app.include_router(asset_tree.router, prefix="/api/v1")

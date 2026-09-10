@@ -205,7 +205,7 @@ Approval policy DSL 当前支持 `context_equals`、`context_in`、`context_numb
 安全语义：
 
 - API payload 只包含 playbook 名称、目标资产 ID 列表和 check mode；额外字段 fail-closed 为请求校验错误。
-- 队列 payload 不携带 extra vars、password、token、secret、私钥或连接串。
+- 队列 payload 不携带 password、token、secret、私钥或连接串；#t77 允许非敏感 `extra_variables` JSON，敏感键仍 fail-closed。
 - `ansible.playbook` worker handler 已按租户确认 active 目标资产，并只向显式 runner 契约传递无凭据目标摘要；本地 `ansible-playbook` adapter 已覆盖 playbook root 路径收敛、临时 inventory 渲染、check mode 传递、不继承 secret/token 环境变量的 runtime 目录基础沙箱，以及执行超时和超时子进程回收。
 
 ### GET `/api/v1/automation/jobs/runs`
@@ -238,6 +238,29 @@ Approval policy DSL 当前支持 `context_equals`、`context_in`、`context_numb
 
 - 响应只返回 job run 状态元数据，不返回 queue payload、inventory、stdout、stderr、secret 引用、凭据明文或下游执行输出。
 - 租户隔离以当前认证用户为准，跨租户 run 不参与列表或 total。
+
+### POST `/api/v1/job-center/jobs`
+
+用途：#t77 保存作业定义（Playbook / 临时命令 / 扫描 / 轮换 / 校验），可选 cron 与 runas。
+
+鉴权：`automation:write` 或 `admin`。
+
+### POST `/api/v1/job-center/jobs/{job_id}/run`
+
+用途：把作业定义合并一次运行的 `extra_variables` 后写入 JSON-only 队列，并留下 `queued` 执行记录。
+
+### POST `/api/v1/job-center/adhoc`
+
+用途：立即下发临时或批量命令；多目标时 `job_type=batch.command`。命令进入 Ansible extra var，不经 pickle。
+
+### POST `/api/v1/job-center/cron/dispatch`
+
+用途：扫描 `next_run_at <= now` 的启用周期作业并入队。
+
+安全语义：
+
+- 作业中心不得回退 P0#10：禁止 pickle，禁止敏感 payload 键。
+- 非 admin 不得 runas 他人。
 
 安全语义：
 

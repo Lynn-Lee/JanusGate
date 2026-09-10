@@ -14,6 +14,7 @@
 
 - 资产页面用于查看平台、资产和 JIT 申请入口。
 - 账号托管页面只展示 Vault `secret_id` 引用，不展示凭据明文。
+- 作业中心页面用于保存 Playbook / 临时命令、参数化变量和周期任务；队列只接受 JSON，不会下发凭据。详见 `job-center.md`。
 - 会话页面展示当前用户可见会话，并支持读取指定录制 ID 的命令时间线。
 - 会话录制命令摘要会脱敏 token、password、secret、credential 等赋值文本。
 

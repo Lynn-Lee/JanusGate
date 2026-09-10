@@ -1,0 +1,7 @@
+---
+- name: JanusGate adhoc command
+  hosts: all
+  gather_facts: false
+  tasks:
+    - name: Run parameterized command
+      ansible.builtin.command: "{{ janusgate_adhoc_command }}"

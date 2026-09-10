@@ -6,6 +6,7 @@ import { AppShell } from './components/AppShell';
 import { AccountsPage } from './pages/AccountsPage';
 import { AssetsPage } from './pages/AssetsPage';
 import { AuditsPage } from './pages/AuditsPage';
+import { JobsPage } from './pages/JobsPage';
 import { LoginPage } from './pages/LoginPage';
 import { SessionsPage } from './pages/SessionsPage';
 import { SettingsPage } from './pages/SettingsPage';
@@ -37,6 +38,7 @@ export default function App() {
                 <Route path="/workflow" element={<WorkflowPage />} />
                 <Route path="/tenancy" element={<TenancyPage />} />
                 <Route path="/ssh-ca" element={<SshCaPage />} />
+                <Route path="/jobs" element={<JobsPage />} />
                 <Route path="/audits" element={<AuditsPage />} />
                 <Route path="/settings" element={<SettingsPage />} />
               </Route>

@@ -204,6 +204,31 @@ function installFetch() {
       return Response.json({ items: [], total: 0 });
     }
     if (url.endsWith('/api/v1/automation/jobs/runs')) return Response.json({ items: [], total: 0 });
+    if (url.endsWith('/api/v1/job-center/jobs') && method === 'GET') return Response.json({ items: [], total: 0 });
+    if (url.endsWith('/api/v1/job-center/jobs') && method === 'POST') {
+      const body = JSON.parse(String(init?.body ?? '{}')) as Record<string, unknown>;
+      if (JSON.stringify(body).toLowerCase().includes('password')) {
+        return Response.json({ detail: 'AUTOMATION_JOB_PAYLOAD_CONTAINS_SECRET' }, { status: 400 });
+      }
+      return Response.json(
+        {
+          id: 'job_1',
+          name: body.name,
+          job_type: body.job_type,
+          payload: body.payload,
+          extra_variables: body.extra_variables ?? {},
+          cron_expression: body.cron_expression ?? null,
+          next_run_at: null,
+          enabled: true,
+          run_as_user_id: body.run_as_user_id ?? null,
+          created_by: '1'
+        },
+        { status: 201 }
+      );
+    }
+    if (url.endsWith('/api/v1/job-center/cron/dispatch') && method === 'POST') {
+      return Response.json({ dispatched_job_ids: [] });
+    }
     if (url.endsWith('/api/v1/zones/')) return Response.json({ items: [], total: 0 });
     if (url.includes('/api/v1/workflows/ticket-flows')) return Response.json({ items: [], total: 0 });
     if (url.endsWith('/api/v1/zones/gateway-candidates/')) return Response.json([]);
@@ -361,6 +386,36 @@ describe('MVP pages', () => {
       auditComplianceReport.content_type
     );
     expect(screen.queryByText('secret-token')).not.toBeInTheDocument();
+  });
+
+  it('saves a job-center playbook without secret fields', async () => {
+    const fetchMock = installFetch();
+    vi.stubGlobal('fetch', fetchMock);
+    history.pushState(null, '', '/jobs');
+    render(<App />);
+
+    expect(await screen.findByRole('heading', { name: '作业中心' })).toBeInTheDocument();
+    await userEvent.type(screen.getByLabelText('名称'), 'linux-baseline');
+    await userEvent.type(screen.getByLabelText('Playbook'), 'linux-baseline.yml');
+    await userEvent.type(screen.getByLabelText('目标资产 ID'), '1');
+    fireEvent.change(screen.getByLabelText('变量 JSON'), { target: { value: '{"env":"prod"}' } });
+    await userEvent.click(screen.getByRole('button', { name: '保存作业' }));
+
+    await waitFor(() =>
+      expect(fetchMock).toHaveBeenCalledWith(
+        '/api/v1/job-center/jobs',
+        expect.objectContaining({ method: 'POST' })
+      )
+    );
+    const createCall = fetchMock.mock.calls.find(
+      ([url, init]) => String(url) === '/api/v1/job-center/jobs' && (init as RequestInit | undefined)?.method === 'POST'
+    );
+    expect(createCall).toBeTruthy();
+    const posted = JSON.parse(String((createCall?.[1] as RequestInit).body));
+    expect(posted.job_type).toBe('ansible.playbook');
+    expect(posted.extra_variables).toEqual({ env: 'prod' });
+    expect(JSON.stringify(posted)).not.toMatch(/password/i);
+    expect(await screen.findByText('作业已保存')).toBeInTheDocument();
   });
 
   it('shows Settings runtime and security summaries', async () => {

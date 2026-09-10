@@ -7,7 +7,7 @@ import os
 import resource
 import tempfile
 from collections.abc import Awaitable, Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Protocol
 
@@ -37,6 +37,7 @@ class AnsiblePlaybookRun:
     playbook_name: str
     check_mode: bool
     targets: list[AnsiblePlaybookTarget]
+    extra_variables: dict[str, JsonValue] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -92,6 +93,13 @@ class LocalAnsiblePlaybookRunner:
                 encoding="utf-8",
             )
             args = [self._executable, str(playbook_path), "-i", str(inventory_path)]
+            if playbook.extra_variables:
+                extra_path = work_dir / "extra-vars.json"
+                extra_path.write_text(
+                    json.dumps(playbook.extra_variables, sort_keys=True),
+                    encoding="utf-8",
+                )
+                args.extend(["-e", f"@{extra_path}"])
             if playbook.check_mode:
                 args.append("--check")
             try:
@@ -158,6 +166,10 @@ class AnsiblePlaybookWorkerHandler:
         playbook_name = _payload_str(payload, "playbook_name")
         target_asset_ids = _payload_int_list(payload, "target_asset_ids")
         check_mode = _payload_bool(payload, "check_mode")
+        extra_variables = _payload_object(payload, "extra_variables")
+        job_definition_id = _optional_payload_str(payload, "job_definition_id")
+        run_as_user_id = _optional_payload_str(payload, "run_as_user_id")
+        recorded_job_type = _optional_payload_str(payload, "recorded_job_type") or "ansible.playbook"
 
         async with self._session_factory() as session:
             assets = await _get_active_assets(
@@ -186,6 +198,7 @@ class AnsiblePlaybookWorkerHandler:
             playbook_name=playbook_name,
             check_mode=check_mode,
             targets=targets,
+            extra_variables=extra_variables,
         )
         await self._record_run(
             message_id=message_id,
@@ -196,6 +209,10 @@ class AnsiblePlaybookWorkerHandler:
             target_count=len(targets),
             status="running",
             error_code=None,
+            job_type=recorded_job_type,
+            job_definition_id=job_definition_id,
+            extra_variables=extra_variables,
+            run_as_user_id=run_as_user_id,
         )
         try:
             await self._runner.run(run)
@@ -209,6 +226,10 @@ class AnsiblePlaybookWorkerHandler:
                 target_count=len(targets),
                 status="failed",
                 error_code=_safe_error_code(exc),
+                job_type=recorded_job_type,
+                job_definition_id=job_definition_id,
+                extra_variables=extra_variables,
+                run_as_user_id=run_as_user_id,
             )
             raise
         await self._record_run(
@@ -220,6 +241,10 @@ class AnsiblePlaybookWorkerHandler:
             target_count=len(targets),
             status="completed",
             error_code=None,
+            job_type=recorded_job_type,
+            job_definition_id=job_definition_id,
+            extra_variables=extra_variables,
+            run_as_user_id=run_as_user_id,
         )
 
     async def _record_run(
@@ -233,6 +258,10 @@ class AnsiblePlaybookWorkerHandler:
         target_count: int,
         status: str,
         error_code: str | None,
+        job_type: str = "ansible.playbook",
+        job_definition_id: str | None = None,
+        extra_variables: dict[str, JsonValue] | None = None,
+        run_as_user_id: str | None = None,
     ) -> None:
         async with self._session_factory() as session:
             run = await session.get(AutomationJobRun, message_id)
@@ -240,7 +269,7 @@ class AnsiblePlaybookWorkerHandler:
                 run = AutomationJobRun(
                     message_id=message_id,
                     tenant_id=tenant_id,
-                    job_type="ansible.playbook",
+                    job_type=job_type,
                     requested_by=requested_by,
                 )
                 session.add(run)
@@ -249,6 +278,10 @@ class AnsiblePlaybookWorkerHandler:
             run.check_mode = check_mode
             run.target_count = target_count
             run.error_code = error_code
+            run.job_type = job_type
+            run.job_definition_id = job_definition_id
+            run.extra_variables = extra_variables
+            run.run_as_user_id = run_as_user_id
             await session.commit()
 
 
@@ -289,6 +322,24 @@ def _payload_int_list(payload: dict[str, JsonValue], key: str) -> list[int]:
 def _payload_str(payload: dict[str, JsonValue], key: str) -> str:
     value = payload.get(key)
     if not isinstance(value, str) or value == "":
+        raise ValueError("AUTOMATION_JOB_PAYLOAD_INVALID")
+    return value
+
+
+def _optional_payload_str(payload: dict[str, JsonValue], key: str) -> str | None:
+    if key not in payload or payload[key] is None:
+        return None
+    value = payload[key]
+    if not isinstance(value, str) or value == "":
+        raise ValueError("AUTOMATION_JOB_PAYLOAD_INVALID")
+    return value
+
+
+def _payload_object(payload: dict[str, JsonValue], key: str) -> dict[str, JsonValue]:
+    if key not in payload or payload[key] is None:
+        return {}
+    value = payload[key]
+    if not isinstance(value, dict):
         raise ValueError("AUTOMATION_JOB_PAYLOAD_INVALID")
     return value
 

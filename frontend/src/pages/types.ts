@@ -243,6 +243,33 @@ export type AutomationJobRun = {
   target_count: number | null;
   error_code: string | null;
   reason?: string | null;
+  job_definition_id?: string | null;
+  extra_variables?: Record<string, unknown> | null;
+  run_as_user_id?: string | null;
+};
+
+export type JobDefinition = {
+  id: string;
+  name: string;
+  job_type: string;
+  payload: Record<string, unknown>;
+  extra_variables: Record<string, unknown>;
+  cron_expression: string | null;
+  next_run_at: string | null;
+  enabled: boolean;
+  run_as_user_id: string | null;
+  created_by: string;
+};
+
+export type JobRun = {
+  message_id: string;
+  job_type: string;
+  status: string;
+  requested_by: string;
+  playbook_name: string | null;
+  job_definition_id: string | null;
+  extra_variables: Record<string, unknown> | null;
+  run_as_user_id: string | null;
 };
 
 export type CredentialRotation = {
