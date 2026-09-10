@@ -850,7 +850,7 @@ User ──┬── WorkflowRequest ──── JitGrant
 |---------|------|-------|------|--------|
 | **#t69** | SSH / SFTP 通道 | backend + security | **✅ 已完成**：Connector 侧真实 SSH 通道（`asyncssh`）；PTY 交互、命令流解析并接入 #t46 命令事件；SFTP 文件传输并接入 #t78 文件传输审计。**约束**：强制现代算法套件、主机密钥强校验、私钥仅内存传递不落盘、凭据不经命令行（对应关闭 P0#7 / P0#15 / P0#16 / P0#17）。**连接器层已收口**：7 个模块全部落地并有进程内端到端测试（asyncssh 进程内 server，无外部依赖）——`ssh_channel`（exec 通道，四条安全约束逐条有断言）、`ssh_session`（会话编排）、`command_event_sink`（命令事件投递 #t46 端点）、`ssh_interactive`（PTY + 从键盘输入流重建命令 + 读超时）、`ssh_sftp`（传输 + 带 sha256 的 `FileTransferEvent`，失败也发事件）、`ssh_hostkey`（scan → 审批 → 固定，闭环补齐 P0#17 前提）、`session_runtime`（接线到会话网关，`ConnectorScheduler` 即连接器进程边界，网关只传身份、凭据在 resolver 侧）。**生产 SessionConnectionResolver 已 QA SHIP**：`AssetVaultSessionConnectionResolver`（资产注册表 + Vault + 已批准主机密钥）为默认 HTTP 装配，测试仍注入 Noop/Fake；仅 SSH（exec / interactive / sftp）。主机密钥 scan-then-compare、fail-closed、无 TOFU。审批留在现有 WorkflowPage：未知密钥轻确认「确认这台主机」，密钥变更加重警告「这台主机的密钥变了」，无 type-to-confirm。未批准/拒绝/不匹配一律「无法连接」，从不「没有权限」。连接列表展示 k8s（#t72），无新页面。#t78 文件传输日志入库端点未建（属 M6），现以 sink 协议解耦 | 高 |
 | **#t70** | RDP / VNC 图形通道与录像 | backend + devops | 图形协议网关；会话录像采集、转码与回放；录像存储后端抽象（本地 / S3 / OSS）。**注**：本任务是 Windows 资产直连的前提，与 §3.6.2 不做的 Applet 发布层无关。**排期说明（v2.4）**：本任务需 FreeRDP / guacd 等外部二进制与录像转码存储后端，无法沿用 #t69/#t72 已验证的「进程内、无外部依赖端到端」模式，成本结构与 M3 其余任务不同量级，建议独立立项而非排入常规切片队列 | 高 |
-| **#t71** | 数据库协议代理 | backend | 数据库协议代理通道，SQL 语句级审计并接入命令事件；与 #t65 数据脱敏规则联动。**依赖状态（v2.4）**：所依赖的 #t65 数据脱敏规则已就绪（`PolicyDecisionService.mask`），阻塞已解除；剩余难点是 MySQL / PostgreSQL wire protocol 代理需从零实现，端到端验证需自建协议 server | 中 |
+| **#t71** | 数据库协议代理 | backend | **✅ 已完成**：PostgreSQL Simple Query（`Q`）+ MySQL/MariaDB `COM_QUERY`（`mysql_native_password`）；`postgres_proxy.py` / `mysql_proxy.py`。SQL 执行前走 `CommandPolicyGuard`（DENY/REVIEW 不落远端），结果走 `#t65` `PolicyDecisionService.mask`，命令事件对齐 #t46。TLS：SSLRequest + 预置 CA + `check_hostname`/`CERT_REQUIRED`，禁止 TOFU。凭据仅内存、`repr` 屏蔽。生产 `AssetVaultSessionConnectionResolver` 分流 `postgresql`/`mysql`/`mariadb`（资产 `namespace` 作默认库名；有 `server_ca` 则强制 TLS）。进程内假 server 测试，无外部数据库。文档 `docs/site/connectors-db.md`。**已知边界**：无 prepared statement / SCRAM / `caching_sha2_password` / Oracle / SQL Server；列级 AST 脱敏不做 | 中 |
 | **#t72** | K8s exec 通道 | backend | **✅ 已完成**：`kubectl exec` 语义通道（SPDY / WebSocket），命令审计复用统一管线；namespace 作用域强制生效。`app/connectors/k8s_exec.py` 走 WebSocket `v4.channel.k8s.io` 子协议（stdin/stdout/stderr/error 单字节通道帧多路复用），每条 exec 命令复用 #t69 已建的 `CommandEvent` 管线；退出码从 error 通道 `metav1.Status` 解析。三条安全约束逐条有测试：**namespace 作用域在建连前强制**（越权抛 `K8S_NAMESPACE_FORBIDDEN`，服务端收不到请求）、**API Server TLS 强校验**（预置 CA + check_hostname，缺 CA 拒绝 TOFU，https-only）、**token 仅内存经 Authorization 头**（绝不进 URL/argv，repr 屏蔽）。端到端测试用 `websockets` 进程内 wss server + 自签证书，无外部集群依赖。**生产 SessionConnectionResolver（K8s）已 QA SHIP**：`AssetVaultSessionConnectionResolver` 在 `protocol=k8s` 时从资产读取 API URL、预置 CA、单一 namespace，从建连弹层接收 pod（必选）与 container（可选），并从 Vault 解开 token（仅内存）；HTTPS/CA 缺失一律「无法连接（需要 HTTPS 和 CA）」且不打开弹层；缺 namespace 或 namespace 越权一律「无法连接」；连接列表在 AssetPermission connect + 连接方式 ACL 允许时展示 k8s；pod 不落库。**仍待**：交互式 PTY exec（stdin+tty+resize）与 attach（短期 token 签发已由 #t68 TokenRequest QA SHIP） | 中 |
 
 **M4：账号自动化**
@@ -896,16 +896,16 @@ User ──┬── WorkflowRequest ──── JitGrant
 | M3-预研：单协议通道验证 | 1-2 周 | #t69 技术切片 | ✅ **完成** | **与 M1 并行启动**，尽早暴露最高技术风险 |
 | M1：授权与访问控制内核 | 4-6 周 | #t63 + #t64 + #t65 | ✅ **3/3 完成** | 差距最大，优先级最高 |
 | M2：资产与协议广度 | 3-4 周 | #t66 + #t67 + #t68 | ✅ **3/3 完成** | 依赖 M1 授权模型 |
-| M3：真实连接通道 | 6-8 周 | #t69 + #t70 + #t71 + #t72 | 🟡 #t69/#t72 完成；#t70/#t71 未开始 | 风险最高，#t70 图形通道为其中最重 |
+| M3：真实连接通道 | 6-8 周 | #t69 + #t70 + #t71 + #t72 | 🟡 #t69/#t71/#t72 完成；#t70 未开始 | 风险最高，#t70 图形通道为其中最重 |
 | M4：账号自动化 | 3-4 周 | #t73 | ✅ **完成** | 依赖 #t69 SSH 通道（前置已满足） |
 | M5：工单、通知、认证源 | 4-5 周 | #t74 + #t75 + #t76 | 🟡 #t74/#t76 完成；#t75 未开始 | 可与 M3 并行 |
 | M6：运维与平台治理 | 3-4 周 | #t77 + #t78 + #t79 | ⬜ 未开始 | 收口阶段 |
 
 > **周期为规模估算而非承诺**，未考虑团队规模与并行度。M3 的估算不确定性最大，建议在预研切片完成后重估。
 
-> **v2.4 排期修订**：M3 预研切片（#t69）已完成并解除全局单点关键路径，M0 三项前置阻塞项全部关闭；**#t69 / #t72 生产 SessionConnectionResolver 已 QA SHIP**。
-> M3 剩余两项性质已分化——#t71 的 #t65 脱敏依赖已解除，剩协议实现难度；#t70 需外部图形基建，建议独立立项（见其任务行）。
-> 因此后续排序建议为：**#t75 通知渠道扩展**（#t66/#t67/#t68、#t69/#t72、**#t73 AccountTemplate / account.verify**、**#t74 asset_grant / command_review TicketFlow** 与 **#t76 OIDC 登录** 已 QA SHIP；#t70 建议独立立项），而非按里程碑编号顺序推进。
+> **v2.4 排期修订**：M3 预研切片（#t69）已完成并解除全局单点关键路径，M0 三项前置阻塞项全部关闭；**#t69 / #t71 / #t72 生产 SessionConnectionResolver 已 QA SHIP**。
+> M3 剩余图形通道 #t70 需外部图形基建，建议独立立项（见其任务行）。
+> 因此后续排序建议为：**#t75 通知渠道扩展**（#t66/#t67/#t68、#t69/#t71/#t72、**#t73 AccountTemplate / account.verify**、**#t74 asset_grant / command_review TicketFlow** 与 **#t76 OIDC 登录** 已 QA SHIP；#t70 建议独立立项），而非按里程碑编号顺序推进。
 
 #### 11.4.5 Phase 6 验收标准
 
