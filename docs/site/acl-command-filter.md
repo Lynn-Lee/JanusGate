@@ -50,6 +50,6 @@
 ## 已知边界
 
 - 管理 CRUD：命令过滤 ACL 与数据脱敏规则见本页与[数据脱敏规则](acl-data-masking.md)；登录 / 资产登录 / 连接方式 overlay ACL 的 CRUD 已落地（跨租户 get/update/delete 一律 404 fail-closed）。`GET/POST/PATCH/DELETE /api/v1/command-filter-acls/`（命令组作为 ACL 内嵌写入面一并持久化）。
-- 执行前守卫：SSH exec、SSH PTY、K8s exec 落到远端之前走 `CommandPolicyGuard` → `PolicyDecisionService.evaluate_command`。`DENY` 与 `REVIEW`（#t74 前按 DENY）不落远程。生产组装按会话租户经 `AclRepository` / `build_tenant_policy_service` 加载规则；无 ACL 命中仍 overlay 放行。库连不上 fail-closed（`COMMAND_POLICY_STORE_UNAVAILABLE`），拒绝写 #t61，命令不落远端。
+- 执行前守卫：SSH exec、SSH PTY、K8s exec 以及 #t71 PostgreSQL / MySQL SQL 落到远端之前走 `CommandPolicyGuard` → `PolicyDecisionService.evaluate_command`。`DENY` 与 `REVIEW` 不落远程。生产组装按会话租户经 `AclRepository` / `build_tenant_policy_service` 加载规则；无 ACL 命中仍 overlay 放行。库连不上 fail-closed（`COMMAND_POLICY_STORE_UNAVAILABLE`），拒绝写 #t61，命令不落远端。
 - 入库：`session_recordings` 落库前同样 `evaluate_command` + `mask`。`DENY` / `REVIEW` / evaluate 失败 → 403、#t61（只存 `command_sha256`，不落明文），不持久化命令事件。
-- 命令复核触发工单需与 #t74 联调。命令过滤只作用于**语句/命令**粒度；数据库 SQL 语句级过滤与列级脱敏待 #t71。
+- 命令复核触发工单已与 #t74 联调。命令过滤作用于语句/命令粒度；#t71 已把 SQL 语句接入同一守卫。列级结构化脱敏仍不解析 SQL AST。

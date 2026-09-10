@@ -40,5 +40,5 @@
 ## 已知边界
 
 - 管理 CRUD：数据脱敏规则 `GET/POST/PATCH/DELETE /api/v1/data-masking-rules/`（与命令过滤 ACL、登录/资产登录/连接方式 overlay ACL 同属 #t65 已交付）。跨租户 get/update/delete 一律 404 fail-closed。
-- 执行前 / 入库：SSH exec、SSH PTY、K8s exec 放行后的可见输出，以及命令事件入库前的 `output_excerpt`，都走 `PolicyDecisionService.mask`（累计应用全部命中规则），并保留 #t46 基线 `token/password/secret/credential=` 打码。库挂 fail-closed 时命令不落远端，故也不会产生未脱敏输出。#t71 DB 代理对查询结果调 `mask` 仍为后续步骤。
+- 执行前 / 入库：SSH exec、SSH PTY、K8s exec 以及 #t71 PostgreSQL / MySQL 查询放行后的可见输出，以及命令事件入库前的 `output_excerpt`，都走 `PolicyDecisionService.mask`（累计应用全部命中规则），并保留 #t46 基线 `token/password/secret/credential=` 打码。库挂 fail-closed 时命令不落远端，故也不会产生未脱敏输出。
 - 打码为**幂等文本替换**，不解析结构化列语义（如「仅脱敏某数据库某列」）；列级脱敏留待与 #t71 SQL 语句解析联动的后续切片。

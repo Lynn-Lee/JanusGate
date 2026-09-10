@@ -119,10 +119,12 @@ Phase 6 #t69 已在 `backend/app/connectors/` 落地连接器侧真实 SSH 通�
 
 Phase 6 #t72 已落地 K8s exec 通道 `backend/app/connectors/k8s_exec.py`，走 WebSocket `v4.channel.k8s.io` 子协议做 stdin/stdout/stderr/error 多路复用，复用同一条命令事件管线；namespace 作用域在建连前强制、API Server 证书由预置 CA 严格校验且拒绝 trust-on-first-use、bearer token 仅经 `Authorization` 头传递不进 URL 或命令行。端到端测试使用进程内 wss server 与自签证书，无外部集群依赖。详见 [`docs/site/connectors-k8s.md`](docs/site/connectors-k8s.md)。
 
+Phase 6 #t71 已落地 PostgreSQL Simple Query 与 MySQL/MariaDB `COM_QUERY` 代理，SQL 语句接入 #t46 命令事件与 #t65 过滤/脱敏；TLS 经 SSLRequest + 预置 CA 强校验，凭据仅内存。生产 resolver 按协议分流数据库资产。端到端测试使用进程内假协议 server，无外部数据库。详见 [`docs/site/connectors-db.md`](docs/site/connectors-db.md)。
+
 > **#t69 / #t72 生产 SessionConnectionResolver 已 QA SHIP**：默认 HTTP 装配为 `AssetVaultSessionConnectionResolver`（资产注册表 + Vault）。SSH 走已批准主机密钥（scan-then-compare、fail-closed、无 TOFU）；K8s 走 API URL + 预置 CA + 单一 namespace + Vault token（仅内存）。审批留在现有 WorkflowPage：未知「确认这台主机」、变更「这台主机的密钥变了」。未批准/拒绝/不匹配一律「无法连接」；缺 HTTPS/CA 为「无法连接（需要 HTTPS 和 CA）」。连接列表展示 k8s（有 connect 授权且连接方式 ACL 允许时）。缺 HTTPS/CA 或 namespace / namespace 越权不打开弹层，文案分别为「无法连接（需要 HTTPS 和 CA）」与「无法连接」。建连弹层 namespace 只读（仅资产上的 ns），Pod 必选（「选择 Pod」/「没有可执行的 Pod」），容器可选（「默认容器」）；pod 不落库。
 
 ### M1 ACL 访问控制（#t65 已完成）
 
-Phase 6 #t65 已落地命令过滤 ACL、数据脱敏规则，以及登录 ACL / 资产登录 ACL / 连接方式 ACL overlay，判定统一进 `PolicyDecisionService`，不在路由或连接器旁路。命令过滤按优先级 1-100（小者优先）取首个命中者，语义是**已授权会话之上的 deny-overlay**——无 ACL 命中时默认放行；数据脱敏则是转换而非决策，**累计应用**全部命中规则。登录 overlay 只限制交互式登录（不作用于 API Key）；资产登录 overlay 叠在 AssetPermission 之后，可按节点/资产 + 可选 IP 段 / 时段拒绝连接（时段存 naive 本地 HH:MM，按当前租户时区求值，默认 Asia/Singapore）；连接方式 overlay 按协议限制连接。规则集通过 `backend/app/policy/repository.py` 的 `AclRepository` 经租户 scope helper `scoped_select` 从数据库加载，并已接入 SSH exec、SSH PTY 和 K8s exec 的执行前守卫、交互式登录守卫、会话 connect 守卫及命令事件入库。详见 [`docs/site/acl-command-filter.md`](docs/site/acl-command-filter.md) 与 [`docs/site/acl-data-masking.md`](docs/site/acl-data-masking.md)。
+Phase 6 #t65 已落地命令过滤 ACL、数据脱敏规则，以及登录 ACL / 资产登录 ACL / 连接方式 ACL overlay，判定统一进 `PolicyDecisionService`，不在路由或连接器旁路。命令过滤按优先级 1-100（小者优先）取首个命中者，语义是**已授权会话之上的 deny-overlay**——无 ACL 命中时默认放行；数据脱敏则是转换而非决策，**累计应用**全部命中规则。登录 overlay 只限制交互式登录（不作用于 API Key）；资产登录 overlay 叠在 AssetPermission 之后，可按节点/资产 + 可选 IP 段 / 时段拒绝连接（时段存 naive 本地 HH:MM，按当前租户时区求值，默认 Asia/Singapore）；连接方式 overlay 按协议限制连接。规则集通过 `backend/app/policy/repository.py` 的 `AclRepository` 经租户 scope helper `scoped_select` 从数据库加载，并已接入 SSH exec、SSH PTY、K8s exec 与 #t71 数据库 SQL 的执行前守卫、交互式登录守卫、会话 connect 守卫及命令事件入库。详见 [`docs/site/acl-command-filter.md`](docs/site/acl-command-filter.md) 与 [`docs/site/acl-data-masking.md`](docs/site/acl-data-masking.md)。
 
 > 命令过滤、脱敏与三类 overlay 登录 ACL 均已 SHIP；#t69 / #t72 生产 `AssetVaultSessionConnectionResolver` 亦已 QA SHIP（测试仍注入 Noop/Fake）。
