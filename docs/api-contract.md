@@ -67,6 +67,7 @@
 - Notification Rules：`/api/v1/notification-rules/*`，Phase 4 WebHook / 通知规则管理基础。
 - Notification Deliveries：`/api/v1/notification-rules/{rule_id}/deliveries` 与 `/api/v1/notification-deliveries/*`，Phase 4 WebHook 可靠投递队列基础；`NotificationDeliveryWorker` 负责到期投递、失败重试和 dead-letter 状态推进，`HttpWebhookNotificationSender` 负责向 HTTPS WebHook endpoint 投递已脱敏 payload。
 - Admin：`/api/v1/admin/license-summary` 与 `/api/v1/admin/license-config`，Phase 5 #t58 Edition / License 边界摘要和 admin-only 持久化配置 foundation，不返回 license key、签名 secret、外部 validation token 或任何商业密钥材料。
+- Governance：`/api/v1/governance/*`，#t79 标签、白名单动态配置、用户偏好、泄露密码哈希库与报表目录；配置拒绝未知键，泄露库与改密接口不回显明文。
 
 ## Phase 5 Edition / License Boundary（#t58）
 

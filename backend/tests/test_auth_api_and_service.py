@@ -93,6 +93,24 @@ def user(**overrides: Any) -> User:
 
 
 @pytest.fixture(autouse=True)
+def stub_password_governance(monkeypatch: pytest.MonkeyPatch) -> None:
+    async def _enforce(db: Any, *, tenant_id: str, password: str) -> None:
+        del db, tenant_id
+        checker = getattr(
+            auth_service_module,
+            "password_policy_violations",
+            None,
+        )
+        if checker is None:
+            from app.core.security import password_policy_violations as checker
+        found = checker(password)
+        if found:
+            raise ValueError("; ".join(found))
+
+    monkeypatch.setattr(auth_service_module, "enforce_new_password", _enforce)
+
+
+@pytest.fixture(autouse=True)
 def clear_dependency_overrides() -> None:
     app.dependency_overrides.clear()
     yield
@@ -405,7 +423,7 @@ async def test_require_permission_allows_present_permission_and_denies_missing()
 async def test_auth_service_authenticate_and_create_user(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(auth_service_module, "verify_password", lambda plain, hashed: plain == "correct" and hashed == "hashed")
     monkeypatch.setattr(auth_service_module, "hash_password", lambda password: f"hashed:{password}")
-    monkeypatch.setattr(auth_service_module, "password_policy_violations", lambda password: ["weak"] if password == "weak" else [])
+    monkeypatch.setattr(auth_service_module, "password_policy_violations", lambda password: ["weak"] if password == "weak" else [], raising=False)
 
     assert await AuthService.authenticate(FakeDB(ScalarResult(None)), "missing", "correct") is None
     assert await AuthService.authenticate(FakeDB(ScalarResult(user(is_active=False))), "alice", "correct") is None
@@ -426,7 +444,7 @@ async def test_auth_service_authenticate_and_create_user(monkeypatch: pytest.Mon
 async def test_auth_service_password_totp_and_api_key_paths(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(auth_service_module, "verify_password", lambda plain, hashed: plain == "old" and hashed == "hashed-old")
     monkeypatch.setattr(auth_service_module, "hash_password", lambda password: f"hashed:{password}")
-    monkeypatch.setattr(auth_service_module, "password_policy_violations", lambda password: ["weak"] if password == "weak" else [])
+    monkeypatch.setattr(auth_service_module, "password_policy_violations", lambda password: ["weak"] if password == "weak" else [], raising=False)
     monkeypatch.setattr(auth_service_module, "encrypt_field", lambda value: f"encrypted:{value}")
     monkeypatch.setattr(auth_service_module, "decrypt_field", lambda value: value.removeprefix("encrypted:"))
 

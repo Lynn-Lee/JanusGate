@@ -5,6 +5,14 @@ import { ErrorState, LoadingState } from '../components/StatusView';
 import { getErrorMessage, useApiData, useApiMessage } from './pageUtils';
 import type { AuditComplianceReport, AuditEvent, AuditListResponse, AuditReportSummary } from './types';
 
+type GovernanceReport = {
+  id: number | null;
+  name: string;
+  template_key: string;
+  description: string;
+  builtin: boolean;
+};
+
 export const auditMetadataRedactedKeys = [
   'password',
   'passwd',
@@ -39,6 +47,10 @@ export function AuditsPage() {
   const [complianceReport, setComplianceReport] = useState<AuditComplianceReport | null>(null);
   const summary = useApiData(() => api.get<AuditReportSummary>('/api/v1/audits/reports/summary'), []);
   const events = useApiData(() => api.get<AuditListResponse>('/api/v1/audits/events'), []);
+  const reports = useApiData(
+    () => api.get<{ items: GovernanceReport[]; total: number }>('/api/v1/governance/reports'),
+    []
+  );
 
   const downloadComplianceReport = async () => {
     setDownloadingCompliance(true);
@@ -93,6 +105,20 @@ export function AuditsPage() {
             <Typography.Text type="secondary" copyable>
               {complianceReport.report_signature}
             </Typography.Text>
+          ) : null}
+        </Card>
+        <Card title="报表中心">
+          {reports.loading ? <LoadingState /> : null}
+          {reports.error ? <ErrorState message={reports.error} onRetry={reports.reload} /> : null}
+          {!reports.loading && !reports.error ? (
+            <Space direction="vertical">
+              {(reports.data?.items ?? []).map((item) => (
+                <Typography.Text key={`${item.template_key}-${item.id ?? 'builtin'}`}>
+                  {item.name}
+                  {item.builtin ? '（内置）' : ''}
+                </Typography.Text>
+              ))}
+            </Space>
           ) : null}
         </Card>
       </div>

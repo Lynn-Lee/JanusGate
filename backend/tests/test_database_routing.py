@@ -13,6 +13,7 @@ from app.api.audits.routes import router as audits_router
 from app.api.auth import router as auth_router
 from app.api.automation import router as automation_router
 from app.api.connectors import router as connectors_router
+from app.api.governance import router as governance_router
 from app.api.notification_deliveries import router as notification_deliveries_router
 from app.api.notification_rules import router as notification_rules_router
 from app.api.session_recordings import router as session_recordings_router
@@ -46,6 +47,12 @@ DB_BACKED_GET_ROUTE_ROUTING_INVENTORY = {
     ("GET", "/auth/me"),
     ("GET", "/automation/jobs/runs"),
     ("GET", "/connectors/"),
+    ("GET", "/governance/labels/"),
+    ("GET", "/governance/leak-passwords"),
+    ("GET", "/governance/preferences"),
+    ("GET", "/governance/reports"),
+    ("GET", "/governance/settings"),
+    ("GET", "/governance/settings/revisions"),
     ("GET", "/notification-deliveries/"),
     ("GET", "/notification-rules/"),
     ("GET", "/session-recordings/{recording_id}/commands"),
@@ -62,6 +69,7 @@ DB_BACKED_GET_ROUTE_ROUTING_INVENTORY = {
     ("GET", "/workflows/grants/active"),
     ("GET", "/workflows/requests"),
     ("GET", "/workflows/requests/{request_id}"),
+    ("GET", "/workflows/ticket-flows"),
 }
 
 # #t61：审计已持久化，但 AuditService 自管读写会话（独立 append-only 账本），故审计
@@ -85,6 +93,7 @@ ROUTERS_WITH_GET_ROUTES = [
     auth_router,
     automation_router,
     connectors_router,
+    governance_router,
     notification_deliveries_router,
     notification_rules_router,
     session_recordings_router,
@@ -358,6 +367,36 @@ def test_connector_write_routes_keep_writer_database_dependency() -> None:
 
     for method, path in write_routes:
         dependencies = _route_dependency_calls(router=connectors_router, method=method, path=path)
+        assert get_db in dependencies
+        assert get_read_db not in dependencies
+
+
+def test_governance_read_routes_use_read_database_dependency() -> None:
+    read_routes = [
+        ("GET", "/governance/labels/"),
+        ("GET", "/governance/leak-passwords"),
+        ("GET", "/governance/preferences"),
+        ("GET", "/governance/reports"),
+        ("GET", "/governance/settings"),
+        ("GET", "/governance/settings/revisions"),
+    ]
+    for method, path in read_routes:
+        dependencies = _route_dependency_calls(router=governance_router, method=method, path=path)
+        assert get_read_db in dependencies
+        assert get_db not in dependencies
+
+
+def test_governance_write_routes_keep_writer_database_dependency() -> None:
+    write_routes = [
+        ("POST", "/governance/labels/"),
+        ("PUT", "/governance/settings"),
+        ("PUT", "/governance/preferences"),
+        ("POST", "/governance/leak-passwords"),
+        ("POST", "/governance/reports"),
+        ("POST", "/governance/reports/run"),
+    ]
+    for method, path in write_routes:
+        dependencies = _route_dependency_calls(router=governance_router, method=method, path=path)
         assert get_db in dependencies
         assert get_read_db not in dependencies
 

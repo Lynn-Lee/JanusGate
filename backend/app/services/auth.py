@@ -9,14 +9,9 @@ import pyotp
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.security import (
-    decrypt_field,
-    encrypt_field,
-    hash_password,
-    password_policy_violations,
-    verify_password,
-)
+from app.core.security import decrypt_field, encrypt_field, hash_password, verify_password
 from app.models.user import ApiKey, User
+from app.services.leak_passwords import enforce_new_password
 
 
 class AuthService:
@@ -33,15 +28,19 @@ class AuthService:
 
     @staticmethod
     async def create_user(
-        db: AsyncSession, username: str, password: str, email: str = ""
+        db: AsyncSession,
+        username: str,
+        password: str,
+        email: str = "",
+        *,
+        tenant_id: str = "default",
     ) -> User:
-        violations = password_policy_violations(password)
-        if violations:
-            raise ValueError("; ".join(violations))
+        await enforce_new_password(db, tenant_id=tenant_id, password=password)
         user = User(
             username=username,
             display_name=username,
             email=email,
+            tenant_id=tenant_id,
             password_hash=hash_password(password),
             password_changed_at=datetime.now(UTC),
         )
@@ -62,9 +61,9 @@ class AuthService:
             raise ValueError("当前密码错误")
         if old_password == new_password:
             raise ValueError("新密码不能与当前密码相同")
-        violations = password_policy_violations(new_password)
-        if violations:
-            raise ValueError("; ".join(violations))
+        await enforce_new_password(
+            db, tenant_id=str(user.tenant_id or "default"), password=new_password
+        )
         user.password_hash = hash_password(new_password)
         user.password_changed_at = datetime.now(UTC)
         await db.commit()
