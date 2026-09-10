@@ -332,7 +332,10 @@ async def test_mysql_tls_query_with_pinned_ca() -> None:
             MysqlCredential(password="s3cret"),
             policy=_guard(_FakePolicy()),
         )
-        event = await channel.run_query("SELECT 1", _RecordingSink(), sequence=1)
+        event = await asyncio.wait_for(
+            channel.run_query("SELECT 1", _RecordingSink(), sequence=1),
+            timeout=10,
+        )
         assert event.exit_code == 0
         assert "row-one" in event.output_excerpt
     finally:

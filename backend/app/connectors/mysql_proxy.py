@@ -312,6 +312,9 @@ class MysqlQueryChannel:
             ssl_request += bytes([33])
             ssl_request += bytes(23)
             await _write_packet(writer, seq, bytes(ssl_request))
+            # SSLRequest 之后服务端立即进入 TLS；让出事件循环，避免 ClientHello
+            # 在假 server 尚未 start_tls 时到达导致握手卡死。
+            await asyncio.sleep(0)
             await writer.start_tls(
                 self._ssl,
                 server_hostname=_tls_server_hostname(self._target.host),
