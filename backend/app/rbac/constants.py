@@ -15,6 +15,7 @@ ALL_MENU_KEYS: Final[tuple[str, ...]] = (
     "accounts",
     "sessions",
     "audits",
+    "jobs",
     "workflows",
     "tenancy",
     "rbac",

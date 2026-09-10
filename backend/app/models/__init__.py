@@ -11,7 +11,7 @@ from app.models.admin import LicenseConfigurationModel
 from app.models.asset import Asset, Platform
 from app.models.asset_tree import AssetPermissionModel, NodeModel
 from app.models.audit import AuditEventModel
-from app.models.automation import AutomationJobRun
+from app.models.automation import AutomationJobRun, JobDefinition
 from app.models.connector import Connector
 from app.models.host_key import AssetHostKeyModel
 from app.models.oidc import OidcProvider
@@ -48,6 +48,7 @@ __all__ = [
     "AccountRisk",
     "AuditEventModel",
     "AutomationJobRun",
+    "JobDefinition",
     "CommandFilterAclModel",
     "CommandGroupModel",
     "ConnectMethodAclModel",

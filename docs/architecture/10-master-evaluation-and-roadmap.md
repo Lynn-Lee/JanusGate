@@ -871,7 +871,7 @@ User ──┬── WorkflowRequest ──── JitGrant
 
 | 任务 ID | 任务 | Owner | 范围 | 优先级 |
 |---------|------|-------|------|--------|
-| **#t77** | 作业中心 | backend + frontend | 作业 / Playbook / 临时命令 / 变量 / 执行记录；批量命令下发、周期任务、参数化、执行身份策略。复用 #t52 已建立的队列与 Ansible runner。**约束**：JSON-only 队列，无 pickle（P0#10 已由 #t52 关闭，本任务不得回退） | 中 |
+| **#t77** | 作业中心 | backend + frontend | **✅ 已完成**：`JobDefinition`（Playbook / 临时命令 / 批量命令 / 周期 cron / 参数化 `extra_variables` / `run_as_user_id`）；迁移 `a7b8c9d0e1f2`。`POST /api/v1/job-center/jobs` CRUD + `/run` + `/adhoc` + `/cron/dispatch`；临时命令映射到白名单 `adhoc-command.yml` 与 JSON extra vars。复用 #t52 JSON-only 队列与 Ansible runner，新增 `adhoc.command` / `batch.command` 作业类型但入队仍为 JSON `ansible.playbook`。控制台「作业中心」。测试 `test_job_center_t77.py` + `mvp-pages.test.tsx`。**作业中心已 QA SHIP**（对应约束：JSON-only 队列，无 pickle / 敏感键 fail-closed / 非 admin 不得 runas 他人）。真实 Celery 调度器进程与更广账号自动化作业类型可后续切片 | 中 |
 | **#t78** | 审计类型补全与会话高级能力 | backend + frontend | 审计类型：操作日志 / 活动日志 / 文件传输日志 / 改密日志 / 在线会话 / 作业日志；会话共享与监控联机；连接端点与端点路由规则；命令存储与录像存储多后端（含 ES 命令检索）。**约束**：全部审计类型并入 #t61 的 hash chain 与 WORM 归档 | 中 |
 | **#t79** | 平台治理能力 | backend + frontend | 标签体系；报表中心（在 #t49 / #t54 基础上扩展）；数据库驱动的动态系统配置；用户偏好；泄露密码库校验（与 #t65 弱密码策略联动） | 低 |
 
@@ -899,13 +899,13 @@ User ──┬── WorkflowRequest ──── JitGrant
 | M3：真实连接通道 | 6-8 周 | #t69 + #t70 + #t71 + #t72 | 🟡 #t69/#t72 完成；#t70/#t71 未开始 | 风险最高，#t70 图形通道为其中最重 |
 | M4：账号自动化 | 3-4 周 | #t73 | ✅ **完成** | 依赖 #t69 SSH 通道（前置已满足） |
 | M5：工单、通知、认证源 | 4-5 周 | #t74 + #t75 + #t76 | 🟡 #t74/#t76 完成；#t75 未开始 | 可与 M3 并行 |
-| M6：运维与平台治理 | 3-4 周 | #t77 + #t78 + #t79 | ⬜ 未开始 | 收口阶段 |
+| M6：运维与平台治理 | 3-4 周 | #t77 + #t78 + #t79 | 🟡 #t77 完成；#t78/#t79 未开始 | 收口阶段 |
 
 > **周期为规模估算而非承诺**，未考虑团队规模与并行度。M3 的估算不确定性最大，建议在预研切片完成后重估。
 
 > **v2.4 排期修订**：M3 预研切片（#t69）已完成并解除全局单点关键路径，M0 三项前置阻塞项全部关闭；**#t69 / #t72 生产 SessionConnectionResolver 已 QA SHIP**。
 > M3 剩余两项性质已分化——#t71 的 #t65 脱敏依赖已解除，剩协议实现难度；#t70 需外部图形基建，建议独立立项（见其任务行）。
-> 因此后续排序建议为：**#t75 通知渠道扩展**（#t66/#t67/#t68、#t69/#t72、**#t73 AccountTemplate / account.verify**、**#t74 asset_grant / command_review TicketFlow** 与 **#t76 OIDC 登录** 已 QA SHIP；#t70 建议独立立项），而非按里程碑编号顺序推进。
+> 因此后续排序建议为：**#t78 审计类型补全**（**#t77 作业中心已 QA SHIP**；#t75 通知渠道扩展若仍在独立 PR 中则跳过重复；#t70 建议独立立项），而非按里程碑编号顺序推进。
 
 #### 11.4.5 Phase 6 验收标准
 
@@ -1073,7 +1073,7 @@ P1（15 项）/ P2（18 项）：架构性问题（xpack 侵入、common 大杂�
 | 12 | 工单与审批 | 🟡 JIT 申请/审批/Grant 状态机 + 审批策略 DSL + 灰度 + 版本回滚 + **`TicketFlow` / `TicketStep` 多级审批（#t74 asset_grant / command_review QA SHIP）** | 其余工单类型（登录申请 / 资产登录复核）、更广审批规则扩展 | 是 | P2 已有 / P4 #t48 → **P6 #t74** |
 | 13 | 审计 | 🟡 统一审计事件 + **已持久化 append-only** + 库层强制有序 hash chain + SIEM + 合规报表 + WORM 归档 | 分类日志（操作/活动/文件传输/改密/在线会话/作业）；#t78 文件传输日志端点未建 | 是 | P1 已有 → **P6 #t61、#t78** |
 | 14 | 通知 | 🟡 WebHook endpoint + 通知规则 + 投递队列 + 重试/死信 + HTTPS sender | IM 渠道（钉钉/飞书/Lark/企微/Slack）、SMS、邮件、站内信、消息订阅 | 是 | P4 #t47 → **P6 #t75** |
-| 15 | 作业中心 | 🟡 JSON-only 队列 + worker + Ansible runner + 执行记录 | 作业/Playbook 管理模型、临时命令、周期任务、参数化、执行身份策略 | 是 | P4 #t52 → **P6 #t77** |
+| 15 | 作业中心 | 🟡 JSON-only 队列 + worker + Ansible runner + 执行记录 + **作业定义 / 临时命令 / 周期任务 / 参数化 / runas（#t77 QA SHIP）** | 独立调度器进程、更广作业类型 | 是 | P4 #t52 → **P6 #t77** |
 | 16 | 标签体系 | ⬜ 无 | 标签模型与资源标注 | 是 | **P6 #t79** |
 | 17 | 报表中心 | 🟡 审计汇总 API + SOC2 合规报表导出 | 通用报表模型与自定义报表 | 是 | P4 #t49 / P5 #t54 → **P6 #t79** |
 | 18 | 系统配置 | 🟡 环境变量 + License 配置持久化 | 数据库驱动的动态系统配置、配置变更审计 | 是 | P5 #t58 → **P6 #t79** |
@@ -1113,7 +1113,7 @@ P1（15 项）/ P2（18 项）：架构性问题（xpack 侵入、common 大杂�
 | 原交汇点 | ~~**#t69 真实连接通道**~~——**已于 v2.4 解除**，4 项 P0 已关闭，SSH / K8s 运行时已走通 | |
 
 **结论（v2.4 修订）**：v2.3 判定的全局单点关键路径 #t69 **已解除**。两条路线不再强耦合于同一任务——
-安全侧 P0#12 / P0#14 / P1#7 已由 **#t76 OIDC 登录 QA SHIP** 关闭（强制 PKCE + state、HTTPS/`verify=True`、`safe_next_url`）；#t65 判定已接到 SSH/K8s/PTY 执行前与交互式登录/资产连接 overlay。功能侧 #t63 RBAC、#t64 资产树与 AssetPermission、#t65 overlay ACL、#t66 资产类型与协议、**#t67 网域与网关 ProxyJump 已 QA SHIP**、**#t68 TokenRequest 已 QA SHIP**、**#t69 / #t72 生产 SessionConnectionResolver 已 QA SHIP**、**#t73 AccountTemplate / account.verify 已 QA SHIP**、**#t74 asset_grant / command_review TicketFlow 已 QA SHIP**、**#t76 OIDC 登录已 QA SHIP**；下一刀是 #t75 通知渠道扩展。
+安全侧 P0#12 / P0#14 / P1#7 已由 **#t76 OIDC 登录 QA SHIP** 关闭（强制 PKCE + state、HTTPS/`verify=True`、`safe_next_url`）；#t65 判定已接到 SSH/K8s/PTY 执行前与交互式登录/资产连接 overlay。功能侧 #t63 RBAC、#t64 资产树与 AssetPermission、#t65 overlay ACL、#t66 资产类型与协议、**#t67 网域与网关 ProxyJump 已 QA SHIP**、**#t68 TokenRequest 已 QA SHIP**、**#t69 / #t72 生产 SessionConnectionResolver 已 QA SHIP**、**#t73 AccountTemplate / account.verify 已 QA SHIP**、**#t74 asset_grant / command_review TicketFlow 已 QA SHIP**、**#t76 OIDC 登录已 QA SHIP**、**#t77 作业中心已 QA SHIP**；下一刀是 #t78 审计类型补全（#t75 若未合并则保持独立 PR，不重复实现）。
 
 **表述边界仍然有效**：#t69 的走通只解除了运行时前提，功能替代完成度仍为 **0/19 等价**。
 在 §14.2 矩阵出现第一个 ✅ 之前，「功能替代进度过半」的表述依然不成立；
