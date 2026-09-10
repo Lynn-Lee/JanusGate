@@ -286,6 +286,12 @@ Approval policy DSL 当前支持 `context_equals`、`context_in`、`context_numb
 - 租户隔离以当前认证用户为准，跨租户事件不会参与统计。
 - `high_or_critical_total` 用于告警中心后续切片的高危事件入口，不等同于已实现告警投递。
 
+### POST `/api/v1/audits/typed` / GET `/api/v1/audits/typed/{log_kind}` / POST `/api/v1/audits/ftp-logs`
+
+用途：#t78 分类审计与文件传输日志入库，全部写入 hash chain。`log_kind` 限定为 operate/activity/ftp/password/online-sessions/job/session-shares。
+
+安全语义：metadata 敏感键脱敏；ftp 失败传输同样落库。
+
 ## Phase 5 Audit Compliance Report API（#t54）
 
 ### GET `/api/v1/audits/reports/compliance`

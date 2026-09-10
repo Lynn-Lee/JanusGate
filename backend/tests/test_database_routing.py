@@ -15,6 +15,7 @@ from app.api.automation import router as automation_router
 from app.api.connectors import router as connectors_router
 from app.api.notification_deliveries import router as notification_deliveries_router
 from app.api.notification_rules import router as notification_rules_router
+from app.api.session_ops import router as session_ops_router
 from app.api.session_recordings import router as session_recordings_router
 from app.api.sessions.routes import router as sessions_router
 from app.api.ssh_certificate_authorities import router as ssh_ca_router
@@ -51,6 +52,11 @@ DB_BACKED_GET_ROUTE_ROUTING_INVENTORY = {
     ("GET", "/session-recordings/{recording_id}/commands"),
     ("GET", "/session-recordings/commands"),
     ("GET", "/sessions/"),
+    ("GET", "/sessions/{session_id}/shares"),
+    ("GET", "/session-ops/endpoints"),
+    ("GET", "/session-ops/endpoint-rules/resolve"),
+    ("GET", "/session-ops/storage-backends"),
+    ("GET", "/session-ops/storage-backends/{backend_id}/commands"),
     ("GET", "/ssh-certificate-authorities/"),
     ("GET", "/ssh-certificate-authorities/trust-bundle"),
     ("GET", "/ssh-certificates/"),
@@ -62,6 +68,7 @@ DB_BACKED_GET_ROUTE_ROUTING_INVENTORY = {
     ("GET", "/workflows/grants/active"),
     ("GET", "/workflows/requests"),
     ("GET", "/workflows/requests/{request_id}"),
+    ("GET", "/workflows/ticket-flows"),
 }
 
 # #t61：审计已持久化，但 AuditService 自管读写会话（独立 append-only 账本），故审计
@@ -70,6 +77,7 @@ AUDIT_SELF_MANAGED_GET_ROUTE_ROUTING_INVENTORY = {
     ("GET", "/api/v1/audits/events"),
     ("GET", "/api/v1/audits/reports/compliance"),
     ("GET", "/api/v1/audits/reports/summary"),
+    ("GET", "/api/v1/audits/typed/{log_kind}"),
 }
 
 GET_ROUTE_ROUTING_INVENTORY = (
@@ -88,6 +96,7 @@ ROUTERS_WITH_GET_ROUTES = [
     notification_deliveries_router,
     notification_rules_router,
     session_recordings_router,
+    session_ops_router,
     sessions_router,
     ssh_ca_router,
     ssh_certificates_router,
@@ -106,6 +115,9 @@ def test_audit_routes_self_manage_sessions_without_request_db_dependency() -> No
     # 故审计读/写路由都不挂请求级 get_db/get_read_db 依赖。
     audit_routes = [
         ("POST", "/api/v1/audits/events"),
+        ("POST", "/api/v1/audits/typed"),
+        ("POST", "/api/v1/audits/ftp-logs"),
+        ("GET", "/api/v1/audits/typed/{log_kind}"),
         ("GET", "/api/v1/audits/events"),
         ("GET", "/api/v1/audits/reports/compliance"),
         ("GET", "/api/v1/audits/reports/summary"),

@@ -14,7 +14,7 @@
 
 - 资产页面用于查看平台、资产和 JIT 申请入口。
 - 账号托管页面只展示 Vault `secret_id` 引用，不展示凭据明文。
-- 会话页面展示当前用户可见会话，并支持读取指定录制 ID 的命令时间线。
+- 审计日志页可按操作 / 活动 / 文件传输 / 改密 / 在线会话 / 作业 / 会话共享分类查看，事件进入 hash chain。详见 `audit-types.md`。
 - 会话录制命令摘要会脱敏 token、password、secret、credential 等赋值文本。
 
 ## License / Edition

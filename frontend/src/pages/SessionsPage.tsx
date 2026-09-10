@@ -1,4 +1,4 @@
-import { Button, Card, InputNumber, Space, Table, Tag, Typography } from 'antd';
+import { Button, Card, Input, InputNumber, Space, Table, Tag, Typography } from 'antd';
 import { useState } from 'react';
 import { useAuth } from '../auth/AuthContext';
 import { ErrorState, LoadingState } from '../components/StatusView';
@@ -8,6 +8,8 @@ import type { ListResponse, SessionCommandEvent, SessionRecord } from './types';
 export function SessionsPage() {
   const { api } = useAuth();
   const sessions = useApiData(() => api.get<ListResponse<SessionRecord>>('/api/v1/sessions/'), []);
+  const [guestId, setGuestId] = useState('');
+  const [sharing, setSharing] = useState('');
   const [closing, setClosing] = useState('');
   const [recordingIdInput, setRecordingIdInput] = useState<number | null>(null);
   const [activeRecordingId, setActiveRecordingId] = useState<number | null>(null);
@@ -19,6 +21,18 @@ export function SessionsPage() {
         : Promise.resolve({ items: [], total: 0 }),
     [activeRecordingId]
   );
+
+  const shareSession = async (session: SessionRecord) => {
+    setSharing(session.id);
+    try {
+      await api.post(`/api/v1/sessions/${session.id}/shares`, { guest_user_id: guestId, mode: 'watch' });
+      msg.success('已发出共享邀请');
+    } catch (err) {
+      msg.error(getErrorMessage(err));
+    } finally {
+      setSharing('');
+    }
+  };
 
   const closeSession = async (session: SessionRecord) => {
     setClosing(session.id);
@@ -42,6 +56,15 @@ export function SessionsPage() {
         </div>
       </div>
       <Card>
+        <Space className="jg-toolbar" wrap>
+          <Input
+            aria-label="共享对象用户 ID"
+            placeholder="共享对象用户 ID"
+            value={guestId}
+            onChange={(event) => setGuestId(event.target.value)}
+            style={{ width: 220 }}
+          />
+        </Space>
         {sessions.loading ? <LoadingState /> : null}
         {sessions.error ? <ErrorState message={sessions.error} onRetry={sessions.reload} /> : null}
         <Table
@@ -58,7 +81,7 @@ export function SessionsPage() {
             { title: '状态', dataIndex: 'status', render: (status: string) => <Tag color={status === 'active' ? 'green' : 'default'}>{status}</Tag> },
             { title: '开始时间', dataIndex: 'created_at' },
             { title: '关闭时间', dataIndex: 'closed_at', render: (value: string | null) => value || '-' },
-            { title: '操作', render: (_: unknown, record: SessionRecord) => <Space><Button disabled={record.status !== 'active'} loading={closing === record.id} onClick={() => void closeSession(record)}>关闭会话</Button><Button href="/audits">查看审计</Button></Space> }
+            { title: '操作', render: (_: unknown, record: SessionRecord) => <Space><Button disabled={record.status !== 'active'} loading={closing === record.id} onClick={() => void closeSession(record)}>关闭会话</Button><Button disabled={record.status !== 'active' || !guestId} loading={sharing === record.id} onClick={() => void shareSession(record)}>共享监控</Button><Button href="/audits">查看审计</Button></Space> }
           ]}
         />
       </Card>

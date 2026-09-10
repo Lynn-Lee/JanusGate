@@ -18,6 +18,7 @@ from app.models.oidc import OidcProvider
 from app.models.protocol import PlatformProtocolModel, ProtocolModel
 from app.models.rbac import RoleBindingModel, RoleModel, RoleObjectPermissionModel
 from app.models.session import SessionModel
+from app.models.session_ops import ConnectionEndpoint, EndpointRule, SessionShare, SessionStorageBackend
 from app.models.session_recording import SessionCommandEvent, SessionRecording
 from app.models.ssh_ca import SshCertificate, SshCertificateAuthority
 from app.models.tenancy import Organization, Project, Team, Tenant
@@ -72,6 +73,10 @@ __all__ = [
     "RoleObjectPermissionModel",
     "SessionCommandEvent",
     "SessionModel",
+    "SessionShare",
+    "ConnectionEndpoint",
+    "EndpointRule",
+    "SessionStorageBackend",
     "SessionRecording",
     "SecretRecordModel",
     "SshCertificate",
