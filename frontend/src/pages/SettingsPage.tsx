@@ -7,6 +7,7 @@ import { ErrorState, LoadingState } from '../components/StatusView';
 import { UserSelect, type DirectoryUser } from '../components/UserSelect';
 import { getErrorMessage, useApiData, useApiMessage } from './pageUtils';
 import { OidcSettingsCard } from './settings/OidcSettingsCard';
+import { NotificationChannelsPanels } from './settings/NotificationChannelsPanels';
 import { TicketFlowPanels } from './settings/TicketFlowPanels';
 import type { AccountTemplate, Asset, AssetNode, GatewayCandidate, ListResponse, Zone } from './types';
 
@@ -113,7 +114,25 @@ function canWriteAcls(isSuperuser: boolean, permissions: string[]): boolean {
   return isSuperuser || permissions.includes('admin') || permissions.includes('acl:write');
 }
 
-function canReadTicketFlows(isSuperuser: boolean, permissions: string[]): boolean {
+function canReadNotifications(isSuperuser: boolean, permissions: string[]): boolean {
+  return (
+    isSuperuser ||
+    permissions.includes('admin') ||
+    permissions.includes('notifications:read') ||
+    permissions.includes('notifications:write') ||
+    permissions.includes('webhooks:read') ||
+    permissions.includes('webhooks:write')
+  );
+}
+
+function canWriteNotifications(isSuperuser: boolean, permissions: string[]): boolean {
+  return (
+    isSuperuser ||
+    permissions.includes('admin') ||
+    permissions.includes('notifications:write') ||
+    permissions.includes('webhooks:write')
+  );
+}
   return isSuperuser || permissions.includes('admin') || permissions.includes('workflow:admin');
 }
 
@@ -162,6 +181,8 @@ export function SettingsPage() {
   const writeAccountTemplates = canWriteAccountTemplates(Boolean(user?.is_superuser), permissions);
   const showTicketFlows = canReadTicketFlows(Boolean(user?.is_superuser), permissions);
   const writeTicketFlows = canWriteTicketFlows(Boolean(user?.is_superuser), permissions);
+  const showNotifications = canReadNotifications(Boolean(user?.is_superuser), permissions);
+  const writeNotifications = canWriteNotifications(Boolean(user?.is_superuser), permissions);
   const showOidc = Boolean(user?.is_superuser) || permissions.includes('admin');
 
   const saveLicenseConfig = async (values: LicenseConfigForm) => {
@@ -305,6 +326,7 @@ export function SettingsPage() {
         </Card>
         {showAccountTemplates ? <AccountTemplatePanels canWrite={writeAccountTemplates} /> : null}
         {showTicketFlows ? <TicketFlowPanels canWrite={writeTicketFlows} /> : null}
+        {showNotifications ? <NotificationChannelsPanels canWrite={writeNotifications} /> : null}
         {showOverlayAcls ? <ZonePanels canWrite={writeOverlayAcls} /> : null}
         {showOverlayAcls ? <OverlayAclPanels canWrite={writeOverlayAcls} /> : null}
       </div>

@@ -16,6 +16,7 @@ from app.api.webhook_schemas import (
 from app.core.database import get_db, get_read_db
 from app.core.deps import current_user
 from app.models.webhook import NotificationRule, WebhookEndpoint
+from app.services.notification_payload import event_types
 
 router = APIRouter(prefix="/notification-rules", tags=["Notification Rules"])
 
@@ -99,20 +100,13 @@ def _notification_rule_response(
         id=rule.id,
         tenant_id=rule.tenant_id,
         name=rule.name,
-        event_types=_event_types(rule.event_types_json),
+        event_types=event_types(rule.event_types_json),
         webhook_endpoint_id=rule.webhook_endpoint_id,
         webhook_endpoint_name=webhook_endpoint_name,
         status=NotificationRuleStatus(rule.status),
         created_at=_as_utc(rule.created_at),
         updated_at=_as_utc(rule.updated_at),
     )
-
-
-def _event_types(value: str) -> list[str]:
-    parsed = json.loads(value)
-    if not isinstance(parsed, list):
-        return []
-    return [str(item) for item in parsed]
 
 
 def _as_utc(value: datetime | None) -> datetime | None:

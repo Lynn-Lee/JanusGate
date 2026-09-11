@@ -1,17 +1,22 @@
 """Notification delivery retry and dead-letter worker."""
 from __future__ import annotations
 
-import json
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
-from typing import Any
 
 import httpx
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+from sqlalchemy.orm import aliased
 
-from app.models.webhook import NotificationDelivery, NotificationRule, WebhookEndpoint
+from app.models.webhook import (
+    NotificationDelivery,
+    NotificationRule,
+    SystemMessageSubscription,
+    WebhookEndpoint,
+)
+from app.services.notification_payload import payload_dict
 
 
 @dataclass(frozen=True)
@@ -32,8 +37,12 @@ class NotificationDeliverySender(ABC):
         endpoint: WebhookEndpoint,
         delivery: NotificationDelivery,
         payload: dict[str, object],
+        session: AsyncSession | None = None,
     ) -> None:
-        """Deliver one already-redacted notification payload."""
+        """Deliver one already-redacted notification payload.
+
+        ``session`` 仅站内信需要，用于在同一事务写入 `InAppMessage`。
+        """
 
 
 class HttpWebhookNotificationSender(NotificationDeliverySender):
@@ -53,7 +62,9 @@ class HttpWebhookNotificationSender(NotificationDeliverySender):
         endpoint: WebhookEndpoint,
         delivery: NotificationDelivery,
         payload: dict[str, object],
+        session: AsyncSession | None = None,
     ) -> None:
+        del session
         try:
             response = await self._client.post(
                 endpoint.url,
@@ -102,7 +113,8 @@ class NotificationDeliveryWorker:
                     await self._sender.send(
                         endpoint=endpoint,
                         delivery=delivery,
-                        payload=_payload_dict(delivery.payload_json),
+                        payload=payload_dict(delivery.payload_json),
+                        session=session,
                     )
                 except Exception as exc:
                     delivery.attempts += 1
@@ -133,32 +145,35 @@ class NotificationDeliveryWorker:
     async def _load_due_deliveries(
         self, *, session: AsyncSession, now: datetime
     ) -> list[tuple[NotificationDelivery, WebhookEndpoint]]:
+        rule = aliased(NotificationRule)
+        subscription = aliased(SystemMessageSubscription)
         result = await session.execute(
             select(NotificationDelivery, WebhookEndpoint)
-            .join(
-                NotificationRule,
-                (NotificationRule.id == NotificationDelivery.notification_rule_id)
-                & (NotificationRule.tenant_id == NotificationDelivery.tenant_id),
-            )
             .join(
                 WebhookEndpoint,
                 (WebhookEndpoint.id == NotificationDelivery.webhook_endpoint_id)
                 & (WebhookEndpoint.tenant_id == NotificationDelivery.tenant_id),
             )
+            .outerjoin(
+                rule,
+                (rule.id == NotificationDelivery.notification_rule_id)
+                & (rule.tenant_id == NotificationDelivery.tenant_id),
+            )
+            .outerjoin(
+                subscription,
+                (subscription.id == NotificationDelivery.subscription_id)
+                & (subscription.tenant_id == NotificationDelivery.tenant_id),
+            )
             .where(
                 NotificationDelivery.status.in_(("pending", "failed")),
                 NotificationDelivery.next_attempt_at <= now,
-                NotificationRule.status == "active",
                 WebhookEndpoint.status == "active",
+                or_(
+                    rule.status == "active",
+                    subscription.status == "active",
+                ),
             )
             .order_by(NotificationDelivery.id)
             .limit(self._batch_size)
         )
         return [(delivery, endpoint) for delivery, endpoint in result.all()]
-
-
-def _payload_dict(value: str) -> dict[str, object]:
-    parsed: Any = json.loads(value)
-    if not isinstance(parsed, dict):
-        return {}
-    return {str(key): item for key, item in parsed.items()}

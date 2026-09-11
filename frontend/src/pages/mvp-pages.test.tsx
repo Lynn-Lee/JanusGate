@@ -206,6 +206,9 @@ function installFetch() {
     if (url.endsWith('/api/v1/automation/jobs/runs')) return Response.json({ items: [], total: 0 });
     if (url.endsWith('/api/v1/zones/')) return Response.json({ items: [], total: 0 });
     if (url.includes('/api/v1/workflows/ticket-flows')) return Response.json({ items: [], total: 0 });
+    if (url.endsWith('/api/v1/webhook-endpoints/')) return Response.json({ items: [], total: 0 });
+    if (url.endsWith('/api/v1/notification-subscriptions/')) return Response.json({ items: [], total: 0 });
+    if (url.endsWith('/api/v1/inbox-messages/')) return Response.json({ items: [], total: 0 });
     if (url.endsWith('/api/v1/zones/gateway-candidates/')) return Response.json([]);
     return Response.json(session);
   });
@@ -387,6 +390,10 @@ describe('MVP pages', () => {
     expect(screen.getByText('还没有账号模板')).toBeInTheDocument();
     expect(await screen.findByText('审批流')).toBeInTheDocument();
     expect(screen.getByText('还没有审批流')).toBeInTheDocument();
+    expect(await screen.findByText('通知渠道')).toBeInTheDocument();
+    expect(screen.getByText('还没有通知渠道')).toBeInTheDocument();
+    expect(screen.getByText('系统消息订阅')).toBeInTheDocument();
+    expect(screen.getByText('站内信')).toBeInTheDocument();
     expect(await screen.findByText('网域')).toBeInTheDocument();
     expect(screen.getByText('还没有网域')).toBeInTheDocument();
     expect(await screen.findByText('登录 ACL')).toBeInTheDocument();
@@ -419,6 +426,8 @@ describe('MVP pages', () => {
     expect(await screen.findByRole('heading', { name: '系统设置' })).toBeInTheDocument();
     expect(await screen.findByText('运行时状态')).toBeInTheDocument();
     expect(screen.queryByText('网域')).not.toBeInTheDocument();
+    expect(screen.queryByText('通知渠道')).not.toBeInTheDocument();
+    expect(screen.queryByText('系统消息订阅')).not.toBeInTheDocument();
     expect(screen.queryByText('登录 ACL')).not.toBeInTheDocument();
     expect(screen.queryByText('资产登录 ACL')).not.toBeInTheDocument();
     expect(screen.queryByText('连接方式 ACL')).not.toBeInTheDocument();
