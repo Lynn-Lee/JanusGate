@@ -11,7 +11,6 @@ from typing import Protocol
 from urllib.parse import urlsplit
 
 import httpx
-
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.security import decrypt_field

@@ -133,6 +133,8 @@ function canWriteNotifications(isSuperuser: boolean, permissions: string[]): boo
     permissions.includes('webhooks:write')
   );
 }
+
+function canReadTicketFlows(isSuperuser: boolean, permissions: string[]): boolean {
   return isSuperuser || permissions.includes('admin') || permissions.includes('workflow:admin');
 }
 
