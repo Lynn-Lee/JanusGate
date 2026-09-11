@@ -23,8 +23,13 @@ from app.models.ssh_ca import SshCertificate, SshCertificateAuthority
 from app.models.tenancy import Organization, Project, Team, Tenant
 from app.models.user import ApiKey, User
 from app.models.vault import SecretRecordModel
-from app.models.zone import Zone, ZoneGateway
-from app.models.webhook import NotificationDelivery, NotificationRule, WebhookEndpoint
+from app.models.webhook import (
+    InAppMessage,
+    NotificationDelivery,
+    NotificationRule,
+    SystemMessageSubscription,
+    WebhookEndpoint,
+)
 from app.models.workflow import (
     ApprovalPolicyModel,
     ApprovalRuleModel,
@@ -33,6 +38,7 @@ from app.models.workflow import (
     TicketStepModel,
     WorkflowRequestModel,
 )
+from app.models.zone import Zone, ZoneGateway
 
 __all__ = [
     "ApiKey",
@@ -54,6 +60,7 @@ __all__ = [
     "Connector",
     "DataMaskingRuleModel",
     "CredentialRotation",
+    "InAppMessage",
     "JitGrantModel",
     "LicenseConfigurationModel",
     "LoginAclModel",
@@ -76,6 +83,7 @@ __all__ = [
     "SecretRecordModel",
     "SshCertificate",
     "SshCertificateAuthority",
+    "SystemMessageSubscription",
     "Team",
     "Tenant",
     "User",

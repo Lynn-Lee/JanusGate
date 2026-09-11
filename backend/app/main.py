@@ -11,7 +11,6 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 
 from app.api import (
-    zones,
     account_templates,
     accounts,
     acl,
@@ -20,17 +19,21 @@ from app.api import (
     assets,
     auth,
     automation,
-    oidc,
     connectors,
+    inbox_messages,
     notification_deliveries,
+    notification_events,
     notification_rules,
-    rbac,
+    notification_subscriptions,
+    oidc,
     protocols,
+    rbac,
     session_recordings,
     sessions,
     ssh_certificate_authorities,
     ssh_certificates,
     webhook_endpoints,
+    zones,
 )
 from app.api.audits.routes import router as audits_router
 from app.api.tenancy.routes import router as tenancy_router
@@ -83,8 +86,11 @@ app.include_router(protocols.router, prefix="/api/v1")
 app.include_router(asset_tree.router, prefix="/api/v1")
 app.include_router(rbac.router, prefix="/api/v1")
 app.include_router(connectors.router, prefix="/api/v1")
+app.include_router(inbox_messages.router, prefix="/api/v1")
 app.include_router(notification_deliveries.router, prefix="/api/v1")
+app.include_router(notification_events.router, prefix="/api/v1")
 app.include_router(notification_rules.router, prefix="/api/v1")
+app.include_router(notification_subscriptions.router, prefix="/api/v1")
 app.include_router(session_recordings.router, prefix="/api/v1")
 app.include_router(ssh_certificate_authorities.router, prefix="/api/v1")
 app.include_router(ssh_certificates.router, prefix="/api/v1")

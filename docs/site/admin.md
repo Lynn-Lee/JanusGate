@@ -16,6 +16,7 @@
 - 账号托管页面只展示 Vault `secret_id` 引用，不展示凭据明文。
 - 会话页面展示当前用户可见会话，并支持读取指定录制 ID 的命令时间线。
 - 会话录制命令摘要会脱敏 token、password、secret、credential 等赋值文本。
+- 设置页「通知渠道」可配置 WebHook / IM / 短信 / 邮件 / 站内信；IM 只允许官方 host，凭据不回显。系统消息订阅按事件类型扇出到渠道；站内信只显示发给当前用户的已脱敏正文。
 
 ## License / Edition
 
