@@ -1,6 +1,7 @@
 """Workflow/JIT request API routes."""
 from __future__ import annotations
 
+from collections.abc import Awaitable, Callable
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -33,7 +34,7 @@ from app.policy.decision import PolicyDecisionService
 from app.policy.schemas import PolicyDecisionRequest, PolicyDecisionResponse
 from app.workflows.audit import WorkflowAuditSink
 from app.workflows.repository import SQLAlchemyWorkflowRepository
-from app.workflows.ticket_flows import TicketFlowRepository
+from app.workflows.ticket_flows import TicketFlowRepository, TicketFlowSnapshot
 
 router = APIRouter(prefix="/workflows", tags=["Workflow/JIT"])
 
@@ -41,10 +42,12 @@ _workflow_audit_sink = WorkflowAuditSink(audit_service)
 _host_key_trust = HostKeyTrustService(session_factory=AsyncSessionLocal)
 
 
-def _ticket_flow_loader(db: AsyncSession):
+def _ticket_flow_loader(
+    db: AsyncSession,
+) -> Callable[..., Awaitable[TicketFlowSnapshot | None]]:
     repo = TicketFlowRepository(db)
 
-    async def loader(tenant_id: str, flow_type: str = "asset_grant"):
+    async def loader(tenant_id: str, flow_type: str = "asset_grant") -> TicketFlowSnapshot | None:
         return await repo.get_enabled_flow(tenant_id=tenant_id, flow_type=flow_type)
 
     return loader

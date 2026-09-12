@@ -12,6 +12,7 @@
 from __future__ import annotations
 
 import hashlib
+from contextlib import AbstractAsyncContextManager
 from dataclasses import dataclass
 from typing import Any, Protocol
 from uuid import uuid4
@@ -534,15 +535,17 @@ class WorkflowCommandReviewBroker:
                 session_id=session_id,
                 reviewer_subject_ids=reviewer_subject_ids,
             )
-            return request.id
+            return str(request.id)
 
     def _build_service(self, session: AsyncSession) -> Any:
         from app.api.workflows.service import SQLAlchemyWorkflowStore, WorkflowService
-        from app.workflows.ticket_flows import TicketFlowRepository
+        from app.workflows.ticket_flows import TicketFlowRepository, TicketFlowSnapshot
 
         repo = TicketFlowRepository(session)
 
-        async def loader(tenant_id: str, flow_type: str = "asset_grant"):
+        async def loader(
+            tenant_id: str, flow_type: str = "asset_grant"
+        ) -> TicketFlowSnapshot | None:
             return await repo.get_enabled_flow(tenant_id=tenant_id, flow_type=flow_type)
 
         return WorkflowService(
@@ -550,7 +553,7 @@ class WorkflowCommandReviewBroker:
             ticket_flow_loader=loader,
         )
 
-    def _session_scope(self):
+    def _session_scope(self) -> AbstractAsyncContextManager[AsyncSession]:
         if self._db is not None:
             return _PassthroughAsyncSession(self._db)
         factory = self._session_factory
@@ -570,5 +573,10 @@ class _PassthroughAsyncSession:
     async def __aenter__(self) -> AsyncSession:
         return self._session
 
-    async def __aexit__(self, exc_type, exc, tb) -> None:  # noqa: ANN001
+    async def __aexit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc: BaseException | None,
+        tb: object,
+    ) -> None:
         return None

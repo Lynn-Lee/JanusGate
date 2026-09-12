@@ -17,8 +17,7 @@ from app.models.asset import Asset, Platform
 from app.policy.asset_permission import connectable_asset_ids
 from app.policy.asset_tree_ops import list_assets as list_scoped_assets
 from app.policy.asset_tree_ops import list_nodes, list_permissions, nodes_by_id
-from app.policy.decision import PolicyDecision
-from app.policy.schemas import PolicyDecisionRequest, ResourceRef, SubjectRef
+from app.policy.schemas import PolicyDecision, PolicyDecisionRequest, ResourceRef, SubjectRef
 from app.protocols.repository import ensure_builtin_protocols, sync_platform_protocols
 from app.protocols.validation import ProtocolValidationError, validate_asset_protocol_binding
 from app.schemas.asset import (
