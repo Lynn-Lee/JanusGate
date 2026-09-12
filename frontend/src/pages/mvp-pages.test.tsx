@@ -317,7 +317,7 @@ describe('MVP pages', () => {
     history.pushState(null, '', '/audits');
     render(<App />);
     expect(await screen.findByRole('heading', { name: '审计日志' })).toBeInTheDocument();
-    await userEvent.click(screen.getByLabelText('审计分类'));
+    await userEvent.click(screen.getByRole('combobox', { name: '审计分类' }));
     await userEvent.click(await screen.findByText('文件传输'));
     await waitFor(() =>
       expect(fetchMock).toHaveBeenCalledWith(

@@ -59,6 +59,7 @@ DB_BACKED_GET_ROUTE_ROUTING_INVENTORY = {
     ("GET", "/tenancy/projects"),
     ("GET", "/tenancy/teams"),
     ("GET", "/webhook-endpoints/"),
+    ("GET", "/workflows/ticket-flows"),
     ("GET", "/session-ops/sessions/{session_id}/joins"),
     ("GET", "/session-ops/endpoints"),
     ("GET", "/session-ops/endpoint-rules"),

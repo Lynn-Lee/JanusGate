@@ -98,7 +98,8 @@ def downgrade() -> None:
     op.drop_index(op.f("ix_account_risks_account_id"), table_name="account_risks")
     op.drop_index(op.f("ix_account_risks_tenant_id"), table_name="account_risks")
     op.drop_table("account_risks")
-    op.drop_constraint("fk_accounts_template_id_account_templates", "accounts", type_="foreignkey")
+    with op.batch_alter_table("accounts") as batch_op:
+        batch_op.drop_constraint("fk_accounts_template_id_account_templates", type_="foreignkey")
     op.drop_index(op.f("ix_accounts_template_id"), table_name="accounts")
     op.drop_column("accounts", "last_verify_at")
     op.drop_column("accounts", "last_verify_message_id")
