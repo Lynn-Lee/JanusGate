@@ -207,6 +207,20 @@ function installFetch() {
     if (url.endsWith('/api/v1/zones/')) return Response.json({ items: [], total: 0 });
     if (url.includes('/api/v1/workflows/ticket-flows')) return Response.json({ items: [], total: 0 });
     if (url.endsWith('/api/v1/zones/gateway-candidates/')) return Response.json([]);
+    if (url.endsWith('/api/v1/webhook-endpoints/')) return Response.json({ items: [], total: 0 });
+    if (url.endsWith('/api/v1/notification-subscriptions/')) return Response.json({ items: [], total: 0 });
+    if (url.endsWith('/api/v1/in-app-messages/')) return Response.json({ items: [], total: 0 });
+    if (url.endsWith('/api/v1/auth/oidc/settings')) {
+      return Response.json({
+        enabled: false,
+        display_name: '',
+        issuer_url: '',
+        client_id: '',
+        client_secret_configured: false,
+        scopes: 'openid profile email',
+        callback_url: 'http://localhost:8000/api/v1/auth/oidc/callback'
+      });
+    }
     return Response.json(session);
   });
 }
@@ -387,6 +401,12 @@ describe('MVP pages', () => {
     expect(screen.getByText('还没有账号模板')).toBeInTheDocument();
     expect(await screen.findByText('审批流')).toBeInTheDocument();
     expect(screen.getByText('还没有审批流')).toBeInTheDocument();
+    expect(await screen.findByText('通知渠道')).toBeInTheDocument();
+    expect(screen.getByText('还没有通知渠道')).toBeInTheDocument();
+    expect(screen.getByText('系统消息订阅')).toBeInTheDocument();
+    expect(screen.getByText('还没有系统消息订阅')).toBeInTheDocument();
+    expect(screen.getByText('站内信')).toBeInTheDocument();
+    expect(screen.getByText('还没有站内信')).toBeInTheDocument();
     expect(await screen.findByText('网域')).toBeInTheDocument();
     expect(screen.getByText('还没有网域')).toBeInTheDocument();
     expect(await screen.findByText('登录 ACL')).toBeInTheDocument();
@@ -418,6 +438,9 @@ describe('MVP pages', () => {
 
     expect(await screen.findByRole('heading', { name: '系统设置' })).toBeInTheDocument();
     expect(await screen.findByText('运行时状态')).toBeInTheDocument();
+    expect(await screen.findByText('站内信')).toBeInTheDocument();
+    expect(screen.queryByText('通知渠道')).not.toBeInTheDocument();
+    expect(screen.queryByText('系统消息订阅')).not.toBeInTheDocument();
     expect(screen.queryByText('网域')).not.toBeInTheDocument();
     expect(screen.queryByText('登录 ACL')).not.toBeInTheDocument();
     expect(screen.queryByText('资产登录 ACL')).not.toBeInTheDocument();
@@ -447,7 +470,7 @@ describe('MVP pages', () => {
 
     expect(screen.queryByText('账号模板')).not.toBeInTheDocument();
     expect(await screen.findByText('网域')).toBeInTheDocument();
-    expect(screen.getByText('还没有网域')).toBeInTheDocument();
+    expect(await screen.findByText('还没有网域')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: '创建网域' })).not.toBeInTheDocument();
     expect(await screen.findByText('登录 ACL')).toBeInTheDocument();
     expect(screen.getByText('资产登录 ACL')).toBeInTheDocument();
@@ -620,6 +643,8 @@ describe('#t69 host key overlay and connect list', () => {
   const k8sAsset = { id: 2, name: 'prod-cluster', address: 'k8s.internal', platform_id: 2, port: 443, username: '', is_active: true, description: '', created_at: '2026-07-01T00:00:00Z', namespace: 'prod', has_server_ca: true };
   const mixedAsset = { id: 3, name: 'bastion', address: '10.0.0.11', platform_id: 3, port: 22, username: 'ops', is_active: true, description: '', created_at: '2026-07-01T00:00:00Z', namespace: 'prod', has_server_ca: true };
 
+  // Kept for overlay/connect-list fixtures; current cases inline their own fetch mock.
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   function installK8sConnectFetch(podsResponse: Response | ((url: string) => Response | undefined)) {
     const fetchMock = installFetch();
     vi.stubGlobal('fetch', async (input: RequestInfo | URL, init?: RequestInit) => {

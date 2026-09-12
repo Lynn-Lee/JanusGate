@@ -35,6 +35,7 @@ def test_phase5_docs_site_foundation_is_wired_for_operator_handoff() -> None:
     assert "operation-runbook-evidence.json" in docs_index
     assert "license-operations-evidence.json" in docs_index
     assert "runtime-alert-evidence.json" in docs_index
+    assert "notification-channels.md" in docs_index
     assert "SECRET_KEY" in install_guide
     assert "docker compose up --build -d" in install_guide
     assert "helm upgrade --install" in install_guide
@@ -99,7 +100,8 @@ def test_phase5_docs_site_foundation_is_wired_for_operator_handoff() -> None:
     assert "fixtures/operation-runbook-evidence.json" in build_script
     assert "fixtures/license-operations-evidence.json" in build_script
     assert "fixtures/runtime-alert-evidence.json" in build_script
-    assert "assets/screenshots/live-screenshots/admin-settings-license-summary.png" in build_script
+    assert "asset-tree-authorization.md" in build_script
+    assert "notification-channels.md" in build_script
     assert screenshot_script_path.exists()
     screenshot_script = screenshot_script_path.read_text()
     assert screenshot_fixture_path.exists()

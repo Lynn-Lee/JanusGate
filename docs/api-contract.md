@@ -63,9 +63,10 @@
 - Audit/SIEM：`/api/v1/audits/events`、`/api/v1/audits/reports/summary` 与 `/api/v1/audits/reports/compliance`，审计事件创建、检索、当前租户报表汇总和合规报表导出基础；合规报表响应包含 append-only WORM 归档元数据，不包含原始审计 metadata/message/resource/session 明细。
 - Tenancy：`/api/v1/tenancy/*`，Phase 4 组织/团队/项目管理与租户隔离 API。
 - Session Recordings：`/api/v1/sessions/{session_id}/recordings` 与 `/api/v1/session-recordings/*`，Phase 4 会话录制元数据、命令事件上报与命令检索。
-- Webhook Endpoints：`/api/v1/webhook-endpoints/*`，Phase 4 WebHook / 通知中心 endpoint 管理基础。
+- Webhook Endpoints：`/api/v1/webhook-endpoints/*`，Phase 4 WebHook / 通知中心 endpoint 管理基础；Phase 6 #t75 扩展 `channel_type`（钉钉 / 飞书 / Lark / 企微 / Slack / SMS / 邮件 / 站内信）。
 - Notification Rules：`/api/v1/notification-rules/*`，Phase 4 WebHook / 通知规则管理基础。
-- Notification Deliveries：`/api/v1/notification-rules/{rule_id}/deliveries` 与 `/api/v1/notification-deliveries/*`，Phase 4 WebHook 可靠投递队列基础；`NotificationDeliveryWorker` 负责到期投递、失败重试和 dead-letter 状态推进，`HttpWebhookNotificationSender` 负责向 HTTPS WebHook endpoint 投递已脱敏 payload。
+- Notification Deliveries：`/api/v1/notification-rules/{rule_id}/deliveries` 与 `/api/v1/notification-deliveries/*`，Phase 4 WebHook 可靠投递队列基础；`NotificationDeliveryWorker` 负责到期投递、失败重试和 dead-letter 状态推进。`HttpWebhookNotificationSender` 仍服务通用 HTTPS WebHook；`ChannelNotificationSender` 按 `channel_type` 分发 IM / SMS / 邮件 / 站内信，错误信息不包含 payload、凭据或下游响应体。
+- Notification Subscriptions / Events / Inbox：`/api/v1/notification-subscriptions/`、`/api/v1/notification-events/` 与 `/api/v1/in-app-messages/`，Phase 6 #t75 系统消息订阅、事件扇出和当前用户站内信。
 - Admin：`/api/v1/admin/license-summary` 与 `/api/v1/admin/license-config`，Phase 5 #t58 Edition / License 边界摘要和 admin-only 持久化配置 foundation，不返回 license key、签名 secret、外部 validation token 或任何商业密钥材料。
 
 ## Phase 5 Edition / License Boundary（#t58）
@@ -591,7 +592,7 @@ template=soc2-access
 - payload 入库前会脱敏 token/password/secret/credential 等敏感键或赋值片段；响应不返回 payload。
 - `NotificationDeliveryWorker` 只读取 `pending` / 到期 `failed` 记录，成功后标记 `delivered`，失败后更新 `attempts`、`last_error` 与下一次重试时间，达到最大尝试次数后标记 `dead_letter`。
 - `HttpWebhookNotificationSender` 使用 `POST` 向 endpoint URL 投递 `{event_type, delivery_id, payload}`，并附带 `X-JanusGate-Event-Type` 与 `X-JanusGate-Tenant-Id`。非 2xx 或网络错误会 fail-closed 抛出稳定错误，worker 随后进入重试/死信流程；错误信息不包含 payload、signing secret 或下游响应体。
-- 当前切片不内置 IM sender 或多级审批。
+- `ChannelNotificationSender` 按 `channel_type` 分发 IM / SMS / 邮件 HTTPS 网关 / 站内信；IM 只请求官方 host，凭据仅内存拼进 URL 或 Authorization 头。
 
 ### GET `/api/v1/notification-deliveries/`
 
@@ -656,7 +657,8 @@ template=soc2-access
   "name": "security-siem",
   "url": "https://siem.example.test/janusgate",
   "event_types": ["session.recording.closed", "audit.event.created"],
-  "signing_secret": "super-secret-webhook-key"
+  "signing_secret": "super-secret-webhook-key",
+  "channel_type": "webhook"
 }
 ```
 
@@ -671,6 +673,9 @@ template=soc2-access
   "event_types": ["session.recording.closed", "audit.event.created"],
   "status": "active",
   "signing_secret_configured": true,
+  "channel_type": "webhook",
+  "credential_configured": false,
+  "recipient": null,
   "created_at": "2026-07-04T04:00:00Z",
   "updated_at": "2026-07-04T04:00:00Z"
 }
@@ -678,16 +683,38 @@ template=soc2-access
 
 安全语义：
 
-- signing secret 只以 digest 形式持久化；响应不返回 signing secret 明文或摘要。
-- endpoint URL 必须使用 `https://`，明文 HTTP 返回 `400 INVALID_WEBHOOK_URL`。
+- signing secret 只以 digest 形式持久化；渠道凭据以 AES-256-GCM 落库。响应不返回 signing secret、credential 明文或摘要。
+- endpoint URL 必须使用 `https://`，明文 HTTP 返回 `400 INVALID_WEBHOOK_URL`。IM 渠道非官方 host 返回 `400 CHANNEL_HOST_NOT_ALLOWED`。
+- IM 机器人 token 从 query/路径剥离后写入加密字段，列表 URL 为不含 token 的 canonical 地址。
 - 只允许创建当前租户 endpoint；跨租户读取不会返回该 endpoint。
-- 当前切片只落 endpoint 管理基础，不执行外部通知投递。
 
 ### GET `/api/v1/webhook-endpoints/`
 
 用途：返回当前租户可见的 webhook endpoint 列表。
 
 鉴权：需要登录态；`admin` 或 `webhooks:read` 权限可访问。响应按 endpoint ID 升序返回 `{items,total}`。
+
+## Phase 6 通知渠道扩展（#t75）
+
+### POST `/api/v1/notification-subscriptions/`
+
+用途：在当前租户内把事件类型绑定到 active 通知渠道。`user_id` 为空表示租户级订阅。
+
+鉴权：需要登录态；`admin` 或 `notifications:write`。跨租户或 disabled endpoint 返回 `404 WEBHOOK_ENDPOINT_NOT_FOUND`；事件类型不在 endpoint `event_types` 内返回 `400 NOTIFICATION_EVENT_NOT_ALLOWED`。
+
+### GET `/api/v1/notification-subscriptions/`
+
+用途：返回当前租户系统消息订阅。鉴权：`admin` 或 `notifications:read`。
+
+### POST `/api/v1/notification-events/`
+
+用途：按当前租户通知规则与系统消息订阅扇出 `NotificationDelivery`。payload 入库前脱敏，响应只返回 `enqueued` 与 `delivery_ids`，不回显 payload。
+
+鉴权：需要登录态；`admin` 或 `notifications:write`。
+
+### GET `/api/v1/in-app-messages/`
+
+用途：返回当前用户站内信。跨用户、跨租户不可见。不要求 `notifications:read`。正文入库前已脱敏。
 
 ## Phase 4 Session Recording API（#t46）
 
