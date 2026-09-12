@@ -49,6 +49,13 @@ External license service evidence 固定在 `docs/site/fixtures/license-operatio
 - 审计日志页展示当前租户事件列表和报表摘要。
 - SOC2 合规报表导出只返回事件 ID、hash chain 边界、签名和 WORM 归档元数据，不返回原始 metadata、message、resource_id 或 session_id 明细。
 
+## 通知渠道
+
+- 设置页「通知渠道」可创建 WebHook / 钉钉 / 飞书 / Lark / 企业微信 / Slack / 短信网关 / 邮件网关 / 站内信。
+- IM 只接受官方域名；机器人 token 从 URL 剥离后加密保存，页面不回显凭据。
+- 「系统消息订阅」把事件类型扇出到当前租户渠道；「站内信」只显示当前用户消息。
+- 投递沿用 #t47 脱敏 payload、重试与 dead-letter；失败信息不包含下游响应体。
+
 ## 运维门禁
 
 - 本地快速检查优先运行 `git diff --check`。
