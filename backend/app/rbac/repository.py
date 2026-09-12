@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import cast
+
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -31,12 +33,12 @@ async def ensure_builtin_roles(db: AsyncSession, tenant_id: str) -> list[RoleMod
             name=str(definition["name"]),
             display_name=str(definition["display_name"]),
             scope_type=str(definition["scope_type"]),
-            organization_id=definition.get("organization_id"),  # type: ignore[arg-type]
+            organization_id=cast(str | None, definition.get("organization_id")),
             is_builtin=True,
             builtin_key=builtin_key,
             description=str(definition["description"]),
-            permissions_json=dump_json_list([str(p) for p in definition["permissions"]]),  # type: ignore[arg-type]
-            menu_permissions_json=dump_json_list([str(m) for m in definition["menus"]]),  # type: ignore[arg-type]
+            permissions_json=dump_json_list(_string_values(definition["permissions"])),
+            menu_permissions_json=dump_json_list(_string_values(definition["menus"])),
         )
         db.add(role)
         created.append(role)
@@ -168,3 +170,9 @@ def validate_scope(
         raise ValueError("ORGANIZATION_ID_REQUIRED")
     if scope_type == SCOPE_SYSTEM and organization_id:
         raise ValueError("ORGANIZATION_ID_NOT_ALLOWED")
+
+
+def _string_values(value: object) -> list[str]:
+    if isinstance(value, list | tuple):
+        return [str(item) for item in value]
+    return []

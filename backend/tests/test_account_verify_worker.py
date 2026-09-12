@@ -17,7 +17,7 @@ from app.services.account_verify import (
     AccountVerifyTarget,
     AccountVerifyWorkerHandler,
 )
-from app.services.automation_worker import AutomationJobQueue, SENSITIVE_PAYLOAD_KEYS
+from app.services.automation_worker import SENSITIVE_PAYLOAD_KEYS, AutomationJobQueue
 
 
 @pytest.fixture
