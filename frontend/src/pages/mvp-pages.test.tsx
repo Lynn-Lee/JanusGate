@@ -150,6 +150,15 @@ function installFetch() {
     if (url.endsWith('/api/v1/sessions/') && method === 'GET') return Response.json({ items: [session], total: 1 });
     if (url.endsWith('/api/v1/session-recordings/1/commands') && method === 'GET') return Response.json({ items: [sessionCommand], total: 1 });
     if (url.endsWith('/api/v1/audits/events')) return Response.json({ items: [audit], total: 1, limit: 50, offset: 0 });
+    if (url.includes('/api/v1/audits/typed?')) return Response.json({ items: [audit], total: 1, limit: 50, offset: 0 });
+    if (url.endsWith('/api/v1/audits/online-sessions')) return Response.json({ items: [], total: 0 });
+    if (url.endsWith('/api/v1/session-ops/endpoints') && method === 'GET') return Response.json({ items: [], total: 0 });
+    if (url.includes('/api/v1/session-ops/sessions/') && url.endsWith('/shares') && method === 'POST') {
+      return Response.json({ id: 'share-1', session_id: 'sess-1', code: 'share-code-demo', expires_at: '2026-09-12T12:00:00Z', mode: 'observe' }, { status: 201 });
+    }
+    if (url.endsWith('/api/v1/session-ops/joins') && method === 'POST') {
+      return Response.json({ id: 'join-1', session_id: 'sess-1', share_id: 'share-1', joiner_username: 'alice', mode: 'observe' }, { status: 201 });
+    }
     if (url.endsWith('/api/v1/audits/reports/summary')) return Response.json(auditReportSummary);
     if (url.endsWith('/api/v1/audits/reports/compliance?template=soc2-access')) return Response.json(auditComplianceReport);
     if (url.endsWith('/api/v1/admin/license-summary')) return Response.json(licenseSummary);
@@ -302,6 +311,38 @@ describe('MVP pages', () => {
     );
   });
 
+  it('filters audit events by typed kind', async () => {
+    const fetchMock = installFetch();
+    vi.stubGlobal('fetch', fetchMock);
+    history.pushState(null, '', '/audits');
+    render(<App />);
+    expect(await screen.findByRole('heading', { name: '审计日志' })).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('combobox', { name: '审计分类' }));
+    await userEvent.click(await screen.findByText('文件传输'));
+    await waitFor(() =>
+      expect(fetchMock).toHaveBeenCalledWith(
+        expect.stringContaining('/api/v1/audits/typed?kind=file_transfer'),
+        expect.any(Object)
+      )
+    );
+  });
+
+  it('issues a read-only session share code', async () => {
+    const fetchMock = installFetch();
+    vi.stubGlobal('fetch', fetchMock);
+    history.pushState(null, '', '/sessions');
+    render(<App />);
+    expect(await screen.findByRole('button', { name: '共享监控' })).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: '共享监控' }));
+    expect(await screen.findByText(/当前共享码 share-code-demo/)).toBeInTheDocument();
+    await waitFor(() =>
+      expect(fetchMock).toHaveBeenCalledWith(
+        '/api/v1/session-ops/sessions/session-1/shares',
+        expect.objectContaining({ method: 'POST' })
+      )
+    );
+  });
+
   it('redacts sensitive audit metadata in detail drawer', async () => {
     history.pushState(null, '', '/audits');
     render(<App />);
@@ -388,7 +429,7 @@ describe('MVP pages', () => {
     expect(await screen.findByText('审批流')).toBeInTheDocument();
     expect(screen.getByText('还没有审批流')).toBeInTheDocument();
     expect(await screen.findByText('网域')).toBeInTheDocument();
-    expect(screen.getByText('还没有网域')).toBeInTheDocument();
+    expect(await screen.findByText('还没有网域')).toBeInTheDocument();
     expect(await screen.findByText('登录 ACL')).toBeInTheDocument();
     expect(screen.getByText('资产登录 ACL')).toBeInTheDocument();
     expect(screen.getByText('连接方式 ACL')).toBeInTheDocument();
@@ -447,7 +488,7 @@ describe('MVP pages', () => {
 
     expect(screen.queryByText('账号模板')).not.toBeInTheDocument();
     expect(await screen.findByText('网域')).toBeInTheDocument();
-    expect(screen.getByText('还没有网域')).toBeInTheDocument();
+    expect(await screen.findByText('还没有网域')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: '创建网域' })).not.toBeInTheDocument();
     expect(await screen.findByText('登录 ACL')).toBeInTheDocument();
     expect(screen.getByText('资产登录 ACL')).toBeInTheDocument();
@@ -615,32 +656,6 @@ describe('MVP pages', () => {
 
 
 describe('#t69 host key overlay and connect list', () => {
-  const k8sPlatform = { id: 2, name: 'Kubernetes', category: 'cloud', protocols: '["k8s"]', is_active: true };
-  const mixedPlatform = { id: 3, name: 'Mixed', category: 'host', protocols: '["ssh","k8s"]', is_active: true };
-  const k8sAsset = { id: 2, name: 'prod-cluster', address: 'k8s.internal', platform_id: 2, port: 443, username: '', is_active: true, description: '', created_at: '2026-07-01T00:00:00Z', namespace: 'prod', has_server_ca: true };
-  const mixedAsset = { id: 3, name: 'bastion', address: '10.0.0.11', platform_id: 3, port: 22, username: 'ops', is_active: true, description: '', created_at: '2026-07-01T00:00:00Z', namespace: 'prod', has_server_ca: true };
-
-  function installK8sConnectFetch(podsResponse: Response | ((url: string) => Response | undefined)) {
-    const fetchMock = installFetch();
-    vi.stubGlobal('fetch', async (input: RequestInfo | URL, init?: RequestInit) => {
-      const url = String(input);
-      const method = init?.method ?? 'GET';
-      if (url.endsWith('/api/v1/assets/') && method === 'GET') {
-        return Response.json([asset, k8sAsset, mixedAsset]);
-      }
-      if (url.endsWith('/api/v1/assets/platforms')) {
-        return Response.json([platform, k8sPlatform, mixedPlatform]);
-      }
-      if (url.includes('/k8s/pods')) {
-        const custom = typeof podsResponse === 'function' ? podsResponse(url) : podsResponse;
-        if (custom) {
-          return custom;
-        }
-      }
-      return fetchMock(input, init);
-    });
-  }
-
   it('shows k8s assets on the connect list and opens 建连弹层 after listing pods', async () => {
     const k8sPlatform = { id: 2, name: 'Kubernetes', category: 'cloud', protocols: '["k8s"]', is_active: true };
     const mixedPlatform = { id: 3, name: 'Mixed', category: 'host', protocols: '["ssh","k8s"]', is_active: true };

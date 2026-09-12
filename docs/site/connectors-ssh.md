@@ -58,7 +58,7 @@ POST /api/v1/connectors/{connector_id}/session-recordings/{recording_id}/command
 
 - **审计字段**：`remote_path`、`direction`（`upload`/`download`）、`size_bytes`、`sha256`、`status`（`success`/`failed`）、`error_code`。携带 SHA-256 摘要与字节数，便于并入 #t61 的 hash chain 与 WORM 归档（#t78 约束）。
 - **失败可见**：传输失败时先投递一条 `status=failed` 的事件再抛出类型化错误（`SSH_SFTP_UPLOAD_FAILED` / `SSH_SFTP_DOWNLOAD_FAILED`），保证失败传输在审计中不丢失。
-- **落库**：#t78 的文件传输日志入库端点尚未建立（属 M6），本切片先以 `FileTransferEventSink` 协议解耦下游；待 #t78 端点落地后提供 HTTP sink 即可接线，无需改动传输通道（与命令事件 sink 一致）。
+- **落库**：#t78 已提供 `POST /api/v1/audits/ftp-logs` 与生产 `HashChainFileTransferSink`，传输事件进入 #t61 hash chain；失败传输同样落链。通道侧仍通过 `FileTransferEventSink` 协议解耦。
 
 ## 主机密钥采集（scan → 审批 → 固定）
 

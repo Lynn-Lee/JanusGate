@@ -32,7 +32,8 @@ scripts/build-docs-site.sh dist/docs-site
 - Accounts：`/api/v1/accounts/` 和账号轮换。
 - Tenancy：`/api/v1/tenancy/organizations`、teams、projects。
 - SSH CA：`/api/v1/ssh-certificate-authorities/`、trust bundle 和 `/api/v1/ssh-certificates/`。
-- Audit：`/api/v1/audits/events`、`/api/v1/audits/reports/summary`、`/api/v1/audits/reports/compliance`。
+- Audit：`/api/v1/audits/events`、`/api/v1/audits/typed`、`/api/v1/audits/ftp-logs`、`/api/v1/audits/job-logs`、`/api/v1/audits/online-sessions`、`/api/v1/audits/reports/summary`、`/api/v1/audits/reports/compliance`。分类日志全部进入 hash chain；详见[审计类型](audit-types.md)。
+- Session ops：`/api/v1/session-ops/sessions/{id}/shares`、`/joins`、`/endpoints`、`/endpoint-rules`、`/storage-backends`。
 - Automation：`/api/v1/automation/jobs/asset-scans`、credential rotations、playbooks 和 job runs。
 - Admin：`/api/v1/admin/license-summary` 与 admin-only `POST /api/v1/admin/license-config`。
 - ACL：`/api/v1/command-filter-acls/` 与 `/api/v1/data-masking-rules/`（租户隔离 CRUD，仅这两类；SSH/K8s/PTY 执行前与命令事件入库均走 PolicyDecisionService）。

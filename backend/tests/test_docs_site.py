@@ -90,7 +90,8 @@ def test_phase5_docs_site_foundation_is_wired_for_operator_handoff() -> None:
     build_script = build_script_path.read_text()
     assert "docs-site" in build_script
     assert "openapi.json" in build_script
-    assert "index.md" in build_script
+    assert "asset-tree-authorization.md" in build_script
+    assert "audit-types.md" in build_script
     assert "runbooks.md" in build_script
     assert "admin-screenshots.md" in build_script
     assert "assets/screenshots" in build_script

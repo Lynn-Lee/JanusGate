@@ -6,8 +6,6 @@ from typing import Literal
 
 from pydantic import BaseModel, Field, field_validator
 
-from app.models.rbac import SCOPE_SYSTEM
-
 
 class RoleResponse(BaseModel):
     id: str
@@ -31,7 +29,7 @@ class RoleListResponse(BaseModel):
 class RoleCreate(BaseModel):
     name: str = Field(min_length=1, max_length=64)
     display_name: str = Field(min_length=1, max_length=128)
-    scope_type: Literal["system", "organization"] = SCOPE_SYSTEM
+    scope_type: Literal["system", "organization"] = "system"
     organization_id: str | None = None
     description: str = ""
     permissions: list[str] = Field(default_factory=list)
@@ -71,7 +69,7 @@ class RoleBindingCreate(BaseModel):
     role_id: str
     subject_type: Literal["user", "user_group"] = "user"
     subject_id: str = Field(min_length=1, max_length=64)
-    scope_type: Literal["system", "organization"] = SCOPE_SYSTEM
+    scope_type: Literal["system", "organization"] = "system"
     organization_id: str | None = None
 
     @field_validator("organization_id", mode="before")

@@ -251,10 +251,19 @@ class ConnectorSessionRuntime:
                     "CONNECTOR_TRANSFER_SINK_MISSING",
                     "sftp mode requires a transfer_sink",
                 )
+            sink = self._transfer_sink
+            binder = getattr(sink, "bind", None)
+            if callable(binder):
+                sink = binder(
+                    tenant_id=request.tenant_id,
+                    actor_id=request.subject_id,
+                    actor_username=request.subject_id,
+                    session_id=request.session_id,
+                )
             return await SftpChannel.open(
                 spec.target,
                 spec.credential,
-                self._transfer_sink,
+                sink,
                 jump_target=spec.jump_target,
                 jump_credential=spec.jump_credential,
             )
@@ -326,11 +335,11 @@ class _NoopFileTransferEventSink:
 
 def build_production_session_resolver(
     *,
-    session_factory=None,
-    secrets=None,
-    host_keys=None,
-    scanner=None,
-):
+    session_factory: Any | None = None,
+    secrets: Any | None = None,
+    host_keys: Any | None = None,
+    scanner: Any | None = None,
+) -> Any:
     """装配生产 SessionConnectionResolver：资产注册表 + Vault + 已批准主机密钥 / K8s CA。"""
 
     from hashlib import sha256
@@ -379,11 +388,11 @@ def build_production_session_resolver(
 
 def build_production_connector_scheduler(
     *,
-    session_factory=None,
-    secrets=None,
-    host_keys=None,
-    scanner=None,
-):
+    session_factory: Any | None = None,
+    secrets: Any | None = None,
+    host_keys: Any | None = None,
+    scanner: Any | None = None,
+) -> ConnectorRuntimeScheduler:
     """装配生产连接器调度器：资产注册表 + Vault + 已批准主机密钥 / K8s CA。"""
 
     from app.core.database import AsyncSessionLocal
@@ -395,10 +404,12 @@ def build_production_connector_scheduler(
         host_keys=host_keys,
         scanner=scanner,
     )
+    from app.services.audit_types import HashChainFileTransferSink
+
     runtime = ConnectorSessionRuntime(
         resolver,
         command_sink=_NoopCommandEventSink(),
-        transfer_sink=_NoopFileTransferEventSink(),
+        transfer_sink=HashChainFileTransferSink(),
         session_factory=factory,
     )
     return ConnectorRuntimeScheduler(runtime)

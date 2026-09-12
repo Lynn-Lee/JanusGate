@@ -538,7 +538,6 @@ async def test_list_namespaced_pods_only_current_namespace(monkeypatch) -> None:
 
     from app.connectors import k8s_exec as mod
     from app.connectors.k8s_exec import (
-        K8sChannelError,
         K8sCredential,
         NamespaceScope,
         list_namespaced_pods,

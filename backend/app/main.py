@@ -11,7 +11,6 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 
 from app.api import (
-    zones,
     account_templates,
     accounts,
     acl,
@@ -20,19 +19,21 @@ from app.api import (
     assets,
     auth,
     automation,
-    oidc,
     connectors,
     notification_deliveries,
     notification_rules,
-    rbac,
+    oidc,
     protocols,
+    rbac,
     session_recordings,
     sessions,
     ssh_certificate_authorities,
     ssh_certificates,
     webhook_endpoints,
+    zones,
 )
 from app.api.audits.routes import router as audits_router
+from app.api.session_ops import router as session_ops_router
 from app.api.tenancy.routes import router as tenancy_router
 from app.api.workflows.routes import router as workflows_router
 from app.core.config import settings
@@ -90,6 +91,7 @@ app.include_router(ssh_certificate_authorities.router, prefix="/api/v1")
 app.include_router(ssh_certificates.router, prefix="/api/v1")
 app.include_router(webhook_endpoints.router, prefix="/api/v1")
 app.include_router(sessions.router, prefix="/api/v1")
+app.include_router(session_ops_router, prefix="/api/v1")
 app.include_router(workflows_router, prefix="/api/v1")
 app.include_router(tenancy_router, prefix="/api/v1")
 app.include_router(audits_router)
