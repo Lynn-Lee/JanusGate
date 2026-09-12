@@ -26,7 +26,6 @@ from app.api.workflows.schemas import (
     WorkflowRevokeRequest,
 )
 from app.api.workflows.service import SQLAlchemyWorkflowStore, WorkflowService
-from app.workflows.ticket_flows import TicketFlowRepository
 from app.connectors.host_key_trust import HostKeyTrustService
 from app.core.database import AsyncSessionLocal, get_db, get_read_db
 from app.core.deps import current_user
@@ -34,6 +33,7 @@ from app.policy.decision import PolicyDecisionService
 from app.policy.schemas import PolicyDecisionRequest, PolicyDecisionResponse
 from app.workflows.audit import WorkflowAuditSink
 from app.workflows.repository import SQLAlchemyWorkflowRepository
+from app.workflows.ticket_flows import TicketFlowRepository
 
 router = APIRouter(prefix="/workflows", tags=["Workflow/JIT"])
 
