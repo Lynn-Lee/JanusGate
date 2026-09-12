@@ -18,6 +18,8 @@ async def ensure_tenant(session: AsyncSession, tenant_id: str) -> Tenant:
     tid = (tenant_id or "").strip() or "default"
     result = await session.execute(select(Tenant).where(Tenant.id == tid))
     tenant = result.scalar_one_or_none()
+    if not isinstance(tenant, Tenant):
+        tenant = None
     if tenant is not None:
         return tenant
     tenant = Tenant(id=tid, timezone=DEFAULT_TENANT_TIMEZONE)
