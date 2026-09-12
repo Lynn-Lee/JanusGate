@@ -55,14 +55,15 @@ def upgrade() -> None:
     op.add_column("accounts", sa.Column("last_verify_message_id", sa.String(length=120), nullable=True))
     op.add_column("accounts", sa.Column("last_verify_at", sa.DateTime(timezone=True), nullable=True))
     op.create_index(op.f("ix_accounts_template_id"), "accounts", ["template_id"], unique=False)
-    op.create_foreign_key(
-        "fk_accounts_template_id_account_templates",
-        "accounts",
-        "account_templates",
-        ["template_id"],
-        ["id"],
-        ondelete="SET NULL",
-    )
+    # SQLite 不支持 op.create_foreign_key；batch_alter_table 会重建表以对齐 ORM。
+    with op.batch_alter_table("accounts") as batch_op:
+        batch_op.create_foreign_key(
+            "fk_accounts_template_id_account_templates",
+            "account_templates",
+            ["template_id"],
+            ["id"],
+            ondelete="SET NULL",
+        )
 
     op.create_table(
         "account_risks",
@@ -97,7 +98,8 @@ def downgrade() -> None:
     op.drop_index(op.f("ix_account_risks_account_id"), table_name="account_risks")
     op.drop_index(op.f("ix_account_risks_tenant_id"), table_name="account_risks")
     op.drop_table("account_risks")
-    op.drop_constraint("fk_accounts_template_id_account_templates", "accounts", type_="foreignkey")
+    with op.batch_alter_table("accounts") as batch_op:
+        batch_op.drop_constraint("fk_accounts_template_id_account_templates", type_="foreignkey")
     op.drop_index(op.f("ix_accounts_template_id"), table_name="accounts")
     op.drop_column("accounts", "last_verify_at")
     op.drop_column("accounts", "last_verify_message_id")

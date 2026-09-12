@@ -49,6 +49,12 @@ External license service evidence 固定在 `docs/site/fixtures/license-operatio
 - 审计日志页展示当前租户事件列表和报表摘要。
 - SOC2 合规报表导出只返回事件 ID、hash chain 边界、签名和 WORM 归档元数据，不返回原始 metadata、message、resource_id 或 session_id 明细。
 
+## 作业中心
+
+`/jobs` 提供 Playbook 目录、作业（playbook / 临时命令）、参数、runas 账号、可选 cron 与执行记录。队列只传递 `job_id`，不使用 pickle，也不在 API 响应中返回下游 stdout/stderr 或凭据。
+
+详见 [作业中心](job-center.md)。
+
 ## 运维门禁
 
 - 本地快速检查优先运行 `git diff --check`。

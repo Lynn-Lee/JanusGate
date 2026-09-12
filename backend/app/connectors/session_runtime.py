@@ -326,11 +326,11 @@ class _NoopFileTransferEventSink:
 
 def build_production_session_resolver(
     *,
-    session_factory=None,
-    secrets=None,
-    host_keys=None,
-    scanner=None,
-):
+    session_factory: Any | None = None,
+    secrets: Any | None = None,
+    host_keys: Any | None = None,
+    scanner: Any | None = None,
+) -> Any:
     """装配生产 SessionConnectionResolver：资产注册表 + Vault + 已批准主机密钥 / K8s CA。"""
 
     from hashlib import sha256
@@ -379,11 +379,11 @@ def build_production_session_resolver(
 
 def build_production_connector_scheduler(
     *,
-    session_factory=None,
-    secrets=None,
-    host_keys=None,
-    scanner=None,
-):
+    session_factory: Any | None = None,
+    secrets: Any | None = None,
+    host_keys: Any | None = None,
+    scanner: Any | None = None,
+) -> ConnectorRuntimeScheduler:
     """装配生产连接器调度器：资产注册表 + Vault + 已批准主机密钥 / K8s CA。"""
 
     from app.core.database import AsyncSessionLocal

@@ -245,6 +245,53 @@ export type AutomationJobRun = {
   reason?: string | null;
 };
 
+export type OpsPlaybook = {
+  id: number;
+  name: string;
+  filename: string;
+  description: string;
+  is_active: boolean;
+};
+
+export type OpsJob = {
+  id: number;
+  name: string;
+  job_kind: 'playbook' | 'adhoc' | string;
+  playbook_id: number | null;
+  adhoc_module: string | null;
+  adhoc_command: string | null;
+  extra_vars: Record<string, unknown>;
+  extra_var_keys: string[];
+  target_asset_ids: number[];
+  runas_account_id: number;
+  cron_expr: string | null;
+  timezone: string;
+  enabled: boolean;
+  next_run_at: string | null;
+  created_by: string;
+};
+
+export type OpsJobVariable = {
+  id: number;
+  job_id: number;
+  name: string;
+  value: string;
+};
+
+export type OpsJobExecution = {
+  message_id: string;
+  job_type: string;
+  status: string;
+  requested_by: string;
+  ops_job_id: number | null;
+  job_kind: string | null;
+  playbook_name: string | null;
+  runas_account_id: number | null;
+  extra_var_keys: string[];
+  target_count: number | null;
+  error_code: string | null;
+};
+
 export type CredentialRotation = {
   id: number;
   tenant_id: string;

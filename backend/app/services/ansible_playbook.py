@@ -37,6 +37,9 @@ class AnsiblePlaybookRun:
     playbook_name: str
     check_mode: bool
     targets: list[AnsiblePlaybookTarget]
+    extra_vars: dict[str, JsonValue] | None = None
+    ansible_user: str | None = None
+    inline_playbook: str | None = None
 
 
 @dataclass(frozen=True)
@@ -79,19 +82,46 @@ class LocalAnsiblePlaybookRunner:
         self._process_limits = process_limits or AnsibleProcessLimits()
 
     async def run(self, playbook: AnsiblePlaybookRun) -> None:
-        playbook_path = self._resolve_playbook(playbook.playbook_name)
+        catalog_playbook_path = (
+            None if playbook.inline_playbook else self._resolve_playbook(playbook.playbook_name)
+        )
         self._runtime_root.mkdir(parents=True, exist_ok=True)
         with tempfile.TemporaryDirectory(
             prefix=f"janusgate-ansible-{playbook.tenant_id}-",
             dir=self._runtime_root,
         ) as work_dir_name:
             work_dir = Path(work_dir_name)
+            if playbook.inline_playbook is not None:
+                playbook_path = work_dir / "inline.yml"
+                playbook_path.write_text(playbook.inline_playbook, encoding="utf-8")
+            elif catalog_playbook_path is None:
+                raise ValueError("ANSIBLE_PLAYBOOK_NOT_ALLOWED")
+            else:
+                playbook_path = catalog_playbook_path
             inventory_path = work_dir / "inventory.json"
             inventory_path.write_text(
-                json.dumps(_build_inventory(playbook.targets), sort_keys=True),
+                json.dumps(
+                    _build_inventory(playbook.targets, ansible_user=playbook.ansible_user),
+                    sort_keys=True,
+                ),
                 encoding="utf-8",
             )
-            args = [self._executable, str(playbook_path), "-i", str(inventory_path)]
+            extra_vars = dict(playbook.extra_vars or {})
+            if playbook.ansible_user:
+                extra_vars.setdefault("ansible_user", playbook.ansible_user)
+            extra_vars_path = work_dir / "extra_vars.json"
+            extra_vars_path.write_text(
+                json.dumps(extra_vars, sort_keys=True, separators=(",", ":")),
+                encoding="utf-8",
+            )
+            args = [
+                self._executable,
+                str(playbook_path),
+                "-i",
+                str(inventory_path),
+                "-e",
+                f"@{extra_vars_path}",
+            ]
             if playbook.check_mode:
                 args.append("--check")
             try:
@@ -299,22 +329,23 @@ def _safe_error_code(exc: Exception) -> str:
     return exc.__class__.__name__[:120]
 
 
-def _build_inventory(targets: list[AnsiblePlaybookTarget]) -> dict[str, object]:
-    return {
-        "all": {
-            "hosts": {
-                f"asset_{target.id}": {
-                    "ansible_host": target.address,
-                    "ansible_port": target.port,
-                    "janusgate_asset_id": target.id,
-                    "janusgate_asset_name": target.name,
-                    "janusgate_platform_id": target.platform_id,
-                    "janusgate_tenant_id": target.tenant_id,
-                }
-                for target in targets
-            }
+def _build_inventory(
+    targets: list[AnsiblePlaybookTarget], *, ansible_user: str | None = None
+) -> dict[str, object]:
+    hosts: dict[str, dict[str, object]] = {}
+    for target in targets:
+        host: dict[str, object] = {
+            "ansible_host": target.address,
+            "ansible_port": target.port,
+            "janusgate_asset_id": target.id,
+            "janusgate_asset_name": target.name,
+            "janusgate_platform_id": target.platform_id,
+            "janusgate_tenant_id": target.tenant_id,
         }
-    }
+        if ansible_user:
+            host["ansible_user"] = ansible_user
+        hosts[f"asset_{target.id}"] = host
+    return {"all": {"hosts": hosts}}
 
 
 def _safe_ansible_env() -> dict[str, str]:

@@ -1,12 +1,13 @@
 """Workflow/JIT request state machine and in-memory repository."""
 from __future__ import annotations
 
+import inspect
 import json
 import uuid
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from enum import StrEnum
-from typing import Any, Protocol
+from typing import Any, Protocol, cast
 
 from pydantic import BaseModel, Field
 from sqlalchemy import select, update
@@ -671,7 +672,7 @@ class WorkflowService:
         now: Callable[[], datetime] | None = None,
         request_id_factory: Callable[[], str] | None = None,
         grant_id_factory: Callable[[], str] | None = None,
-        ticket_flow_loader: Callable[[str], Any] | None = None,
+        ticket_flow_loader: Callable[..., Any] | None = None,
     ) -> None:
         self.store = store or InMemoryWorkflowStore()
         self.audit_sink = audit_sink or NoopAuditSink()
@@ -707,9 +708,9 @@ class WorkflowService:
             except TypeError:
                 # backward-compatible loaders that only accept tenant_id
                 flow = self.ticket_flow_loader(tenant_id)
-            if hasattr(flow, "__await__"):
+            if inspect.isawaitable(flow):
                 flow = await flow
-            return flow
+            return cast(TicketFlowSnapshot | None, flow)
         return self._enabled_flows.get(f"{tenant_id}:{flow_type}") or (
             self._enabled_flows.get(tenant_id) if flow_type == "asset_grant" else None
         )

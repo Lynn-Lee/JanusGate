@@ -248,6 +248,18 @@ Approval policy DSL 当前支持 `context_equals`、`context_in`、`context_numb
 - payload 键名包含 password/token/secret/private key/connection string 等敏感字段时 fail-closed 为 `AUTOMATION_JOB_PAYLOAD_CONTAINS_SECRET`。
 - `secret_id` 这类 Vault 引用可由后续执行器显式传递，但队列契约不得承载凭据明文。
 
+## Phase 6 作业中心（#t77）
+
+在 #t52 队列与 Ansible runner 上提供作业定义。`job.playbook` / `job.adhoc` 的 Redis Streams payload **只允许** `{"job_id": <int>}`，`payload_format` 必须为 `json`，禁止 pickle。命令、extra_vars、变量与 runas 用户名由 worker 从当前租户数据库加载；凭据不进入队列、argv 或环境变量。
+
+### POST `/api/v1/job-center/jobs/{job_id}/run`
+
+鉴权：`automation:write` 或 `admin`。响应 `202` 返回队列 message id 与 `job_type`。敏感 extra_vars 键或 Jinja 模板在创建作业时 fail-closed。
+
+### POST `/api/v1/job-center/scheduler/tick`
+
+按当前租户扫描到期 cron 作业并入队。完整契约见 `docs/site/job-center.md`。
+
 ## Phase 4 Audit Report API（#t49）
 
 ### GET `/api/v1/audits/reports/summary`

@@ -20,6 +20,10 @@ class AutomationJobRun(Base):
     target_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
     error_code: Mapped[str | None] = mapped_column(String(120), nullable=True)
     reason: Mapped[str | None] = mapped_column(String(240), nullable=True)
+    ops_job_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
+    job_kind: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    runas_account_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    extra_var_keys: Mapped[str | None] = mapped_column(String(2000), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
