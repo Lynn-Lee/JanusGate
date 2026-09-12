@@ -13,8 +13,8 @@ from app.api.workflows.service import (
     WorkflowRequestRecord,
     WorkflowRequestStatus,
 )
-from app.workflows.ticket_flows import TicketFlowSnapshot
 from app.models.workflow import ApprovalPolicyModel, ApproverMode
+from app.workflows.ticket_flows import TicketFlowSnapshot
 
 
 class ApprovalPolicyCreate(BaseModel):
