@@ -46,11 +46,16 @@ def run_migrations_offline() -> None:
 
 
 def _run_migrations(connection: Connection) -> None:
-    """在给定同步连接上执行迁移（供 async run_sync 回调）。"""
+    """在给定同步连接上执行迁移（供 async run_sync 回调）。
+
+    SQLite 不支持 ALTER 增删约束，因此在 sqlite 方言下开启 batch 模式，
+    用 copy-and-move 执行历史迁移里的 `create_foreign_key`。
+    """
     context.configure(
         connection=connection,
         target_metadata=target_metadata,
         compare_type=True,
+        render_as_batch=connection.dialect.name == "sqlite",
     )
     with context.begin_transaction():
         context.run_migrations()

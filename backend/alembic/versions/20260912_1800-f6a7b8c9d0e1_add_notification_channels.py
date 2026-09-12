@@ -1,7 +1,7 @@
 """add notification channel fields, subscriptions and inbox (#t75)
 
 Revision ID: f6a7b8c9d0e1
-Revises: e5f6a7b8c9d0
+Revises: e5f6a7b8c9d0, f6b0d4c2e815
 Create Date: 2026-09-12 18:00:00.000000
 
 """
@@ -12,7 +12,7 @@ import sqlalchemy as sa
 from alembic import op
 
 revision: str = "f6a7b8c9d0e1"
-down_revision: str | None = "e5f6a7b8c9d0"
+down_revision: str | Sequence[str] | None = ("e5f6a7b8c9d0", "f6b0d4c2e815")
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
