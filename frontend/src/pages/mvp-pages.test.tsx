@@ -204,6 +204,12 @@ function installFetch() {
       return Response.json({ items: [], total: 0 });
     }
     if (url.endsWith('/api/v1/automation/jobs/runs')) return Response.json({ items: [], total: 0 });
+    if (url.endsWith('/api/v1/job-center/playbooks')) return Response.json({ items: [], total: 0 });
+    if (url.endsWith('/api/v1/job-center/jobs') && method === 'GET') return Response.json({ items: [], total: 0 });
+    if (url.includes('/api/v1/job-center/jobs/') && url.endsWith('/variables')) {
+      return Response.json({ items: [], total: 0 });
+    }
+    if (url.endsWith('/api/v1/job-center/executions')) return Response.json({ items: [], total: 0 });
     if (url.endsWith('/api/v1/zones/')) return Response.json({ items: [], total: 0 });
     if (url.includes('/api/v1/workflows/ticket-flows')) return Response.json({ items: [], total: 0 });
     if (url.endsWith('/api/v1/zones/gateway-candidates/')) return Response.json([]);
@@ -1061,5 +1067,15 @@ describe('#t69 host key overlay and connect list', () => {
     expect(screen.getByText('第2级·未开始')).toBeInTheDocument();
     expect(screen.getByText(/通\s*过/)).toBeInTheDocument();
     expect(screen.getByText(/拒\s*绝/)).toBeInTheDocument();
+  });
+
+  it('shows job center catalog and run action', async () => {
+    history.pushState(null, '', '/jobs');
+    render(<App />);
+    expect(await screen.findByRole('heading', { name: '作业中心' })).toBeInTheDocument();
+    expect(screen.getByText('还没有 Playbook')).toBeInTheDocument();
+    expect(screen.getByText('还没有作业')).toBeInTheDocument();
+    expect(screen.getByText('新建作业')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: '作业中心' })).toHaveAttribute('href', '/jobs');
   });
 });
