@@ -195,7 +195,9 @@ function installFetch() {
     if (url.endsWith('/api/v1/ssh-certificates/5/revoke') && method === 'POST') {
       return Response.json({ ...sshCertificate, status: 'revoked', revoke_reason: 'console revoked' });
     }
-    if (url.endsWith('/health')) return Response.json({ status: 'ok', version: '0.1.0' });
+    if (url.endsWith('/api/v1/webhook-endpoints/')) return Response.json({ items: [], total: 0 });
+    if (url.endsWith('/api/v1/notification-subscriptions/')) return Response.json({ items: [], total: 0 });
+    if (url.endsWith('/api/v1/in-app-messages/')) return Response.json({ items: [], total: 0 });
     if (url.endsWith('/api/v1/users/') && method === 'GET') return Response.json({ items: [], total: 0 });
     if (url.endsWith('/api/v1/login-acls/')) return Response.json({ items: [], total: 0 });
     if (url.endsWith('/api/v1/login-asset-acls/')) return Response.json({ items: [], total: 0 });
@@ -383,6 +385,10 @@ describe('MVP pages', () => {
     await waitFor(() =>
       expect(fetchMock).toHaveBeenCalledWith('/api/v1/admin/license-summary', expect.any(Object))
     );
+    expect(await screen.findByText('通知渠道')).toBeInTheDocument();
+    expect(screen.getByText('还没有通知渠道')).toBeInTheDocument();
+    expect(screen.getByText('还没有系统消息订阅')).toBeInTheDocument();
+    expect(screen.getByText('还没有站内信')).toBeInTheDocument();
     expect(await screen.findByText('账号模板')).toBeInTheDocument();
     expect(screen.getByText('还没有账号模板')).toBeInTheDocument();
     expect(await screen.findByText('审批流')).toBeInTheDocument();

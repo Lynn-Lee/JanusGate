@@ -7,6 +7,7 @@ import { ErrorState, LoadingState } from '../components/StatusView';
 import { UserSelect, type DirectoryUser } from '../components/UserSelect';
 import { getErrorMessage, useApiData, useApiMessage } from './pageUtils';
 import { OidcSettingsCard } from './settings/OidcSettingsCard';
+import { NotificationChannelPanels, canReadNotificationChannels, canWriteNotificationChannels } from './settings/NotificationChannelPanels';
 import { TicketFlowPanels } from './settings/TicketFlowPanels';
 import type { AccountTemplate, Asset, AssetNode, GatewayCandidate, ListResponse, Zone } from './types';
 
@@ -163,6 +164,8 @@ export function SettingsPage() {
   const showTicketFlows = canReadTicketFlows(Boolean(user?.is_superuser), permissions);
   const writeTicketFlows = canWriteTicketFlows(Boolean(user?.is_superuser), permissions);
   const showOidc = Boolean(user?.is_superuser) || permissions.includes('admin');
+  const showNotificationChannels = canReadNotificationChannels(Boolean(user?.is_superuser), permissions);
+  const writeNotificationChannels = canWriteNotificationChannels(Boolean(user?.is_superuser), permissions);
 
   const saveLicenseConfig = async (values: LicenseConfigForm) => {
     setLicenseSubmitting(true);
@@ -295,6 +298,7 @@ export function SettingsPage() {
           ) : null}
         </Card>
         {showOidc ? <OidcSettingsCard /> : null}
+        {showNotificationChannels ? <NotificationChannelPanels canWrite={writeNotificationChannels} /> : null}
         <Card title="部署信息摘要">
           <Descriptions column={1} size="small">
             <Descriptions.Item label="环境">Docker Compose / Helm 均有基线</Descriptions.Item>

@@ -32,8 +32,12 @@ class NotificationDeliverySender(ABC):
         endpoint: WebhookEndpoint,
         delivery: NotificationDelivery,
         payload: dict[str, object],
+        session: AsyncSession | None = None,
     ) -> None:
-        """Deliver one already-redacted notification payload."""
+        """Deliver one already-redacted notification payload.
+
+        `session` 与投递状态更新共用同一事务，站内信必须写进这个会话。
+        """
 
 
 class HttpWebhookNotificationSender(NotificationDeliverySender):
@@ -53,7 +57,9 @@ class HttpWebhookNotificationSender(NotificationDeliverySender):
         endpoint: WebhookEndpoint,
         delivery: NotificationDelivery,
         payload: dict[str, object],
+        session: AsyncSession | None = None,
     ) -> None:
+        del session
         try:
             response = await self._client.post(
                 endpoint.url,
@@ -103,6 +109,7 @@ class NotificationDeliveryWorker:
                         endpoint=endpoint,
                         delivery=delivery,
                         payload=_payload_dict(delivery.payload_json),
+                        session=session,
                     )
                 except Exception as exc:
                     delivery.attempts += 1
