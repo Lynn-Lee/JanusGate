@@ -42,6 +42,12 @@ KIND_SEVERITY: dict[AuditKind, AuditSeverity] = {
 }
 
 
+def _actor_with_tenant(actor: dict[str, Any]) -> dict[str, Any]:
+    """生产 JWT 始终带 tenant_id；测试桩缺失时回落到 default。"""
+
+    return {**actor, "tenant_id": actor.get("tenant_id") or "default"}
+
+
 def typed_event_type(kind: AuditKind, suffix: str) -> str:
     """把分类与动作拼成稳定的 ``event_type``，供 hash chain 检索。"""
 
@@ -74,6 +80,7 @@ async def create_typed_event(
         **payload.metadata,
         "log_kind": payload.kind.value,
     }
+    actor_with_tenant = _actor_with_tenant(actor)
     return await service.create_event(
         AuditEventCreate(
             event_type=event_type,
@@ -86,7 +93,7 @@ async def create_typed_event(
             message=payload.message,
             metadata=metadata,
         ),
-        actor,
+        actor_with_tenant,
     )
 
 
@@ -141,7 +148,7 @@ async def record_file_transfer(
             message=payload.error_code or payload.status,
             metadata=metadata,
         ),
-        actor,
+        _actor_with_tenant(actor),
     )
 
 
@@ -173,7 +180,7 @@ async def record_job_log(
             message=payload.reason or payload.status,
             metadata=dict(metadata) if isinstance(metadata, dict) else {"log_kind": AuditKind.job.value},
         ),
-        actor,
+        _actor_with_tenant(actor),
     )
 
 
