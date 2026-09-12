@@ -64,6 +64,7 @@ DB_BACKED_GET_ROUTE_ROUTING_INVENTORY = {
     ("GET", "/tenancy/teams"),
     ("GET", "/webhook-endpoints/"),
     ("GET", "/workflows/approval-policies"),
+    ("GET", "/workflows/ticket-flows"),
     ("GET", "/workflows/grants/active"),
     ("GET", "/workflows/requests"),
     ("GET", "/workflows/requests/{request_id}"),
@@ -477,6 +478,7 @@ def test_session_write_routes_keep_writer_service_dependency() -> None:
 def test_workflow_approval_policy_read_routes_use_read_database_dependency() -> None:
     read_routes = [
         ("GET", "/workflows/approval-policies"),
+        ("GET", "/workflows/ticket-flows"),
     ]
 
     for method, path in read_routes:
