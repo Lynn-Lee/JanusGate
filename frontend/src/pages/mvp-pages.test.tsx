@@ -198,6 +198,7 @@ function installFetch() {
     if (url.endsWith('/api/v1/webhook-endpoints/')) return Response.json({ items: [], total: 0 });
     if (url.endsWith('/api/v1/notification-subscriptions/')) return Response.json({ items: [], total: 0 });
     if (url.endsWith('/api/v1/in-app-messages/')) return Response.json({ items: [], total: 0 });
+    if (url.endsWith('/health')) return Response.json({ status: 'ok', version: '0.1.0' });
     if (url.endsWith('/api/v1/users/') && method === 'GET') return Response.json({ items: [], total: 0 });
     if (url.endsWith('/api/v1/login-acls/')) return Response.json({ items: [], total: 0 });
     if (url.endsWith('/api/v1/login-asset-acls/')) return Response.json({ items: [], total: 0 });
@@ -453,7 +454,7 @@ describe('MVP pages', () => {
 
     expect(screen.queryByText('账号模板')).not.toBeInTheDocument();
     expect(await screen.findByText('网域')).toBeInTheDocument();
-    expect(screen.getByText('还没有网域')).toBeInTheDocument();
+    expect(await screen.findByText('还没有网域')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: '创建网域' })).not.toBeInTheDocument();
     expect(await screen.findByText('登录 ACL')).toBeInTheDocument();
     expect(screen.getByText('资产登录 ACL')).toBeInTheDocument();
@@ -621,32 +622,6 @@ describe('MVP pages', () => {
 
 
 describe('#t69 host key overlay and connect list', () => {
-  const k8sPlatform = { id: 2, name: 'Kubernetes', category: 'cloud', protocols: '["k8s"]', is_active: true };
-  const mixedPlatform = { id: 3, name: 'Mixed', category: 'host', protocols: '["ssh","k8s"]', is_active: true };
-  const k8sAsset = { id: 2, name: 'prod-cluster', address: 'k8s.internal', platform_id: 2, port: 443, username: '', is_active: true, description: '', created_at: '2026-07-01T00:00:00Z', namespace: 'prod', has_server_ca: true };
-  const mixedAsset = { id: 3, name: 'bastion', address: '10.0.0.11', platform_id: 3, port: 22, username: 'ops', is_active: true, description: '', created_at: '2026-07-01T00:00:00Z', namespace: 'prod', has_server_ca: true };
-
-  function installK8sConnectFetch(podsResponse: Response | ((url: string) => Response | undefined)) {
-    const fetchMock = installFetch();
-    vi.stubGlobal('fetch', async (input: RequestInfo | URL, init?: RequestInit) => {
-      const url = String(input);
-      const method = init?.method ?? 'GET';
-      if (url.endsWith('/api/v1/assets/') && method === 'GET') {
-        return Response.json([asset, k8sAsset, mixedAsset]);
-      }
-      if (url.endsWith('/api/v1/assets/platforms')) {
-        return Response.json([platform, k8sPlatform, mixedPlatform]);
-      }
-      if (url.includes('/k8s/pods')) {
-        const custom = typeof podsResponse === 'function' ? podsResponse(url) : podsResponse;
-        if (custom) {
-          return custom;
-        }
-      }
-      return fetchMock(input, init);
-    });
-  }
-
   it('shows k8s assets on the connect list and opens 建连弹层 after listing pods', async () => {
     const k8sPlatform = { id: 2, name: 'Kubernetes', category: 'cloud', protocols: '["k8s"]', is_active: true };
     const mixedPlatform = { id: 3, name: 'Mixed', category: 'host', protocols: '["ssh","k8s"]', is_active: true };
