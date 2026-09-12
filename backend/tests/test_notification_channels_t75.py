@@ -24,6 +24,7 @@ from app.models.webhook import (
 from app.services.notification_channels import (
     ChannelConfigError,
     ChannelNotificationSender,
+    event_types,
     sanitize_channel,
 )
 from app.services.notification_delivery_worker import NotificationDeliveryWorker
@@ -109,6 +110,43 @@ def test_sanitize_channel_strips_im_token_and_pins_official_host() -> None:
     )
     assert email.credential == "gateway-token"
     assert email.recipient == "ops@example.test"
+
+    feishu = sanitize_channel(
+        channel_type="feishu",
+        url="https://open.feishu.cn/open-apis/bot/v2/hook/fs-token",
+    )
+    assert feishu.url == "https://open.feishu.cn/open-apis/bot/v2/hook"
+    assert feishu.credential == "fs-token"
+    wecom = sanitize_channel(
+        channel_type="wecom",
+        url="https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=wecom-key",
+    )
+    assert wecom.url == "https://qyapi.weixin.qq.com/cgi-bin/webhook/send"
+    assert wecom.credential == "wecom-key"
+    slack = sanitize_channel(
+        channel_type="slack",
+        url="https://hooks.slack.com/services/T000/B000/secret",
+    )
+    assert slack.url == "https://hooks.slack.com/services"
+    assert slack.credential == "T000/B000/secret"
+    sms = sanitize_channel(
+        channel_type="sms",
+        url="https://sms.example.test/send",
+        credential="gateway-token",
+        recipient="+8613800000000",
+    )
+    assert sms.recipient == "+8613800000000"
+    with pytest.raises(ChannelConfigError, match="SMS_RECIPIENT_REQUIRED"):
+        sanitize_channel(
+            channel_type="sms",
+            url="https://sms.example.test/send",
+            credential="gateway-token",
+        )
+    with pytest.raises(ChannelConfigError, match="INVALID_WEBHOOK_URL"):
+        sanitize_channel(
+            channel_type="webhook",
+            url="https://user:pass@siem.example.test/hook",
+        )
 
 
 def test_redact_payload_masks_sensitive_keys_and_assignment_text() -> None:
@@ -269,6 +307,92 @@ async def test_channel_sender_http_error_does_not_leak_payload_or_downstream() -
     assert "hunter2" not in message
     assert "password" not in message
     assert "T000" not in message
+
+
+@pytest.mark.asyncio
+async def test_email_gateway_send_uses_bearer_and_transport_error_is_stable() -> None:
+    seen: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request)
+        return httpx.Response(202)
+
+    endpoint = WebhookEndpoint(
+        tenant_id="tenant-a",
+        name="ops-mail",
+        url="https://mail.example.test/send",
+        event_types_json=json.dumps(["workflow.request.approved"]),
+        channel_type="email",
+        credential_encrypted=encrypt_field("gateway-token"),
+        recipient="ops@example.test",
+        status="active",
+    )
+    delivery = NotificationDelivery(
+        tenant_id="tenant-a",
+        notification_rule_id=1,
+        webhook_endpoint_id=1,
+        event_type="workflow.request.approved",
+        payload_json=payload_json({"summary": "审批通过"}),
+        status="pending",
+        attempts=0,
+        next_attempt_at=datetime(2026, 9, 12, 8, 0, tzinfo=UTC),
+    )
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        sender = ChannelNotificationSender(http_client=client)
+        await sender.send(endpoint=endpoint, delivery=delivery, payload={"summary": "审批通过"})
+
+    assert str(seen[0].url) == "https://mail.example.test/send"
+    assert seen[0].headers["Authorization"] == "Bearer gateway-token"
+    body = json.loads(seen[0].content)
+    assert body == {
+        "to": "ops@example.test",
+        "subject": "workflow.request.approved",
+        "text": "审批通过",
+    }
+    assert "gateway-token" not in json.dumps(body)
+
+    def boom(_request: httpx.Request) -> httpx.Response:
+        raise httpx.ConnectError("refused")
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(boom)) as client:
+        sender = ChannelNotificationSender(http_client=client)
+        with pytest.raises(RuntimeError, match="email delivery transport failed") as exc_info:
+            await sender.send(endpoint=endpoint, delivery=delivery, payload={"summary": "审批通过"})
+    assert "gateway-token" not in str(exc_info.value)
+    assert "审批通过" not in str(exc_info.value)
+
+
+@pytest.mark.asyncio
+async def test_inbox_delivery_without_session_fail_closes() -> None:
+    sender = ChannelNotificationSender()
+    with pytest.raises(RuntimeError, match="inbox delivery requires a database session"):
+        await sender.send(
+            endpoint=WebhookEndpoint(
+                tenant_id="tenant-a",
+                name="inbox-alice",
+                url="inbox://local",
+                event_types_json=json.dumps(["workflow.request.approved"]),
+                channel_type="inbox",
+                recipient="user-1",
+                status="active",
+            ),
+            delivery=NotificationDelivery(
+                tenant_id="tenant-a",
+                notification_rule_id=1,
+                webhook_endpoint_id=1,
+                event_type="workflow.request.approved",
+                payload_json="{}",
+                status="pending",
+                attempts=0,
+                next_attempt_at=datetime(2026, 9, 12, 8, 0, tzinfo=UTC),
+            ),
+            payload={"summary": "审批通过"},
+        )
+
+
+def test_event_types_rejects_non_list() -> None:
+    assert event_types('["a"]') == ["a"]
+    assert event_types("{}") == []
 
 
 @pytest.mark.asyncio
