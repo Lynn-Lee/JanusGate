@@ -63,9 +63,11 @@
 - Audit/SIEM：`/api/v1/audits/events`、`/api/v1/audits/reports/summary` 与 `/api/v1/audits/reports/compliance`，审计事件创建、检索、当前租户报表汇总和合规报表导出基础；合规报表响应包含 append-only WORM 归档元数据，不包含原始审计 metadata/message/resource/session 明细。
 - Tenancy：`/api/v1/tenancy/*`，Phase 4 组织/团队/项目管理与租户隔离 API。
 - Session Recordings：`/api/v1/sessions/{session_id}/recordings` 与 `/api/v1/session-recordings/*`，Phase 4 会话录制元数据、命令事件上报与命令检索。
-- Webhook Endpoints：`/api/v1/webhook-endpoints/*`，Phase 4 WebHook / 通知中心 endpoint 管理基础。
+- Webhook Endpoints：`/api/v1/webhook-endpoints/*`，Phase 4 WebHook / Phase 6 #t75 通知渠道（IM / SMS / 邮件 / 站内信）。
 - Notification Rules：`/api/v1/notification-rules/*`，Phase 4 WebHook / 通知规则管理基础。
-- Notification Deliveries：`/api/v1/notification-rules/{rule_id}/deliveries` 与 `/api/v1/notification-deliveries/*`，Phase 4 WebHook 可靠投递队列基础；`NotificationDeliveryWorker` 负责到期投递、失败重试和 dead-letter 状态推进，`HttpWebhookNotificationSender` 负责向 HTTPS WebHook endpoint 投递已脱敏 payload。
+- Notification Deliveries：`/api/v1/notification-rules/{rule_id}/deliveries` 与 `/api/v1/notification-deliveries/*`，可靠投递队列；`NotificationDeliveryWorker` 到期投递、重试和 dead-letter，`ChannelNotificationSender` 按 `channel_type` 分发已脱敏 payload。
+- Notification Subscriptions：`/api/v1/notification-subscriptions/` 与 `POST /api/v1/notification-events/`，#t75 系统消息订阅与事件扇出。
+- In-App Messages：`/api/v1/in-app-messages/`，当前用户站内信。
 - Admin：`/api/v1/admin/license-summary` 与 `/api/v1/admin/license-config`，Phase 5 #t58 Edition / License 边界摘要和 admin-only 持久化配置 foundation，不返回 license key、签名 secret、外部 validation token 或任何商业密钥材料。
 
 ## Phase 5 Edition / License Boundary（#t58）
@@ -591,7 +593,21 @@ template=soc2-access
 - payload 入库前会脱敏 token/password/secret/credential 等敏感键或赋值片段；响应不返回 payload。
 - `NotificationDeliveryWorker` 只读取 `pending` / 到期 `failed` 记录，成功后标记 `delivered`，失败后更新 `attempts`、`last_error` 与下一次重试时间，达到最大尝试次数后标记 `dead_letter`。
 - `HttpWebhookNotificationSender` 使用 `POST` 向 endpoint URL 投递 `{event_type, delivery_id, payload}`，并附带 `X-JanusGate-Event-Type` 与 `X-JanusGate-Tenant-Id`。非 2xx 或网络错误会 fail-closed 抛出稳定错误，worker 随后进入重试/死信流程；错误信息不包含 payload、signing secret 或下游响应体。
-- 当前切片不内置 IM sender 或多级审批。
+- #t75 `ChannelNotificationSender` 按 `channel_type` 分发钉钉 / 飞书 / Lark / 企微 / Slack / SMS / 邮件 / 站内信；IM 官方 host 白名单，URL 禁止持久化 query。
+
+### POST `/api/v1/notification-events/`
+
+用途：按当前租户通知规则与系统消息订阅扇出投递记录。
+
+鉴权：`admin` 或 `notifications:write`。payload 入库前脱敏；响应只返回 `enqueued` 与 `delivery_ids`。
+
+### POST `/api/v1/notification-subscriptions/`
+
+用途：把事件类型订阅到当前租户通知渠道。跨租户 endpoint 返回 `404 WEBHOOK_ENDPOINT_NOT_FOUND`。
+
+### GET `/api/v1/in-app-messages/`
+
+用途：返回当前用户站内信。跨用户不可见。
 
 ### GET `/api/v1/notification-deliveries/`
 
@@ -678,10 +694,10 @@ template=soc2-access
 
 安全语义：
 
-- signing secret 只以 digest 形式持久化；响应不返回 signing secret 明文或摘要。
-- endpoint URL 必须使用 `https://`，明文 HTTP 返回 `400 INVALID_WEBHOOK_URL`。
+- signing secret 只以 digest 形式持久化；渠道凭据 AES-256-GCM 落库；响应不返回 signing secret、credential 明文或摘要。
+- 通用 WebHook URL 必须使用 `https://` 且禁止 query，明文 HTTP 返回 `400 INVALID_WEBHOOK_URL`。
+- IM 渠道只允许官方 host，否则 `400 CHANNEL_HOST_NOT_ALLOWED`。机器人 token 从 URL 剥离后加密保存，响应 URL 为不含 query 的规范地址。
 - 只允许创建当前租户 endpoint；跨租户读取不会返回该 endpoint。
-- 当前切片只落 endpoint 管理基础，不执行外部通知投递。
 
 ### GET `/api/v1/webhook-endpoints/`
 

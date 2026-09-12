@@ -99,6 +99,8 @@ def test_phase5_docs_site_foundation_is_wired_for_operator_handoff() -> None:
     assert "fixtures/operation-runbook-evidence.json" in build_script
     assert "fixtures/license-operations-evidence.json" in build_script
     assert "fixtures/runtime-alert-evidence.json" in build_script
+    assert "notification-channels.md" in build_script
+    assert "notification-channels.md" in docs_index
     assert "assets/screenshots/live-screenshots/admin-settings-license-summary.png" in build_script
     assert screenshot_script_path.exists()
     screenshot_script = screenshot_script_path.read_text()

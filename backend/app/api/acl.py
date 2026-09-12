@@ -559,8 +559,8 @@ async def update_connect_method_acl(
     acl = await _get_scoped_connect_method_acl(db, actor_scope_from_user(user), acl_id)
     updates = data.model_dump(exclude_unset=True)
     protocol = updates.get("protocol", acl.protocol)
-    resource_type = updates["resource_type"] if "resource_type" in updates else acl.resource_type
-    resource_id = updates["resource_id"] if "resource_id" in updates else acl.resource_id
+    resource_type = updates.get("resource_type", acl.resource_type)
+    resource_id = updates.get("resource_id", acl.resource_id)
     resource_type, resource_id = _validate_connect_method_fields(
         protocol=protocol,
         resource_type=resource_type,

@@ -36,6 +36,7 @@ scripts/build-docs-site.sh dist/docs-site
 - Automation：`/api/v1/automation/jobs/asset-scans`、credential rotations、playbooks 和 job runs。
 - Admin：`/api/v1/admin/license-summary` 与 admin-only `POST /api/v1/admin/license-config`。
 - ACL：`/api/v1/command-filter-acls/` 与 `/api/v1/data-masking-rules/`（租户隔离 CRUD，仅这两类；SSH/K8s/PTY 执行前与命令事件入库均走 PolicyDecisionService）。
+- 通知渠道：`/api/v1/webhook-endpoints/`、`/api/v1/notification-subscriptions/`、`/api/v1/notification-events/`、`/api/v1/in-app-messages/`；详见[通知渠道](notification-channels.md)。
 - Asset tree / AssetPermission：`/api/v1/asset-nodes/`、`/api/v1/asset-nodes/{node_id}/assets`、`/api/v1/asset-nodes/{node_id}/permissions`、`/api/v1/asset-permissions/by-asset/{asset_id}` 和 `/api/v1/asset-permissions/{permission_id}`；详见[资产树与 AssetPermission](asset-tree-authorization.md)。
 
 ## 错误响应

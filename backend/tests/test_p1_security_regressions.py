@@ -34,7 +34,7 @@ class ScalarResult:
         return self
 
     def all(self) -> list[Any]:
-        return self.values
+        return []
 
 
 class FakeDB:
@@ -43,6 +43,18 @@ class FakeDB:
 
     async def execute(self, _statement: Any) -> ScalarResult:
         return ScalarResult(self.value)
+
+    def add(self, _item: Any) -> None:
+        return None
+
+    async def flush(self) -> None:
+        return None
+
+    async def commit(self) -> None:
+        return None
+
+    async def refresh(self, _item: Any) -> None:
+        return None
 
 
 class FakeRedis:
