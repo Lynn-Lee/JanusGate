@@ -6,6 +6,7 @@ import hashlib
 import json
 import re
 import secrets
+import tempfile
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
@@ -316,7 +317,14 @@ def local_storage_root(tenant_id: str, backend: SessionStorageBackend) -> Path:
 
     prefix = str(backend.config.get("prefix") or backend.name)
     safe_prefix = re.sub(r"[^A-Za-z0-9._-]+", "_", prefix)
-    root = Path("/tmp/janusgate-session-storage") / tenant_id / backend.kind / backend.provider / safe_prefix
+    root = (
+        Path(tempfile.gettempdir())
+        / "janusgate-session-storage"
+        / tenant_id
+        / backend.kind
+        / backend.provider
+        / safe_prefix
+    )
     root.mkdir(parents=True, exist_ok=True)
     return root
 

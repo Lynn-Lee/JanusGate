@@ -23,7 +23,7 @@ class AuditKind(StrEnum):
     operate = "operate"
     activity = "activity"
     file_transfer = "file_transfer"
-    password_change = "password_change"
+    password_change = "password_change"  # nosec B105 - audit kind prefix, not a secret
     user_session = "user_session"
     job = "job"
     integration = "integration"
