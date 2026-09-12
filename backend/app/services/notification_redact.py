@@ -38,5 +38,5 @@ def payload_summary(payload: dict[str, object]) -> str:
     event = str(payload.get("summary") or payload.get("message") or "")
     if event:
         return str(redact_payload(event))
-    keys = ", ".join(sorted(str(key) for key in payload.keys())[:8])
+    keys = ", ".join(sorted(str(key) for key in payload)[:8])
     return f"notification keys={keys}" if keys else "notification"

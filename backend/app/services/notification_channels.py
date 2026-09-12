@@ -124,13 +124,13 @@ def sanitize_channel(
     if kind == "webhook" or kind == "sms":
         if parsed.query:
             raise ChannelConfigError("CHANNEL_URL_QUERY_FORBIDDEN")
-        secret = (credential or "").strip() or None
-        if kind == "sms" and not secret:
+        stored = (credential or "").strip() or None
+        if kind == "sms" and not stored:
             raise ChannelConfigError("CHANNEL_CREDENTIAL_REQUIRED")
         return SanitizedChannel(
             channel_type=kind,
             url=urlunparse((parsed.scheme, parsed.netloc, parsed.path or "/", "", "", "")),
-            credential=secret,
+            credential=stored,
             recipient=(recipient or "").strip() or None,
             auth_username=None,
         )
@@ -157,16 +157,13 @@ def _extract_im_secret(kind: str, parsed: Any, credential: str | None) -> str:
         token = (query.get("key") or [""])[0].strip() or supplied
     elif kind in {"feishu", "lark"}:
         token = parsed.path.rstrip("/").rsplit("/", 1)[-1].strip()
-        if token in {"hook", "v2", "bot", "open-apis", ""}:
-            token = supplied
-        elif supplied and token != supplied and parsed.path.rstrip("/").endswith("/hook"):
+        if token in {"hook", "v2", "bot", "open-apis", ""} or (
+            supplied and token != supplied and parsed.path.rstrip("/").endswith("/hook")
+        ):
             token = supplied
     else:
         rest = parsed.path.lstrip("/")
-        if rest.startswith("services/"):
-            token = rest[len("services/") :].strip("/")
-        else:
-            token = supplied
+        token = rest[len("services/") :].strip("/") if rest.startswith("services/") else supplied
         if not token:
             token = supplied
     if not token:
