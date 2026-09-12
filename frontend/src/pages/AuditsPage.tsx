@@ -37,8 +37,15 @@ export function AuditsPage() {
   const [selected, setSelected] = useState<AuditEvent | null>(null);
   const [downloadingCompliance, setDownloadingCompliance] = useState(false);
   const [complianceReport, setComplianceReport] = useState<AuditComplianceReport | null>(null);
+  const [kind, setKind] = useState<string>('');
   const summary = useApiData(() => api.get<AuditReportSummary>('/api/v1/audits/reports/summary'), []);
-  const events = useApiData(() => api.get<AuditListResponse>('/api/v1/audits/events'), []);
+  const events = useApiData(
+    () =>
+      kind
+        ? api.get<AuditListResponse>(`/api/v1/audits/typed?kind=${encodeURIComponent(kind)}`)
+        : api.get<AuditListResponse>('/api/v1/audits/events'),
+    [kind]
+  );
 
   const downloadComplianceReport = async () => {
     setDownloadingCompliance(true);
@@ -67,7 +74,7 @@ export function AuditsPage() {
       <div className="jg-page-header">
         <div>
           <Typography.Title level={2}>审计日志</Typography.Title>
-          <Typography.Text type="secondary">追踪登录、申请、审批、会话创建、撤销和断连等关键安全事件。</Typography.Text>
+          <Typography.Text type="secondary">追踪登录、申请、审批、会话、文件传输、改密和作业等分类安全事件。</Typography.Text>
         </div>
         <Button type="primary" loading={downloadingCompliance} onClick={downloadComplianceReport}>
           下载 SOC2 报表
@@ -99,7 +106,23 @@ export function AuditsPage() {
       <Card>
         <Space className="jg-block" wrap>
           <Input.Search placeholder="关键词 / 资源 / actor" style={{ width: 260 }} />
-          <Select placeholder="事件类型" style={{ width: 180 }} allowClear options={[{ value: 'workflow', label: 'Workflow' }, { value: 'session', label: 'Session' }, { value: 'auth', label: 'Auth' }]} />
+          <Select
+            placeholder="事件类型"
+            style={{ width: 200 }}
+            allowClear
+            aria-label="审计分类"
+            value={kind || undefined}
+            onChange={(value) => setKind(value ?? '')}
+            options={[
+              { value: 'operate', label: '操作日志' },
+              { value: 'activity', label: '活动日志' },
+              { value: 'file_transfer', label: '文件传输' },
+              { value: 'password_change', label: '改密日志' },
+              { value: 'user_session', label: '在线会话' },
+              { value: 'job', label: '作业日志' },
+              { value: 'integration', label: '集成应用' }
+            ]}
+          />
         </Space>
         {events.loading ? <LoadingState /> : null}
         {events.error ? <ErrorState message={events.error} onRetry={events.reload} /> : null}

@@ -15,6 +15,7 @@ from app.api.automation import router as automation_router
 from app.api.connectors import router as connectors_router
 from app.api.notification_deliveries import router as notification_deliveries_router
 from app.api.notification_rules import router as notification_rules_router
+from app.api.session_ops import router as session_ops_router
 from app.api.session_recordings import router as session_recordings_router
 from app.api.sessions.routes import router as sessions_router
 from app.api.ssh_certificate_authorities import router as ssh_ca_router
@@ -58,6 +59,12 @@ DB_BACKED_GET_ROUTE_ROUTING_INVENTORY = {
     ("GET", "/tenancy/projects"),
     ("GET", "/tenancy/teams"),
     ("GET", "/webhook-endpoints/"),
+    ("GET", "/session-ops/sessions/{session_id}/joins"),
+    ("GET", "/session-ops/endpoints"),
+    ("GET", "/session-ops/endpoint-rules"),
+    ("GET", "/session-ops/storage-backends"),
+    ("GET", "/session-ops/storage-backends/{backend_id}/commands"),
+    ("GET", "/api/v1/audits/online-sessions"),
     ("GET", "/workflows/approval-policies"),
     ("GET", "/workflows/grants/active"),
     ("GET", "/workflows/requests"),
@@ -70,6 +77,7 @@ AUDIT_SELF_MANAGED_GET_ROUTE_ROUTING_INVENTORY = {
     ("GET", "/api/v1/audits/events"),
     ("GET", "/api/v1/audits/reports/compliance"),
     ("GET", "/api/v1/audits/reports/summary"),
+    ("GET", "/api/v1/audits/typed"),
 }
 
 GET_ROUTE_ROUTING_INVENTORY = (
@@ -88,6 +96,7 @@ ROUTERS_WITH_GET_ROUTES = [
     notification_deliveries_router,
     notification_rules_router,
     session_recordings_router,
+    session_ops_router,
     sessions_router,
     ssh_ca_router,
     ssh_certificates_router,
@@ -109,6 +118,10 @@ def test_audit_routes_self_manage_sessions_without_request_db_dependency() -> No
         ("GET", "/api/v1/audits/events"),
         ("GET", "/api/v1/audits/reports/compliance"),
         ("GET", "/api/v1/audits/reports/summary"),
+        ("GET", "/api/v1/audits/typed"),
+        ("POST", "/api/v1/audits/typed"),
+        ("POST", "/api/v1/audits/ftp-logs"),
+        ("POST", "/api/v1/audits/job-logs"),
     ]
     for method, path in audit_routes:
         dependencies = _route_dependency_calls(router=audits_router, method=method, path=path)
@@ -460,6 +473,40 @@ def test_session_write_routes_keep_writer_service_dependency() -> None:
         )
         assert "get_session_gateway_service" in dependency_names
         assert "get_read_session_gateway_service" not in dependency_names
+
+
+def test_session_ops_read_routes_use_read_database_dependency() -> None:
+    for method, path in (
+        ("GET", "/session-ops/endpoints"),
+        ("GET", "/session-ops/endpoint-rules"),
+        ("GET", "/session-ops/storage-backends"),
+        ("GET", "/session-ops/sessions/{session_id}/joins"),
+        ("GET", "/session-ops/storage-backends/{backend_id}/commands"),
+    ):
+        dependencies = _route_dependency_calls(router=session_ops_router, method=method, path=path)
+        assert get_read_db in dependencies
+        assert get_db not in dependencies
+
+
+def test_session_ops_write_routes_keep_writer_database_dependency() -> None:
+    for method, path in (
+        ("POST", "/session-ops/sessions/{session_id}/shares"),
+        ("POST", "/session-ops/joins"),
+        ("POST", "/session-ops/endpoints"),
+        ("POST", "/session-ops/endpoint-rules"),
+        ("POST", "/session-ops/storage-backends"),
+    ):
+        dependencies = _route_dependency_calls(router=session_ops_router, method=method, path=path)
+        assert get_db in dependencies
+        assert get_read_db not in dependencies
+
+
+def test_session_ops_resolve_route_uses_read_database_dependency() -> None:
+    dependencies = _route_dependency_calls(
+        router=session_ops_router, method="POST", path="/session-ops/endpoints/resolve"
+    )
+    assert get_read_db in dependencies
+    assert get_db not in dependencies
 
 
 def test_workflow_approval_policy_read_routes_use_read_database_dependency() -> None:

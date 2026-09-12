@@ -120,6 +120,23 @@ export type SessionRecord = {
   audit_event_ids: string[];
 };
 
+export type SessionJoinRecord = {
+  id: string;
+  session_id: string;
+  share_id: string;
+  joiner_username: string;
+  mode: string;
+};
+
+export type SessionEndpoint = {
+  id: number;
+  name: string;
+  host: string;
+  port: number;
+  protocol: string;
+  is_active: boolean;
+};
+
 export type SessionCommandEvent = {
   id: number;
   tenant_id: string;

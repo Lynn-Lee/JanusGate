@@ -150,6 +150,15 @@ function installFetch() {
     if (url.endsWith('/api/v1/sessions/') && method === 'GET') return Response.json({ items: [session], total: 1 });
     if (url.endsWith('/api/v1/session-recordings/1/commands') && method === 'GET') return Response.json({ items: [sessionCommand], total: 1 });
     if (url.endsWith('/api/v1/audits/events')) return Response.json({ items: [audit], total: 1, limit: 50, offset: 0 });
+    if (url.includes('/api/v1/audits/typed?')) return Response.json({ items: [audit], total: 1, limit: 50, offset: 0 });
+    if (url.endsWith('/api/v1/audits/online-sessions')) return Response.json({ items: [], total: 0 });
+    if (url.endsWith('/api/v1/session-ops/endpoints') && method === 'GET') return Response.json({ items: [], total: 0 });
+    if (url.includes('/api/v1/session-ops/sessions/') && url.endsWith('/shares') && method === 'POST') {
+      return Response.json({ id: 'share-1', session_id: 'sess-1', code: 'share-code-demo', expires_at: '2026-09-12T12:00:00Z', mode: 'observe' }, { status: 201 });
+    }
+    if (url.endsWith('/api/v1/session-ops/joins') && method === 'POST') {
+      return Response.json({ id: 'join-1', session_id: 'sess-1', share_id: 'share-1', joiner_username: 'alice', mode: 'observe' }, { status: 201 });
+    }
     if (url.endsWith('/api/v1/audits/reports/summary')) return Response.json(auditReportSummary);
     if (url.endsWith('/api/v1/audits/reports/compliance?template=soc2-access')) return Response.json(auditComplianceReport);
     if (url.endsWith('/api/v1/admin/license-summary')) return Response.json(licenseSummary);
@@ -298,6 +307,38 @@ describe('MVP pages', () => {
       expect(fetchMock).toHaveBeenCalledWith(
         '/api/v1/session-recordings/1/commands',
         expect.any(Object)
+      )
+    );
+  });
+
+  it('filters audit events by typed kind', async () => {
+    const fetchMock = installFetch();
+    vi.stubGlobal('fetch', fetchMock);
+    history.pushState(null, '', '/audits');
+    render(<App />);
+    expect(await screen.findByRole('heading', { name: '审计日志' })).toBeInTheDocument();
+    await userEvent.click(screen.getByLabelText('审计分类'));
+    await userEvent.click(await screen.findByText('文件传输'));
+    await waitFor(() =>
+      expect(fetchMock).toHaveBeenCalledWith(
+        expect.stringContaining('/api/v1/audits/typed?kind=file_transfer'),
+        expect.any(Object)
+      )
+    );
+  });
+
+  it('issues a read-only session share code', async () => {
+    const fetchMock = installFetch();
+    vi.stubGlobal('fetch', fetchMock);
+    history.pushState(null, '', '/sessions');
+    render(<App />);
+    expect(await screen.findByRole('button', { name: '共享监控' })).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: '共享监控' }));
+    expect(await screen.findByText(/当前共享码 share-code-demo/)).toBeInTheDocument();
+    await waitFor(() =>
+      expect(fetchMock).toHaveBeenCalledWith(
+        '/api/v1/session-ops/sessions/session-1/shares',
+        expect.objectContaining({ method: 'POST' })
       )
     );
   });

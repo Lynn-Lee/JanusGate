@@ -62,18 +62,10 @@ def upgrade() -> None:
 
     op.add_column("assets", sa.Column("zone_id", sa.Integer(), nullable=True))
     op.create_index(op.f("ix_assets_zone_id"), "assets", ["zone_id"], unique=False)
-    op.create_foreign_key(
-        "fk_assets_zone_id_zones",
-        "assets",
-        "zones",
-        ["zone_id"],
-        ["id"],
-        ondelete="SET NULL",
-    )
+    # ORM `Asset.zone_id` 无 ForeignKey；SQLite 也不能 ALTER ADD CONSTRAINT。
 
 
 def downgrade() -> None:
-    op.drop_constraint("fk_assets_zone_id_zones", "assets", type_="foreignkey")
     op.drop_index(op.f("ix_assets_zone_id"), table_name="assets")
     op.drop_column("assets", "zone_id")
     op.drop_index(op.f("ix_zone_gateways_asset_id"), table_name="zone_gateways")

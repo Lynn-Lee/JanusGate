@@ -46,8 +46,10 @@ External license service evidence 固定在 `docs/site/fixtures/license-operatio
 
 ## 审计与报表
 
-- 审计日志页展示当前租户事件列表和报表摘要。
+- 审计日志页展示当前租户事件列表、分类筛选（操作 / 活动 / 文件传输 / 改密 / 在线会话 / 作业 / 集成）和报表摘要。
+- 分类日志全部写入 #t61 hash chain 与 WORM 归档，不另建可改写账本。
 - SOC2 合规报表导出只返回事件 ID、hash chain 边界、签名和 WORM 归档元数据，不返回原始 metadata、message、resource_id 或 session_id 明细。
+- 会话页可生成只读共享码、以观察者加入，并查看连接端点。详见 [审计类型与会话高级能力](audit-types.md)。
 
 ## 运维门禁
 

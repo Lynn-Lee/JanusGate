@@ -2,17 +2,32 @@
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.audits.schemas import (
     AuditComplianceReport,
     AuditEvent,
     AuditEventCreate,
     AuditEventList,
+    AuditKind,
     AuditReportSummary,
     AuditSeverity,
+    FileTransferLogCreate,
+    JobLogCreate,
+    OnlineSessionItem,
+    OnlineSessionList,
+    TypedAuditCreate,
 )
 from app.api.audits.service import audit_service
+from app.core.database import get_read_db
 from app.core.deps import current_user
+from app.services.audit_types import (
+    create_typed_event,
+    list_typed_events,
+    record_file_transfer,
+    record_job_log,
+)
+from app.services.session_ops import list_online_sessions
 
 router = APIRouter(prefix="/api/v1/audits", tags=["audits"])
 
@@ -67,3 +82,75 @@ async def get_audit_compliance_report(
     return await audit_service.compliance_report(
         tenant_id=str(user["tenant_id"]), template=template
     )
+
+
+@router.get("/typed", response_model=AuditEventList)
+async def list_typed_audit_events(
+    user: Annotated[dict[str, Any], Depends(current_user)],
+    kind: AuditKind,
+    limit: Annotated[int, Query(ge=1, le=200)] = 50,
+    offset: Annotated[int, Query(ge=0)] = 0,
+) -> AuditEventList:
+    """按 JumpServer 对标类型列出 hash chain 上的分类日志。"""
+
+    require_audit_permission("audit:read", user)
+    items, total = await list_typed_events(
+        tenant_id=str(user["tenant_id"]),
+        kind=kind,
+        limit=limit,
+        offset=offset,
+    )
+    return AuditEventList(items=items, total=total, limit=limit, offset=offset)
+
+
+@router.post("/typed", response_model=AuditEvent, status_code=status.HTTP_201_CREATED)
+async def create_typed_audit_event(
+    payload: TypedAuditCreate,
+    user: Annotated[dict[str, Any], Depends(current_user)],
+) -> AuditEvent:
+    require_audit_permission("audit:write", user)
+    return await create_typed_event(payload, user)
+
+
+@router.post("/ftp-logs", response_model=AuditEvent, status_code=status.HTTP_201_CREATED)
+async def create_file_transfer_log(
+    payload: FileTransferLogCreate,
+    user: Annotated[dict[str, Any], Depends(current_user)],
+) -> AuditEvent:
+    """SFTP 文件传输日志入库端点，写入 #t61 hash chain。"""
+
+    require_audit_permission("audit:write", user)
+    return await record_file_transfer(payload, user)
+
+
+@router.post("/job-logs", response_model=AuditEvent, status_code=status.HTTP_201_CREATED)
+async def create_job_log(
+    payload: JobLogCreate,
+    user: Annotated[dict[str, Any], Depends(current_user)],
+) -> AuditEvent:
+    require_audit_permission("audit:write", user)
+    return await record_job_log(payload, user)
+
+
+@router.get("/online-sessions", response_model=OnlineSessionList)
+async def get_online_sessions(
+    user: Annotated[dict[str, Any], Depends(current_user)],
+    db: AsyncSession = Depends(get_read_db),
+) -> OnlineSessionList:
+    """当前租户在线会话快照（可变状态）；历史开关机事件走 ``user_session`` 分类日志。"""
+
+    require_audit_permission("audit:read", user)
+    rows = await list_online_sessions(db, tenant_id=str(user["tenant_id"]))
+    items = [
+        OnlineSessionItem(
+            id=row.id,
+            subject_id=row.subject_id,
+            asset_id=row.asset_id,
+            account_id=row.account_id,
+            protocol=row.protocol,
+            status=row.status,
+            created_at=row.created_at,
+        )
+        for row in rows
+    ]
+    return OnlineSessionList(items=items, total=len(items))
