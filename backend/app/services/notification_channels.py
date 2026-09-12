@@ -94,12 +94,14 @@ def sanitize_channel(
         raise ChannelConfigError("INVALID_WEBHOOK_URL")
 
     if kind in {"webhook", "sms", "email"}:
+        secret: str | None
+        dest: str | None
         if kind in {"sms", "email"}:
             secret = (credential or "").strip()
             if not secret:
                 raise ChannelConfigError("CHANNEL_CREDENTIAL_REQUIRED")
             dest = (recipient or "").strip()
-            if kind == "email" and "@" not in dest:
+            if kind == "email" and "@" not in (dest or ""):
                 raise ChannelConfigError("EMAIL_RECIPIENT_REQUIRED")
             if kind == "sms" and not dest:
                 raise ChannelConfigError("SMS_RECIPIENT_REQUIRED")
@@ -137,25 +139,23 @@ def sanitize_channel(
 def _extract_im_secret(kind: str, parsed: Any, credential: str | None) -> str:
     query = parse_qs(parsed.query)
     supplied = (credential or "").strip()
-    token = ""
+    extracted = ""
     if kind == "dingtalk":
-        token = (query.get("access_token") or [""])[0].strip() or supplied
+        extracted = (query.get("access_token") or [""])[0].strip() or supplied
     elif kind == "wecom":
-        token = (query.get("key") or [""])[0].strip() or supplied
+        extracted = (query.get("key") or [""])[0].strip() or supplied
     elif kind in {"feishu", "lark"}:
-        token = parsed.path.rstrip("/").rsplit("/", 1)[-1].strip()
-        if token.lower() in _IM_PATH_PLACEHOLDERS:
-            token = supplied
-        elif supplied:
-            token = supplied
+        extracted = parsed.path.rstrip("/").rsplit("/", 1)[-1].strip()
+        if extracted.lower() in _IM_PATH_PLACEHOLDERS or supplied:
+            extracted = supplied
     else:
         rest = parsed.path.lstrip("/")
         if rest.startswith("services/"):
-            token = rest[len("services/") :].strip("/")
-        token = token or supplied
-    if not token or token.lower() in _IM_PATH_PLACEHOLDERS:
+            extracted = rest[len("services/") :].strip("/")
+        extracted = extracted or supplied
+    if not extracted or extracted.lower() in _IM_PATH_PLACEHOLDERS:
         raise ChannelConfigError("CHANNEL_CREDENTIAL_REQUIRED")
-    return token
+    return extracted
 
 
 def delivery_url(endpoint: WebhookEndpoint) -> str:
@@ -242,9 +242,9 @@ class ChannelNotificationSender(NotificationDeliverySender):
             "X-JanusGate-Tenant-Id": delivery.tenant_id,
         }
         if kind in {"sms", "email"}:
-            token = decrypt_field(endpoint.credential_encrypted or "")
-            if token:
-                headers["Authorization"] = f"Bearer {token}"
+            gateway_secret = decrypt_field(endpoint.credential_encrypted or "")
+            if gateway_secret:
+                headers["Authorization"] = f"Bearer {gateway_secret}"
         target = delivery_url(endpoint) if kind not in {"webhook", "sms", "email"} else endpoint.url
         try:
             response = await self._http().post(target, json=body, headers=headers)

@@ -14,11 +14,9 @@ from app.api.auth import router as auth_router
 from app.api.automation import router as automation_router
 from app.api.connectors import router as connectors_router
 from app.api.notification_deliveries import router as notification_deliveries_router
-from app.api.notification_events import (
-    events_router as notification_events_router,
-    inbox_router as in_app_messages_router,
-    subscriptions_router as notification_subscriptions_router,
-)
+from app.api.notification_events import events_router as notification_events_router
+from app.api.notification_events import inbox_router as in_app_messages_router
+from app.api.notification_events import subscriptions_router as notification_subscriptions_router
 from app.api.notification_rules import router as notification_rules_router
 from app.api.session_recordings import router as session_recordings_router
 from app.api.sessions.routes import router as sessions_router
