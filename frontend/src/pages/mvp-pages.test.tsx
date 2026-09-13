@@ -150,6 +150,32 @@ function installFetch() {
     if (url.endsWith('/api/v1/sessions/') && method === 'GET') return Response.json({ items: [session], total: 1 });
     if (url.endsWith('/api/v1/session-recordings/1/commands') && method === 'GET') return Response.json({ items: [sessionCommand], total: 1 });
     if (url.endsWith('/api/v1/audits/events')) return Response.json({ items: [audit], total: 1, limit: 50, offset: 0 });
+    if (url.endsWith('/api/v1/audits/operate-logs')) return Response.json({ items: [], total: 0, limit: 50, offset: 0 });
+    if (url.endsWith('/api/v1/audits/activity-logs')) return Response.json({ items: [], total: 0, limit: 50, offset: 0 });
+    if (url.endsWith('/api/v1/audits/file-transfers')) {
+      return Response.json({
+        items: [{
+          ...audit,
+          id: 'ftp-1',
+          category: 'file_transfer',
+          event_type: 'session.file_transfer',
+          action: 'file.upload',
+          message: 'SFTP upload success',
+          metadata: { remote_path: '/var/tmp/id_rsa', sha256: 'abc', token: 'secret-token' }
+        }],
+        total: 1,
+        limit: 50,
+        offset: 0
+      });
+    }
+    if (url.endsWith('/api/v1/audits/password-changes')) return Response.json({ items: [], total: 0, limit: 50, offset: 0 });
+    if (url.endsWith('/api/v1/audits/job-logs')) return Response.json({ items: [], total: 0, limit: 50, offset: 0 });
+    if (url.endsWith('/api/v1/audits/online-sessions')) {
+      return Response.json({
+        items: [{ id: 'live-1', subject_id: '1', asset_id: '1', account_id: 'root', protocol: 'ssh', status: 'active', client_ip: '203.0.113.10', created_at: '2026-07-01T00:03:00Z', updated_at: '2026-07-01T00:03:00Z' }],
+        total: 1
+      });
+    }
     if (url.endsWith('/api/v1/audits/reports/summary')) return Response.json(auditReportSummary);
     if (url.endsWith('/api/v1/audits/reports/compliance?template=soc2-access')) return Response.json(auditComplianceReport);
     if (url.endsWith('/api/v1/admin/license-summary')) return Response.json(licenseSummary);
@@ -300,6 +326,26 @@ describe('MVP pages', () => {
         expect.any(Object)
       )
     );
+  });
+
+  it('shows file transfer and online session typed audit tabs without leaking connection urls', async () => {
+    history.pushState(null, '', '/audits');
+    render(<App />);
+
+    expect(await screen.findByRole('heading', { name: '审计日志' })).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('tab', { name: '文件传输' }));
+    expect(await screen.findByText('SFTP upload success')).toBeInTheDocument();
+    expect(screen.queryByText('/var/tmp/id_rsa')).not.toBeInTheDocument();
+    await userEvent.click(screen.getByText('查看脱敏 metadata'));
+    const drawer = await screen.findByRole('dialog');
+    expect(within(drawer).getByText(/\/var\/tmp\/id_rsa/)).toBeInTheDocument();
+    expect(within(drawer).getByText(/\*\*\*\*\*\*/)).toBeInTheDocument();
+    expect(screen.queryByText('secret-token')).not.toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole('tab', { name: '在线会话' }));
+    expect(await screen.findByText('live-1')).toBeInTheDocument();
+    expect(screen.getByText('203.0.113.10')).toBeInTheDocument();
+    expect(screen.queryByText(/ssh:\/\//)).not.toBeInTheDocument();
   });
 
   it('redacts sensitive audit metadata in detail drawer', async () => {
@@ -615,32 +661,6 @@ describe('MVP pages', () => {
 
 
 describe('#t69 host key overlay and connect list', () => {
-  const k8sPlatform = { id: 2, name: 'Kubernetes', category: 'cloud', protocols: '["k8s"]', is_active: true };
-  const mixedPlatform = { id: 3, name: 'Mixed', category: 'host', protocols: '["ssh","k8s"]', is_active: true };
-  const k8sAsset = { id: 2, name: 'prod-cluster', address: 'k8s.internal', platform_id: 2, port: 443, username: '', is_active: true, description: '', created_at: '2026-07-01T00:00:00Z', namespace: 'prod', has_server_ca: true };
-  const mixedAsset = { id: 3, name: 'bastion', address: '10.0.0.11', platform_id: 3, port: 22, username: 'ops', is_active: true, description: '', created_at: '2026-07-01T00:00:00Z', namespace: 'prod', has_server_ca: true };
-
-  function installK8sConnectFetch(podsResponse: Response | ((url: string) => Response | undefined)) {
-    const fetchMock = installFetch();
-    vi.stubGlobal('fetch', async (input: RequestInfo | URL, init?: RequestInit) => {
-      const url = String(input);
-      const method = init?.method ?? 'GET';
-      if (url.endsWith('/api/v1/assets/') && method === 'GET') {
-        return Response.json([asset, k8sAsset, mixedAsset]);
-      }
-      if (url.endsWith('/api/v1/assets/platforms')) {
-        return Response.json([platform, k8sPlatform, mixedPlatform]);
-      }
-      if (url.includes('/k8s/pods')) {
-        const custom = typeof podsResponse === 'function' ? podsResponse(url) : podsResponse;
-        if (custom) {
-          return custom;
-        }
-      }
-      return fetchMock(input, init);
-    });
-  }
-
   it('shows k8s assets on the connect list and opens 建连弹层 after listing pods', async () => {
     const k8sPlatform = { id: 2, name: 'Kubernetes', category: 'cloud', protocols: '["k8s"]', is_active: true };
     const mixedPlatform = { id: 3, name: 'Mixed', category: 'host', protocols: '["ssh","k8s"]', is_active: true };

@@ -15,6 +15,21 @@ class AuditCategory(StrEnum):
     vault = "vault"
     workflow = "workflow"
     audit = "audit"
+    operate = "operate"
+    activity = "activity"
+    file_transfer = "file_transfer"
+    password_change = "password_change"
+    job = "job"
+
+
+class FileTransferDirection(StrEnum):
+    upload = "upload"
+    download = "download"
+
+
+class FileTransferStatus(StrEnum):
+    success = "success"
+    failed = "failed"
 
 
 class AuditSeverity(StrEnum):
@@ -90,6 +105,79 @@ class AuditReportSummary(BaseModel):
     by_severity: dict[str, int]
     by_category: dict[str, int]
     by_siem_delivery_status: dict[str, int]
+
+
+class TypedAuditLogCreate(BaseModel):
+    """操作 / 活动等分类审计的写入请求；最终仍并入 #t61 hash chain。"""
+
+    event_type: str = Field(min_length=3, max_length=120)
+    action: str = Field(min_length=1, max_length=120)
+    resource_type: str = Field(min_length=1, max_length=80)
+    resource_id: str = Field(min_length=1, max_length=120)
+    session_id: str | None = Field(default=None, max_length=120)
+    severity: AuditSeverity = AuditSeverity.low
+    message: str | None = Field(default=None, max_length=500)
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+    @field_validator("event_type", "action", "resource_type", "resource_id", "session_id")
+    @classmethod
+    def strip_text(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        stripped = value.strip()
+        if not stripped:
+            raise ValueError("字段不能为空")
+        return stripped
+
+
+class FileTransferIngest(BaseModel):
+    """连接器上报的一次 SFTP 文件传输（#t78 FTPLog）。"""
+
+    session_id: str | None = Field(default=None, max_length=120)
+    asset_id: str = Field(min_length=1, max_length=120)
+    account_id: str = Field(min_length=1, max_length=120)
+    remote_path: str = Field(min_length=1, max_length=1024)
+    direction: FileTransferDirection
+    size_bytes: int = Field(ge=0)
+    sha256: str = Field(default="", max_length=64)
+    status: FileTransferStatus
+    error_code: str = Field(default="", max_length=120)
+
+    @field_validator("session_id", "asset_id", "account_id", "remote_path", "sha256", "error_code")
+    @classmethod
+    def strip_text(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        return value.strip()
+
+    @field_validator("sha256")
+    @classmethod
+    def validate_sha256(cls, value: str) -> str:
+        stripped = value.strip().lower()
+        if not stripped:
+            return ""
+        if len(stripped) != 64 or any(char not in "0123456789abcdef" for char in stripped):
+            raise ValueError("sha256 必须是 64 位十六进制")
+        return stripped
+
+
+class OnlineSession(BaseModel):
+    """当前租户在线 PAM 会话（#t78 UserSession），不含连接 URL / token。"""
+
+    id: str
+    subject_id: str
+    asset_id: str
+    account_id: str
+    protocol: str
+    status: str
+    client_ip: str
+    created_at: datetime
+    updated_at: datetime
+
+
+class OnlineSessionList(BaseModel):
+    items: list[OnlineSession]
+    total: int
 
 
 class AuditComplianceReport(BaseModel):

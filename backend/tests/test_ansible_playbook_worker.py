@@ -173,6 +173,21 @@ async def test_playbook_handler_persists_completion_status(
     assert run.playbook_name == "linux-baseline.yml"
     assert run.target_count == 2
     assert run.error_code is None
+    from app.api.audits.service import audit_service
+
+    events, total = await audit_service.list_events(
+        tenant_id="tenant-a",
+        event_type=None,
+        severity=None,
+        limit=50,
+        offset=0,
+        categories=["job"],
+    )
+    assert total == 1
+    assert events[0].metadata["playbook_name"] == "linux-baseline.yml"
+    assert events[0].metadata["status"] == "completed"
+    assert "stdout" not in events[0].metadata
+    assert "inventory" not in events[0].metadata
 
 
 @pytest.mark.asyncio
