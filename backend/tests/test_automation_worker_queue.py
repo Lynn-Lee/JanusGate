@@ -180,3 +180,21 @@ async def test_automation_job_queue_allows_account_verify() -> None:
     assert job_id == "1700000000000-0"
     assert stream.calls[0][1]["job_type"] == "account.verify"
     assert json.loads(stream.calls[0][1]["payload_json"]) == {"account_id": 42}
+
+
+@pytest.mark.asyncio
+async def test_automation_job_queue_allows_ops_job() -> None:
+    stream = RecordingRedisStream()
+    queue = AutomationJobQueue(redis=stream, stream_name="janusgate:automation")
+    job_id = await queue.enqueue(
+        tenant_id="tenant-a",
+        job_type="ops.job",
+        requested_by="user-1",
+        payload={"execution_id": 7, "check_mode": False},
+    )
+    assert job_id == "1700000000000-0"
+    assert stream.calls[0][1]["job_type"] == "ops.job"
+    assert json.loads(stream.calls[0][1]["payload_json"]) == {
+        "check_mode": False,
+        "execution_id": 7,
+    }

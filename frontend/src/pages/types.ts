@@ -245,6 +245,46 @@ export type AutomationJobRun = {
   reason?: string | null;
 };
 
+export type OpsPlaybook = {
+  id: number;
+  name: string;
+  relative_path: string;
+  description: string;
+  status: string;
+};
+
+export type OpsJob = {
+  id: number;
+  name: string;
+  job_type: string;
+  playbook_id: number | null;
+  adhoc_module: string | null;
+  command: string | null;
+  target_asset_ids: number[];
+  extra_vars: Record<string, string | number | boolean>;
+  runas_account_id: number;
+  cron_expr: string | null;
+  next_run_at: string | null;
+  check_mode: boolean;
+  status: string;
+};
+
+export type OpsExecution = {
+  id: number;
+  job_id: number | null;
+  message_id: string | null;
+  job_type: string;
+  playbook_name: string;
+  command: string | null;
+  extra_vars: Record<string, string | number | boolean>;
+  target_asset_ids: number[];
+  check_mode: boolean;
+  status: string;
+  error_code: string | null;
+  requested_by: string;
+  created_at: string | null;
+};
+
 export type CredentialRotation = {
   id: number;
   tenant_id: string;

@@ -15,6 +15,7 @@ from app.api.automation import router as automation_router
 from app.api.connectors import router as connectors_router
 from app.api.notification_deliveries import router as notification_deliveries_router
 from app.api.notification_rules import router as notification_rules_router
+from app.api.ops import router as ops_router
 from app.api.session_recordings import router as session_recordings_router
 from app.api.sessions.routes import router as sessions_router
 from app.api.ssh_certificate_authorities import router as ssh_ca_router
@@ -48,6 +49,9 @@ DB_BACKED_GET_ROUTE_ROUTING_INVENTORY = {
     ("GET", "/connectors/"),
     ("GET", "/notification-deliveries/"),
     ("GET", "/notification-rules/"),
+    ("GET", "/ops/executions"),
+    ("GET", "/ops/jobs"),
+    ("GET", "/ops/playbooks"),
     ("GET", "/session-recordings/{recording_id}/commands"),
     ("GET", "/session-recordings/commands"),
     ("GET", "/sessions/"),
@@ -62,6 +66,7 @@ DB_BACKED_GET_ROUTE_ROUTING_INVENTORY = {
     ("GET", "/workflows/grants/active"),
     ("GET", "/workflows/requests"),
     ("GET", "/workflows/requests/{request_id}"),
+    ("GET", "/workflows/ticket-flows"),
 }
 
 # #t61：审计已持久化，但 AuditService 自管读写会话（独立 append-only 账本），故审计
@@ -87,6 +92,7 @@ ROUTERS_WITH_GET_ROUTES = [
     connectors_router,
     notification_deliveries_router,
     notification_rules_router,
+    ops_router,
     session_recordings_router,
     sessions_router,
     ssh_ca_router,
@@ -254,6 +260,40 @@ def test_session_recording_write_routes_keep_writer_database_dependency() -> Non
         )
         assert get_db in dependencies
         assert get_read_db not in dependencies
+
+
+def test_ops_read_routes_use_read_database_dependency() -> None:
+    read_routes = [
+        ("GET", "/ops/playbooks"),
+        ("GET", "/ops/jobs"),
+        ("GET", "/ops/executions"),
+    ]
+    for method, path in read_routes:
+        dependencies = _route_dependency_calls(router=ops_router, method=method, path=path)
+        assert get_read_db in dependencies
+        assert get_db not in dependencies
+
+
+def test_ops_write_routes_keep_writer_database_dependency() -> None:
+    write_routes = [
+        ("POST", "/ops/playbooks"),
+        ("POST", "/ops/jobs"),
+        ("POST", "/ops/jobs/{job_id}/run"),
+        ("POST", "/ops/adhoc"),
+        ("POST", "/ops/scheduler/tick"),
+    ]
+    for method, path in write_routes:
+        dependencies = _route_dependency_calls(router=ops_router, method=method, path=path)
+        assert get_db in dependencies
+        assert get_read_db not in dependencies
+
+
+def test_ticket_flow_read_route_uses_read_database_dependency() -> None:
+    dependencies = _route_dependency_calls(
+        router=workflows_router, method="GET", path="/workflows/ticket-flows"
+    )
+    assert get_read_db in dependencies
+    assert get_db not in dependencies
 
 
 def test_notification_read_routes_use_read_database_dependency() -> None:

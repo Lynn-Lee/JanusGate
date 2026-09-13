@@ -6,6 +6,7 @@ import { AppShell } from './components/AppShell';
 import { AccountsPage } from './pages/AccountsPage';
 import { AssetsPage } from './pages/AssetsPage';
 import { AuditsPage } from './pages/AuditsPage';
+import { JobsPage } from './pages/JobsPage';
 import { LoginPage } from './pages/LoginPage';
 import { SessionsPage } from './pages/SessionsPage';
 import { SettingsPage } from './pages/SettingsPage';
@@ -33,6 +34,7 @@ export default function App() {
               <Route element={<ProtectedShell />}>
                 <Route path="/assets" element={<AssetsPage />} />
                 <Route path="/accounts" element={<AccountsPage />} />
+                <Route path="/jobs" element={<JobsPage />} />
                 <Route path="/sessions" element={<SessionsPage />} />
                 <Route path="/workflow" element={<WorkflowPage />} />
                 <Route path="/tenancy" element={<TenancyPage />} />

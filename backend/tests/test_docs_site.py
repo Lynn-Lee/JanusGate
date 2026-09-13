@@ -17,6 +17,7 @@ def test_phase5_docs_site_foundation_is_wired_for_operator_handoff() -> None:
         REPO_ROOT / "docs/site/fixtures/runtime-alert-evidence.json"
     )
     api_docs = (REPO_ROOT / "docs/site/api.md").read_text()
+    job_center_docs = (REPO_ROOT / "docs/site/job-center.md").read_text()
     runbooks = (REPO_ROOT / "docs/site/runbooks.md").read_text()
     api_contract = (REPO_ROOT / "docs/api-contract.md").read_text()
     export_script = (REPO_ROOT / "scripts/export-openapi-json.sh").read_text()
@@ -27,6 +28,8 @@ def test_phase5_docs_site_foundation_is_wired_for_operator_handoff() -> None:
 
     assert "docs/site/index.md" in docs_readme
     assert "Phase 5 #t59" in docs_index
+    assert "rbac.md" in docs_index
+    assert "job-center.md" in docs_index
     assert "install.md" in docs_index
     assert "admin.md" in docs_index
     assert "api.md" in docs_index
@@ -73,6 +76,9 @@ def test_phase5_docs_site_foundation_is_wired_for_operator_handoff() -> None:
     assert "/api/v1/auth/login" in api_docs
     assert "/api/v1/sessions/" in api_docs
     assert "/api/v1/admin/license-summary" in api_docs
+    assert "/api/v1/ops/playbooks" in api_docs
+    assert "JSON-only" in job_center_docs
+    assert "ops.job" in job_center_docs
     assert "scripts/export-openapi-json.sh" in api_docs
     assert "Release checklist" in runbooks
     assert "helm rollback" in runbooks

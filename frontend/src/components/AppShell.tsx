@@ -6,7 +6,8 @@ import {
   KeyOutlined,
   LockOutlined,
   SafetyCertificateOutlined,
-  SettingOutlined
+  SettingOutlined,
+  ThunderboltOutlined
 } from '@ant-design/icons';
 import { Layout, Menu, Space, Tag, Typography, Button } from 'antd';
 import type { MenuProps } from 'antd';
@@ -18,6 +19,7 @@ const { Header, Sider, Content } = Layout;
 const navItems: Required<MenuProps>['items'] = [
   { key: '/assets', icon: <ClusterOutlined />, label: <Link to="/assets">资产</Link> },
   { key: '/accounts', icon: <KeyOutlined />, label: <Link to="/accounts">账号托管</Link> },
+  { key: '/jobs', icon: <ThunderboltOutlined />, label: <Link to="/jobs">作业中心</Link> },
   { key: '/sessions', icon: <DesktopOutlined />, label: <Link to="/sessions">会话</Link> },
   { key: '/workflow', icon: <SafetyCertificateOutlined />, label: <Link to="/workflow">Workflow/JIT</Link> },
   { key: '/tenancy', icon: <ApartmentOutlined />, label: <Link to="/tenancy">多租户</Link> },

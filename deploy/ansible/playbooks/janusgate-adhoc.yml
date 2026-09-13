@@ -1,0 +1,13 @@
+---
+- name: JanusGate adhoc command
+  hosts: all
+  gather_facts: false
+  tasks:
+    - name: Run command module
+      ansible.builtin.command:
+        cmd: "{{ adhoc_command }}"
+      when: adhoc_module == "command"
+    - name: Run shell module
+      ansible.builtin.shell:
+        cmd: "{{ adhoc_command }}"
+      when: adhoc_module == "shell"
