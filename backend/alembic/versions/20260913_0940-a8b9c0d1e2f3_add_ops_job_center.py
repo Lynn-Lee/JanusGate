@@ -26,8 +26,8 @@ def upgrade() -> None:
         sa.Column("relative_path", sa.String(length=255), nullable=False),
         sa.Column("description", sa.String(length=240), nullable=False),
         sa.Column("status", sa.String(length=32), nullable=False),
-        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=True),
-        sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=True),
+        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
+        sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
         sa.PrimaryKeyConstraint("id"),
         sa.UniqueConstraint("tenant_id", "name", name="uq_ops_playbooks_tenant_name"),
     )
@@ -49,8 +49,8 @@ def upgrade() -> None:
         sa.Column("next_run_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column("check_mode", sa.Boolean(), nullable=False),
         sa.Column("status", sa.String(length=32), nullable=False),
-        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=True),
-        sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=True),
+        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
+        sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
         sa.ForeignKeyConstraint(
             ["playbook_id"],
             ["ops_playbooks.id"],
@@ -106,8 +106,8 @@ def upgrade() -> None:
         sa.Column("check_mode", sa.Boolean(), nullable=False),
         sa.Column("status", sa.String(length=32), nullable=False),
         sa.Column("error_code", sa.String(length=120), nullable=True),
-        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=True),
-        sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=True),
+        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
+        sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
         sa.ForeignKeyConstraint(
             ["job_id"],
             ["ops_jobs.id"],

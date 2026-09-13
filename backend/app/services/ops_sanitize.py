@@ -68,7 +68,10 @@ def extra_vars(value: dict[str, Any] | None) -> dict[str, str | int | float | bo
             raise OpsConfigError("OPS_EXTRA_VARS_INVALID")
         if key.lower() in SENSITIVE_PAYLOAD_KEYS or key.lower().startswith("janusgate_"):
             raise OpsConfigError("OPS_EXTRA_VARS_SECRET")
-        if isinstance(item, bool) or isinstance(item, int) or isinstance(item, float):
+        if isinstance(item, bool):
+            cleaned[key] = item
+            continue
+        if isinstance(item, (int, float)):
             cleaned[key] = item
             continue
         if not isinstance(item, str):
@@ -144,39 +147,39 @@ def _reject_jinja(value: str) -> None:
 
 def _validate_cron_field(expr: str, lo: int, hi: int) -> None:
     for part in expr.split(","):
-        token = part.strip()
-        if token == "*":
+        chunk = part.strip()
+        if chunk == "*":
             continue
-        if token.startswith("*/"):
-            step = _int_token(token[2:], lo, hi)
+        if chunk.startswith("*/"):
+            step = _int_token(chunk[2:], lo, hi)
             if step <= 0:
                 raise OpsConfigError("OPS_CRON_INVALID")
             continue
-        if "-" in token:
-            start_s, end_s = token.split("-", 1)
+        if "-" in chunk:
+            start_s, end_s = chunk.split("-", 1)
             start, end = _int_token(start_s, lo, hi), _int_token(end_s, lo, hi)
             if start > end:
                 raise OpsConfigError("OPS_CRON_INVALID")
             continue
-        _int_token(token, lo, hi)
+        _int_token(chunk, lo, hi)
 
 
 def _cron_field_matches(expr: str, value: int, lo: int, hi: int) -> bool:
     for part in expr.split(","):
-        token = part.strip()
-        if token == "*":
+        chunk = part.strip()
+        if chunk == "*":
             return True
-        if token.startswith("*/"):
-            step = int(token[2:])
+        if chunk.startswith("*/"):
+            step = int(chunk[2:])
             if (value - lo) % step == 0 and lo <= value <= hi:
                 return True
             continue
-        if "-" in token:
-            start_s, end_s = token.split("-", 1)
+        if "-" in chunk:
+            start_s, end_s = chunk.split("-", 1)
             if int(start_s) <= value <= int(end_s):
                 return True
             continue
-        if int(token) == value:
+        if int(chunk) == value:
             return True
     return False
 

@@ -17,7 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from app.core.config import Settings, settings
 from app.models.asset import Asset
 from app.models.automation import AutomationJobRun
-from app.services.automation_worker import JsonValue, SENSITIVE_PAYLOAD_KEYS
+from app.services.automation_worker import SENSITIVE_PAYLOAD_KEYS, JsonValue
 
 
 @dataclass(frozen=True)
@@ -323,7 +323,10 @@ def _safe_extra_vars(
         lowered = key.lower()
         if lowered in SENSITIVE_PAYLOAD_KEYS or lowered.startswith("janusgate_"):
             raise ValueError("ANSIBLE_EXTRA_VARS_SECRET")
-        if isinstance(value, bool) or isinstance(value, int) or isinstance(value, float):
+        if isinstance(value, bool):
+            cleaned[key] = value
+            continue
+        if isinstance(value, (int, float)):
             cleaned[key] = value
             continue
         if not isinstance(value, str) or "{{" in value or "{%" in value or "{#" in value:
