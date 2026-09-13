@@ -15,6 +15,7 @@ from app.models.automation import AutomationJobRun
 from app.models.connector import Connector
 from app.models.host_key import AssetHostKeyModel
 from app.models.oidc import OidcProvider
+from app.models.ops import OpsJob, OpsJobExecution, OpsJobVariable, OpsPlaybook
 from app.models.protocol import PlatformProtocolModel, ProtocolModel
 from app.models.rbac import RoleBindingModel, RoleModel, RoleObjectPermissionModel
 from app.models.session import SessionModel
@@ -61,6 +62,10 @@ __all__ = [
     "NotificationRule",
     "NodeModel",
     "OidcProvider",
+    "OpsJob",
+    "OpsJobExecution",
+    "OpsJobVariable",
+    "OpsPlaybook",
     "NotificationDelivery",
     "Organization",
     "Platform",

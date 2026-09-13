@@ -113,6 +113,8 @@ Approval policy DSL 当前支持 `context_equals`、`context_in`、`context_numb
 - `asset.scan`
 - `credential.rotate`
 - `ansible.playbook`
+- `account.verify`
+- `ops.job`
 
 ### POST `/api/v1/automation/jobs/asset-scans`
 
@@ -238,6 +240,42 @@ Approval policy DSL 当前支持 `context_equals`、`context_in`、`context_numb
 
 - 响应只返回 job run 状态元数据，不返回 queue payload、inventory、stdout、stderr、secret 引用、凭据明文或下游执行输出。
 - 租户隔离以当前认证用户为准，跨租户 run 不参与列表或 total。
+
+## Phase 6 作业中心（#t77）
+
+作业中心在 #t52 JSON-only 队列之上提供 Playbook 登记、作业定义、临时命令、参数变量、周期调度与执行记录。队列 `job_type` 为 `ops.job`，payload **只含** `execution_id` 与 `check_mode`。命令、extra vars、目标资产、runas 账号从 `OpsJobExecution` 加载，禁止 pickle，禁止把凭据写进 Redis 或 Ansible argv。
+
+鉴权：`automation:read` / `automation:write` 或 `admin`。租户以当前认证用户为准。
+
+### POST `/api/v1/ops/playbooks`
+
+登记官方 playbook root 内相对 `.yml/.yaml` 路径。绝对路径、`..` 与非 YAML 后缀 fail-closed 为 `OPS_PLAYBOOK_PATH_INVALID`。
+
+### POST `/api/v1/ops/jobs`
+
+创建 `playbook` 或 `adhoc` 作业。`adhoc` 仅允许 `shell`/`command`。extra vars 仅标量，敏感键 / `janusgate_` 前缀 / Jinja fail-closed。执行身份必须是租户内 active SSH 账号。
+
+### POST `/api/v1/ops/jobs/{job_id}/run`
+
+立即执行作业，写入 `ops.job` 队列消息。响应 `202` 返回执行记录，不返回凭据或 runner stdout/stderr。
+
+### POST `/api/v1/ops/adhoc`
+
+执行一次性临时命令。入队前走 `PolicyDecisionService.evaluate_command`；`DENY` → `OPS_COMMAND_DENIED`，`REVIEW` → `OPS_COMMAND_REVIEW_REQUIRED`（本切片不开复核工单）。
+
+### GET `/api/v1/ops/playbooks` / `GET /api/v1/ops/jobs` / `GET /api/v1/ops/executions`
+
+按当前租户列出目录项、作业与最近执行记录。
+
+### POST `/api/v1/ops/scheduler/tick`
+
+扫描当前租户 `next_run_at` 已到期的 active cron 作业并入队，然后推进下次运行时间。Cron 为 5 段表达式，按 UTC 计算。
+
+安全语义：
+
+- 队列 payload 不得包含 command、extra vars、password、token、secret、私钥或 `secret_id`。
+- inventory 最多带 `ansible_user`；extra vars 以临时 JSON 文件 `--extra-vars @file` 传递。
+- 跨租户 Playbook / 作业 / 执行记录不可见。
 
 安全语义：
 

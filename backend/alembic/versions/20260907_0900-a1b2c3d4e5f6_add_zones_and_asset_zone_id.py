@@ -62,18 +62,19 @@ def upgrade() -> None:
 
     op.add_column("assets", sa.Column("zone_id", sa.Integer(), nullable=True))
     op.create_index(op.f("ix_assets_zone_id"), "assets", ["zone_id"], unique=False)
-    op.create_foreign_key(
-        "fk_assets_zone_id_zones",
-        "assets",
-        "zones",
-        ["zone_id"],
-        ["id"],
-        ondelete="SET NULL",
-    )
+    with op.batch_alter_table("assets") as batch_op:
+        batch_op.create_foreign_key(
+            "fk_assets_zone_id_zones",
+            "zones",
+            ["zone_id"],
+            ["id"],
+            ondelete="SET NULL",
+        )
 
 
 def downgrade() -> None:
-    op.drop_constraint("fk_assets_zone_id_zones", "assets", type_="foreignkey")
+    with op.batch_alter_table("assets") as batch_op:
+        batch_op.drop_constraint("fk_assets_zone_id_zones", type_="foreignkey")
     op.drop_index(op.f("ix_assets_zone_id"), table_name="assets")
     op.drop_column("assets", "zone_id")
     op.drop_index(op.f("ix_zone_gateways_asset_id"), table_name="zone_gateways")

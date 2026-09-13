@@ -34,12 +34,14 @@ def _database_url() -> str:
 
 def run_migrations_offline() -> None:
     """离线（--sql）模式：只按 URL 生成 SQL，不建立实际连接。"""
+    url = _database_url()
     context.configure(
-        url=_database_url(),
+        url=url,
         target_metadata=target_metadata,
         literal_binds=True,
         dialect_opts={"paramstyle": "named"},
         compare_type=True,
+        render_as_batch=url.startswith("sqlite"),
     )
     with context.begin_transaction():
         context.run_migrations()
@@ -51,6 +53,7 @@ def _run_migrations(connection: Connection) -> None:
         connection=connection,
         target_metadata=target_metadata,
         compare_type=True,
+        render_as_batch=connection.dialect.name == "sqlite",
     )
     with context.begin_transaction():
         context.run_migrations()

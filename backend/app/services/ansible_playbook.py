@@ -7,7 +7,7 @@ import os
 import resource
 import tempfile
 from collections.abc import Awaitable, Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Protocol
 
@@ -17,7 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from app.core.config import Settings, settings
 from app.models.asset import Asset
 from app.models.automation import AutomationJobRun
-from app.services.automation_worker import JsonValue
+from app.services.automation_worker import JsonValue, SENSITIVE_PAYLOAD_KEYS
 
 
 @dataclass(frozen=True)
@@ -37,6 +37,8 @@ class AnsiblePlaybookRun:
     playbook_name: str
     check_mode: bool
     targets: list[AnsiblePlaybookTarget]
+    extra_vars: dict[str, str | int | float | bool] = field(default_factory=dict)
+    ansible_user: str | None = None
 
 
 @dataclass(frozen=True)
@@ -88,10 +90,21 @@ class LocalAnsiblePlaybookRunner:
             work_dir = Path(work_dir_name)
             inventory_path = work_dir / "inventory.json"
             inventory_path.write_text(
-                json.dumps(_build_inventory(playbook.targets), sort_keys=True),
+                json.dumps(
+                    _build_inventory(playbook.targets, ansible_user=playbook.ansible_user),
+                    sort_keys=True,
+                ),
                 encoding="utf-8",
             )
             args = [self._executable, str(playbook_path), "-i", str(inventory_path)]
+            extra_vars = _safe_extra_vars(playbook.extra_vars)
+            if extra_vars:
+                extra_vars_path = work_dir / "extra-vars.json"
+                extra_vars_path.write_text(
+                    json.dumps(extra_vars, sort_keys=True),
+                    encoding="utf-8",
+                )
+                args.extend(["--extra-vars", f"@{extra_vars_path}"])
             if playbook.check_mode:
                 args.append("--check")
             try:
@@ -299,22 +312,45 @@ def _safe_error_code(exc: Exception) -> str:
     return exc.__class__.__name__[:120]
 
 
-def _build_inventory(targets: list[AnsiblePlaybookTarget]) -> dict[str, object]:
-    return {
-        "all": {
-            "hosts": {
-                f"asset_{target.id}": {
-                    "ansible_host": target.address,
-                    "ansible_port": target.port,
-                    "janusgate_asset_id": target.id,
-                    "janusgate_asset_name": target.name,
-                    "janusgate_platform_id": target.platform_id,
-                    "janusgate_tenant_id": target.tenant_id,
-                }
-                for target in targets
-            }
+def _safe_extra_vars(
+    extra_vars: dict[str, str | int | float | bool] | None,
+) -> dict[str, str | int | float | bool]:
+    """拒绝敏感键与非标量，避免 extra-vars 文件成为第二条凭据面。"""
+    if not extra_vars:
+        return {}
+    cleaned: dict[str, str | int | float | bool] = {}
+    for key, value in extra_vars.items():
+        lowered = key.lower()
+        if lowered in SENSITIVE_PAYLOAD_KEYS or lowered.startswith("janusgate_"):
+            raise ValueError("ANSIBLE_EXTRA_VARS_SECRET")
+        if isinstance(value, bool) or isinstance(value, int) or isinstance(value, float):
+            cleaned[key] = value
+            continue
+        if not isinstance(value, str) or "{{" in value or "{%" in value or "{#" in value:
+            raise ValueError("ANSIBLE_EXTRA_VARS_INVALID")
+        cleaned[key] = value
+    return cleaned
+
+
+def _build_inventory(
+    targets: list[AnsiblePlaybookTarget],
+    *,
+    ansible_user: str | None = None,
+) -> dict[str, object]:
+    hosts: dict[str, dict[str, object]] = {}
+    for target in targets:
+        host: dict[str, object] = {
+            "ansible_host": target.address,
+            "ansible_port": target.port,
+            "janusgate_asset_id": target.id,
+            "janusgate_asset_name": target.name,
+            "janusgate_platform_id": target.platform_id,
+            "janusgate_tenant_id": target.tenant_id,
         }
-    }
+        if ansible_user:
+            host["ansible_user"] = ansible_user
+        hosts[f"asset_{target.id}"] = host
+    return {"all": {"hosts": hosts}}
 
 
 def _safe_ansible_env() -> dict[str, str]:
