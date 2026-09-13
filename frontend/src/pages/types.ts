@@ -150,7 +150,19 @@ export type AuditEvent = {
   created_at: string;
 };
 
-export type AuditListResponse = { items: AuditEvent[]; total: number; limit: number; offset: number };
+export type OnlineSession = {
+  id: string;
+  subject_id: string;
+  asset_id: string;
+  account_id: string;
+  protocol: string;
+  status: string;
+  client_ip: string;
+  created_at: string;
+  updated_at: string;
+};
+
+export type OnlineSessionListResponse = { items: OnlineSession[]; total: number };
 
 export type AuditReportSummary = {
   tenant_id: string;

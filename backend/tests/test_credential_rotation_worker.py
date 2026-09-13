@@ -100,6 +100,21 @@ async def test_rotation_worker_executes_due_scheduled_rotation(
     assert rotation.status == "completed"
     assert rotation.previous_secret_id == "sec_tenant_a_deploy"
     assert rotation.new_secret_id == "sec_tenant_a_deploy:v2"
+    from app.api.audits.service import audit_service
+
+    events, total = await audit_service.list_events(
+        tenant_id="tenant-a",
+        event_type=None,
+        severity=None,
+        limit=50,
+        offset=0,
+        categories=["password_change"],
+    )
+    assert total == 1
+    assert events[0].action == "credential.rotate"
+    assert events[0].metadata["status"] == "completed"
+    assert "secret_id" not in events[0].metadata
+    assert "sec_tenant_a_deploy" not in str(events[0].metadata)
 
 
 @pytest.mark.asyncio
@@ -127,6 +142,20 @@ async def test_rotation_worker_marks_failed_without_changing_account_secret(
     assert rotation.previous_secret_id == "sec_tenant_a_deploy"
     assert rotation.new_secret_id is None
     assert rotation.error_code == "CONNECTOR_ROTATION_FAILED"
+    from app.api.audits.service import audit_service
+
+    events, total = await audit_service.list_events(
+        tenant_id="tenant-a",
+        event_type=None,
+        severity=None,
+        limit=50,
+        offset=0,
+        categories=["password_change"],
+    )
+    assert total == 1
+    assert events[0].metadata["status"] == "failed"
+    assert events[0].severity.value == "medium"
+    assert "secret_id" not in events[0].metadata
 
 
 @pytest.mark.asyncio

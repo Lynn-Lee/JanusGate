@@ -60,7 +60,7 @@
 - Sessions：`/api/v1/sessions/*`，会话创建/关闭，JIT grant 绑定。
 - Workflow/JIT：`/api/v1/workflows/*`，申请、提交、审批、拒绝、撤销、active grant。
 - Approval Policies：`/api/v1/workflows/approval-policies`，Phase 4 JIT 策略模板 / 审批策略基础管理与当前租户策略模拟。
-- Audit/SIEM：`/api/v1/audits/events`、`/api/v1/audits/reports/summary` 与 `/api/v1/audits/reports/compliance`，审计事件创建、检索、当前租户报表汇总和合规报表导出基础；合规报表响应包含 append-only WORM 归档元数据，不包含原始审计 metadata/message/resource/session 明细。
+- Audit/SIEM：`/api/v1/audits/events`、分类日志 `GET/POST /api/v1/audits/operate-logs`、`GET/POST /api/v1/audits/activity-logs`、`GET /api/v1/audits/file-transfers`、`GET /api/v1/audits/password-changes`、`GET /api/v1/audits/job-logs`、在线会话 `GET /api/v1/audits/online-sessions`、`/api/v1/audits/reports/summary` 与 `/api/v1/audits/reports/compliance`。分类日志全部并入 #t61 hash chain 与 WORM，不另建可绕过账本的表。连接器文件传输入库为 `POST /api/v1/connectors/{connector_id}/file-transfers`。合规报表响应包含 append-only WORM 归档元数据，不包含原始审计 metadata/message/resource/session 明细。
 - Tenancy：`/api/v1/tenancy/*`，Phase 4 组织/团队/项目管理与租户隔离 API。
 - Session Recordings：`/api/v1/sessions/{session_id}/recordings` 与 `/api/v1/session-recordings/*`，Phase 4 会话录制元数据、命令事件上报与命令检索。
 - Webhook Endpoints：`/api/v1/webhook-endpoints/*`，Phase 4 WebHook / 通知中心 endpoint 管理基础。

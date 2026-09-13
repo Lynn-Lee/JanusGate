@@ -32,6 +32,8 @@ def test_phase5_docs_site_foundation_is_wired_for_operator_handoff() -> None:
     assert "api.md" in docs_index
     assert "runbooks.md" in docs_index
     assert "admin-screenshots.md" in docs_index
+    assert "audit-types.md" in docs_index
+    assert "audit-types.md" in docs_readme
     assert "operation-runbook-evidence.json" in docs_index
     assert "license-operations-evidence.json" in docs_index
     assert "runtime-alert-evidence.json" in docs_index
@@ -39,6 +41,8 @@ def test_phase5_docs_site_foundation_is_wired_for_operator_handoff() -> None:
     assert "docker compose up --build -d" in install_guide
     assert "helm upgrade --install" in install_guide
     assert "License / Edition" in admin_guide
+    assert "分类日志" in admin_guide
+    assert "audit-types.md" in admin_guide
     assert "/api/v1/admin/license-summary" in admin_guide
     assert "External license service evidence" in admin_guide
     assert "截图证据" in admin_guide
@@ -93,6 +97,7 @@ def test_phase5_docs_site_foundation_is_wired_for_operator_handoff() -> None:
     assert "index.md" in build_script
     assert "runbooks.md" in build_script
     assert "admin-screenshots.md" in build_script
+    assert "audit-types.md" in build_script
     assert "assets/screenshots" in build_script
     assert "fixtures/admin-screenshot-data.json" in build_script
     assert "fixtures/admin-screenshot-archive.json" in build_script

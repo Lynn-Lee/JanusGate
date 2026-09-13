@@ -49,6 +49,7 @@ class CredentialRotationWorker:
                 rotation.new_secret_id = rotated.secret_id
                 rotation.error_code = None
                 rotation.status = "completed"
+            await _audit_rotation(account=account, rotation=rotation)
             processed += 1
 
         if processed:
@@ -128,6 +129,7 @@ class CredentialRotateWorkerHandler:
                 rotation.new_secret_id = rotated.secret_id
                 rotation.error_code = None
                 rotation.status = "completed"
+            await _audit_rotation(account=account, rotation=rotation)
             await session.commit()
 
 
@@ -162,6 +164,26 @@ async def _get_active_account(
         .where(Account.status == "active")
     )
     return result.scalar_one_or_none()
+
+
+async def _audit_rotation(*, account: Account, rotation: CredentialRotation) -> None:
+    """凭据轮换终态写入改密日志；不记录 secret_id 或明文。"""
+
+    from app.api.audits.typed import record_password_change
+
+    await record_password_change(
+        actor={
+            "id": rotation.requested_by or "system",
+            "username": rotation.requested_by or "system",
+            "tenant_id": account.tenant_id,
+        },
+        resource_type="account",
+        resource_id=str(account.id),
+        action="credential.rotate",
+        status=rotation.status,
+        message=f"账号凭据轮换 {rotation.status}",
+        metadata={"rotation_id": rotation.id, "protocol": account.protocol},
+    )
 
 
 def _as_utc(value: datetime) -> datetime:

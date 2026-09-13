@@ -250,6 +250,25 @@ class AnsiblePlaybookWorkerHandler:
             run.target_count = target_count
             run.error_code = error_code
             await session.commit()
+        if status in {"completed", "failed"}:
+            from app.api.audits.typed import record_job_log
+
+            await record_job_log(
+                actor={
+                    "id": requested_by,
+                    "username": requested_by,
+                    "tenant_id": tenant_id,
+                },
+                message_id=message_id,
+                job_type="ansible.playbook",
+                status=status,
+                metadata={
+                    "playbook_name": playbook_name,
+                    "check_mode": check_mode,
+                    "target_count": target_count,
+                    "error_code": error_code,
+                },
+            )
 
 
 async def _get_active_assets(

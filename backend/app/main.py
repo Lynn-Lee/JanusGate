@@ -22,6 +22,7 @@ from app.api import (
     automation,
     oidc,
     connectors,
+    file_transfers,
     notification_deliveries,
     notification_rules,
     rbac,
@@ -86,6 +87,7 @@ app.include_router(connectors.router, prefix="/api/v1")
 app.include_router(notification_deliveries.router, prefix="/api/v1")
 app.include_router(notification_rules.router, prefix="/api/v1")
 app.include_router(session_recordings.router, prefix="/api/v1")
+app.include_router(file_transfers.router, prefix="/api/v1")
 app.include_router(ssh_certificate_authorities.router, prefix="/api/v1")
 app.include_router(ssh_certificates.router, prefix="/api/v1")
 app.include_router(webhook_endpoints.router, prefix="/api/v1")

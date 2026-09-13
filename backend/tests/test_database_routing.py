@@ -13,6 +13,7 @@ from app.api.audits.routes import router as audits_router
 from app.api.auth import router as auth_router
 from app.api.automation import router as automation_router
 from app.api.connectors import router as connectors_router
+from app.api.file_transfers import router as file_transfers_router
 from app.api.notification_deliveries import router as notification_deliveries_router
 from app.api.notification_rules import router as notification_rules_router
 from app.api.session_recordings import router as session_recordings_router
@@ -68,12 +69,23 @@ DB_BACKED_GET_ROUTE_ROUTING_INVENTORY = {
 # GET 路由不挂请求级 get_db/get_read_db 依赖——从依赖图看仍是「无请求级 DB 依赖」。
 AUDIT_SELF_MANAGED_GET_ROUTE_ROUTING_INVENTORY = {
     ("GET", "/api/v1/audits/events"),
+    ("GET", "/api/v1/audits/operate-logs"),
+    ("GET", "/api/v1/audits/activity-logs"),
+    ("GET", "/api/v1/audits/file-transfers"),
+    ("GET", "/api/v1/audits/password-changes"),
+    ("GET", "/api/v1/audits/job-logs"),
     ("GET", "/api/v1/audits/reports/compliance"),
     ("GET", "/api/v1/audits/reports/summary"),
 }
 
+ONLINE_SESSION_READ_ROUTE_ROUTING_INVENTORY = {
+    ("GET", "/api/v1/audits/online-sessions"),
+}
+
 GET_ROUTE_ROUTING_INVENTORY = (
-    DB_BACKED_GET_ROUTE_ROUTING_INVENTORY | AUDIT_SELF_MANAGED_GET_ROUTE_ROUTING_INVENTORY
+    DB_BACKED_GET_ROUTE_ROUTING_INVENTORY
+    | AUDIT_SELF_MANAGED_GET_ROUTE_ROUTING_INVENTORY
+    | ONLINE_SESSION_READ_ROUTE_ROUTING_INVENTORY
 )
 
 ROUTERS_WITH_GET_ROUTES = [
@@ -85,6 +97,7 @@ ROUTERS_WITH_GET_ROUTES = [
     auth_router,
     automation_router,
     connectors_router,
+    file_transfers_router,
     notification_deliveries_router,
     notification_rules_router,
     session_recordings_router,
@@ -101,12 +114,25 @@ def test_all_get_routes_are_classified_in_database_routing_inventory() -> None:
     assert _all_get_route_keys() == GET_ROUTE_ROUTING_INVENTORY
 
 
+def test_online_session_route_uses_read_db_dependency() -> None:
+    dependencies = _route_dependency_calls(
+        router=audits_router, method="GET", path="/api/v1/audits/online-sessions"
+    )
+    assert get_read_db in dependencies
+    assert get_db not in dependencies
+
+
 def test_audit_routes_self_manage_sessions_without_request_db_dependency() -> None:
     # #t61：审计已持久化，但 AuditService 自管读写会话（写走主库、读走只读副本），
     # 故审计读/写路由都不挂请求级 get_db/get_read_db 依赖。
     audit_routes = [
         ("POST", "/api/v1/audits/events"),
         ("GET", "/api/v1/audits/events"),
+        ("GET", "/api/v1/audits/operate-logs"),
+        ("GET", "/api/v1/audits/activity-logs"),
+        ("GET", "/api/v1/audits/file-transfers"),
+        ("GET", "/api/v1/audits/password-changes"),
+        ("GET", "/api/v1/audits/job-logs"),
         ("GET", "/api/v1/audits/reports/compliance"),
         ("GET", "/api/v1/audits/reports/summary"),
     ]
@@ -360,6 +386,16 @@ def test_connector_write_routes_keep_writer_database_dependency() -> None:
         dependencies = _route_dependency_calls(router=connectors_router, method=method, path=path)
         assert get_db in dependencies
         assert get_read_db not in dependencies
+
+
+def test_file_transfer_ingest_uses_writer_database_dependency() -> None:
+    dependencies = _route_dependency_calls(
+        router=file_transfers_router,
+        method="POST",
+        path="/connectors/{connector_id}/file-transfers",
+    )
+    assert get_db in dependencies
+    assert get_read_db not in dependencies
 
 
 def test_ssh_ca_read_routes_use_read_database_dependency() -> None:
