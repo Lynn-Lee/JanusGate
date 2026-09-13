@@ -150,6 +150,8 @@ export type AuditEvent = {
   created_at: string;
 };
 
+export type AuditListResponse = { items: AuditEvent[]; total: number; limit: number; offset: number };
+
 export type OnlineSession = {
   id: string;
   subject_id: string;

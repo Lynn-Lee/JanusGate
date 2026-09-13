@@ -134,7 +134,11 @@ class AuditServiceFileTransferSink:
         self._account_id = account_id
 
     async def emit(self, event: FileTransferEvent) -> None:
-        from app.api.audits.schemas import FileTransferIngest
+        from app.api.audits.schemas import (
+            FileTransferDirection,
+            FileTransferIngest,
+            FileTransferStatus,
+        )
         from app.api.audits.typed import record_file_transfer
 
         ingest = FileTransferIngest(
@@ -142,10 +146,10 @@ class AuditServiceFileTransferSink:
             asset_id=self._asset_id,
             account_id=self._account_id,
             remote_path=event.remote_path,
-            direction=event.direction.value,
+            direction=FileTransferDirection(event.direction.value),
             size_bytes=event.size_bytes,
             sha256=event.sha256,
-            status=event.status.value,
+            status=FileTransferStatus(event.status.value),
             error_code=event.error_code,
         )
         await record_file_transfer(

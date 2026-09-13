@@ -63,6 +63,7 @@ DB_BACKED_GET_ROUTE_ROUTING_INVENTORY = {
     ("GET", "/workflows/grants/active"),
     ("GET", "/workflows/requests"),
     ("GET", "/workflows/requests/{request_id}"),
+    ("GET", "/workflows/ticket-flows"),
 }
 
 # #t61：审计已持久化，但 AuditService 自管读写会话（独立 append-only 账本），故审计
@@ -501,6 +502,7 @@ def test_session_write_routes_keep_writer_service_dependency() -> None:
 def test_workflow_approval_policy_read_routes_use_read_database_dependency() -> None:
     read_routes = [
         ("GET", "/workflows/approval-policies"),
+        ("GET", "/workflows/ticket-flows"),
     ]
 
     for method, path in read_routes:
