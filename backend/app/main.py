@@ -22,6 +22,7 @@ from app.api import (
     automation,
     oidc,
     connectors,
+    governance,
     notification_deliveries,
     notification_rules,
     rbac,
@@ -83,6 +84,7 @@ app.include_router(protocols.router, prefix="/api/v1")
 app.include_router(asset_tree.router, prefix="/api/v1")
 app.include_router(rbac.router, prefix="/api/v1")
 app.include_router(connectors.router, prefix="/api/v1")
+app.include_router(governance.router, prefix="/api/v1")
 app.include_router(notification_deliveries.router, prefix="/api/v1")
 app.include_router(notification_rules.router, prefix="/api/v1")
 app.include_router(session_recordings.router, prefix="/api/v1")

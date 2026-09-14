@@ -13,6 +13,15 @@ from app.models.asset_tree import AssetPermissionModel, NodeModel
 from app.models.audit import AuditEventModel
 from app.models.automation import AutomationJobRun
 from app.models.connector import Connector
+from app.models.governance import (
+    LeakPassword,
+    ReportDefinition,
+    ResourceLabel,
+    ResourceLabelBinding,
+    TenantSetting,
+    TenantSettingRevision,
+    UserPreference,
+)
 from app.models.host_key import AssetHostKeyModel
 from app.models.oidc import OidcProvider
 from app.models.protocol import PlatformProtocolModel, ProtocolModel
@@ -55,6 +64,7 @@ __all__ = [
     "DataMaskingRuleModel",
     "CredentialRotation",
     "JitGrantModel",
+    "LeakPassword",
     "LicenseConfigurationModel",
     "LoginAclModel",
     "LoginAssetAclModel",
@@ -67,6 +77,9 @@ __all__ = [
     "PlatformProtocolModel",
     "ProtocolModel",
     "Project",
+    "ReportDefinition",
+    "ResourceLabel",
+    "ResourceLabelBinding",
     "RoleBindingModel",
     "RoleModel",
     "RoleObjectPermissionModel",
@@ -78,7 +91,10 @@ __all__ = [
     "SshCertificateAuthority",
     "Team",
     "Tenant",
+    "TenantSetting",
+    "TenantSettingRevision",
     "User",
+    "UserPreference",
     "WebhookEndpoint",
     "Zone",
     "ZoneGateway",

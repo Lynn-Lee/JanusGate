@@ -47,7 +47,9 @@ External license service evidence 固定在 `docs/site/fixtures/license-operatio
 ## 审计与报表
 
 - 审计日志页展示当前租户事件列表和报表摘要。
+- 审计页「报表中心」可运行 `audit-summary` / `soc2-access` 模板，结果不含 metadata / message / resource_id / session_id。
 - SOC2 合规报表导出只返回事件 ID、hash chain 边界、签名和 WORM 归档元数据，不返回原始 metadata、message、resource_id 或 session_id 明细。
+- 设置页提供用户偏好、资源标签、白名单系统配置和泄露密码库（只展示 SHA-256）。
 
 ## 运维门禁
 
