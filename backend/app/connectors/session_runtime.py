@@ -3,7 +3,7 @@
 :class:`~app.api.sessions.service.ConnectorScheduler` 这个 Protocol 是**连接器进程边界**：
 生产环境 ``dispatch`` 是一次发往远端连接器进程的 RPC，凭据解析与真实通道建立都发生在
 连接器侧。本模块提供该边界的**进程内实现**（dev / 单机 / 测试）：在同进程内把网关传来的
-身份解析为目标 + 凭据并打开真实 SSH/SFTP/K8s 通道。
+身份解析为目标 + 凭据并打开真实 SSH/SFTP/K8s/数据库通道。
 
 关键约束：网关只传身份（asset/account/protocol），**不持有凭据**；凭据仅在本模块（代表
 连接器侧）经 :class:`SessionConnectionResolver` 解析后出现。要换成远端形态，只需另写一个
@@ -12,6 +12,7 @@
 生产装配用资产注册表 + Vault 的 :class:`~app.connectors.asset_vault_resolver.AssetVaultSessionConnectionResolver`
 替换 :class:`~app.api.sessions.service.NoopConnectorScheduler`。测试可继续注入
 :class:`InMemorySessionConnectionResolver` 或 Noop。主机密钥 fail-closed，须有已批准公钥，绝不 TOFU。
+数据库协议（postgresql / mysql / mariadb）走同一 resolver，密码仅内存。
 """
 
 from __future__ import annotations
@@ -25,6 +26,8 @@ from uuid import uuid4
 from app.api.sessions.service import ConnectorDispatchRequest
 from app.connectors.command_policy import CommandPolicyGuard, default_command_policy_guard
 from app.connectors.k8s_exec import K8sCredential, K8sExecChannel, K8sTarget, NamespaceScope
+from app.connectors.mysql_proxy import MysqlCredential, MysqlQueryChannel, MysqlTarget
+from app.connectors.postgres_proxy import PostgresCredential, PostgresQueryChannel, PostgresTarget
 from app.connectors.ssh_channel import (
     CommandEvent,
     CommandEventSink,
@@ -45,6 +48,8 @@ class ConnectorSessionMode(StrEnum):
     INTERACTIVE = "interactive"
     SFTP = "sftp"
     K8S = "k8s"
+    DB_POSTGRESQL = "db_postgresql"
+    DB_MYSQL = "db_mysql"
 
 
 @dataclass(frozen=True)
@@ -59,6 +64,10 @@ class SessionConnectionSpec:
     :param k8s_target: K8s API Server 目标（仅 K8S 模式）。
     :param k8s_credential: K8s Bearer token（仅内存，仅 K8S 模式）。
     :param k8s_scope: 授权的单一 namespace 作用域（仅 K8S 模式）。
+    :param postgres_target: PostgreSQL 目标（仅 DB_POSTGRESQL 模式）。
+    :param postgres_credential: PostgreSQL 密码（仅内存）。
+    :param mysql_target: MySQL/MariaDB 目标（仅 DB_MYSQL 模式）。
+    :param mysql_credential: MySQL 密码（仅内存）。
     """
 
     mode: ConnectorSessionMode
@@ -69,10 +78,21 @@ class SessionConnectionSpec:
     k8s_target: K8sTarget | None = None
     k8s_credential: K8sCredential | None = None
     k8s_scope: NamespaceScope | None = None
+    postgres_target: PostgresTarget | None = None
+    postgres_credential: PostgresCredential | None = None
+    mysql_target: MysqlTarget | None = None
+    mysql_credential: MysqlCredential | None = None
 
 
 # 已打开通道的联合类型：均提供 async close()，故运行时可统一关闭。
-OpenChannel = SshChannel | SshInteractiveSession | SftpChannel | K8sExecChannel
+OpenChannel = (
+    SshChannel
+    | SshInteractiveSession
+    | SftpChannel
+    | K8sExecChannel
+    | PostgresQueryChannel
+    | MysqlQueryChannel
+)
 
 
 @dataclass
@@ -218,6 +238,10 @@ class ConnectorSessionRuntime:
         policy = await self._policy_for(request)
         if spec.mode is ConnectorSessionMode.K8S:
             return await self._open_k8s_channel(spec, request, policy)
+        if spec.mode is ConnectorSessionMode.DB_POSTGRESQL:
+            return await self._open_postgres_channel(spec, request, policy)
+        if spec.mode is ConnectorSessionMode.DB_MYSQL:
+            return await self._open_mysql_channel(spec, request, policy)
         if spec.target is None or spec.credential is None:
             raise SshChannelError(
                 "CONNECTOR_TARGET_UNRESOLVED",
@@ -282,6 +306,58 @@ class ConnectorSessionRuntime:
             target,
             credential,
             scope,
+            policy=policy,
+            subject=SubjectRef(id=request.subject_id, tenant_id=request.tenant_id),
+            resource=ResourceRef(
+                id=request.asset_id, type=request.protocol or "asset", tenant_id=request.tenant_id
+            ),
+            account_id=request.account_id,
+            session_id=request.session_id,
+            session_factory=self._session_factory,
+        )
+
+    async def _open_postgres_channel(
+        self,
+        spec: SessionConnectionSpec,
+        request: ConnectorDispatchRequest,
+        policy: CommandPolicyGuard,
+    ) -> OpenChannel:
+        target = spec.postgres_target
+        credential = spec.postgres_credential
+        if not isinstance(target, PostgresTarget) or not isinstance(credential, PostgresCredential):
+            raise SshChannelError(
+                "CONNECTOR_TARGET_UNRESOLVED",
+                f"no connection spec for asset={request.asset_id} account={request.account_id}",
+            )
+        return await PostgresQueryChannel.open(
+            target,
+            credential,
+            policy=policy,
+            subject=SubjectRef(id=request.subject_id, tenant_id=request.tenant_id),
+            resource=ResourceRef(
+                id=request.asset_id, type=request.protocol or "asset", tenant_id=request.tenant_id
+            ),
+            account_id=request.account_id,
+            session_id=request.session_id,
+            session_factory=self._session_factory,
+        )
+
+    async def _open_mysql_channel(
+        self,
+        spec: SessionConnectionSpec,
+        request: ConnectorDispatchRequest,
+        policy: CommandPolicyGuard,
+    ) -> OpenChannel:
+        target = spec.mysql_target
+        credential = spec.mysql_credential
+        if not isinstance(target, MysqlTarget) or not isinstance(credential, MysqlCredential):
+            raise SshChannelError(
+                "CONNECTOR_TARGET_UNRESOLVED",
+                f"no connection spec for asset={request.asset_id} account={request.account_id}",
+            )
+        return await MysqlQueryChannel.open(
+            target,
+            credential,
             policy=policy,
             subject=SubjectRef(id=request.subject_id, tenant_id=request.tenant_id),
             resource=ResourceRef(
