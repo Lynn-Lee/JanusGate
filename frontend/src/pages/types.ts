@@ -104,6 +104,47 @@ export type JitGrant = {
 
 export type ListResponse<T> = { items: T[]; total: number };
 
+export type NotificationChannelType =
+  | 'webhook'
+  | 'dingtalk'
+  | 'feishu'
+  | 'lark'
+  | 'wecom'
+  | 'slack'
+  | 'sms'
+  | 'email'
+  | 'inbox';
+
+export type NotificationChannel = {
+  id: number;
+  name: string;
+  url: string;
+  channel_type: NotificationChannelType;
+  event_types: string[];
+  status: string;
+  credential_configured: boolean;
+};
+
+export type SystemMessageSubscription = {
+  id: number;
+  name: string;
+  event_types: string[];
+  webhook_endpoint_id: number;
+  webhook_endpoint_name: string;
+  channel_type: NotificationChannelType;
+  recipient_user_id: string | null;
+  status: string;
+};
+
+export type InAppMessage = {
+  id: number;
+  event_type: string;
+  title: string;
+  body: Record<string, unknown>;
+  read_at: string | null;
+  created_at: string | null;
+};
+
 export type SessionRecord = {
   id: string;
   asset_id: string;

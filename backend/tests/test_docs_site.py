@@ -31,6 +31,8 @@ def test_phase5_docs_site_foundation_is_wired_for_operator_handoff() -> None:
     assert "admin.md" in docs_index
     assert "api.md" in docs_index
     assert "runbooks.md" in docs_index
+    assert "notification-channels.md" in docs_index
+    assert (REPO_ROOT / "docs/site/notification-channels.md").exists()
     assert "admin-screenshots.md" in docs_index
     assert "operation-runbook-evidence.json" in docs_index
     assert "license-operations-evidence.json" in docs_index
@@ -93,6 +95,7 @@ def test_phase5_docs_site_foundation_is_wired_for_operator_handoff() -> None:
     assert "index.md" in build_script
     assert "runbooks.md" in build_script
     assert "admin-screenshots.md" in build_script
+    assert "notification-channels.md" in build_script
     assert "assets/screenshots" in build_script
     assert "fixtures/admin-screenshot-data.json" in build_script
     assert "fixtures/admin-screenshot-archive.json" in build_script

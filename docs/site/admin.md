@@ -17,6 +17,10 @@
 - 会话页面展示当前用户可见会话，并支持读取指定录制 ID 的命令时间线。
 - 会话录制命令摘要会脱敏 token、password、secret、credential 等赋值文本。
 
+## 通知渠道
+
+设置页提供通知渠道、系统消息订阅和站内信。IM 渠道只允许官方 host，机器人 token 不会出现在列表 URL 或 API 响应中。邮件/短信走 HTTPS 网关 Bearer，不直连 SMTP。站内信只显示当前登录用户的消息。详见 [通知渠道扩展](notification-channels.md)。
+
 ## License / Edition
 
 `GET /api/v1/admin/license-summary` 只允许 `admin` 读取当前 configured/effective edition、license status、启用能力和禁用能力。若已通过 `POST /api/v1/admin/license-config` 写入持久化配置，摘要优先读取 DB 中的激活配置；否则回退环境变量。
