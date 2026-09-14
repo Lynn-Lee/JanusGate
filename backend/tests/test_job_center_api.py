@@ -7,6 +7,7 @@ from collections.abc import AsyncGenerator
 
 import pytest
 from fastapi.testclient import TestClient
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from app.core.database import Base, get_db, get_read_db
@@ -322,3 +323,92 @@ async def test_job_center_rejects_secret_vars_and_playbook_escape(
         )
         assert shell.status_code == 400
         assert shell.json()["detail"] == "ADHOC_MODULE_NOT_ALLOWED"
+
+
+@pytest.mark.asyncio
+async def test_enqueue_and_tick_call_json_queue_directly(
+    session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    from datetime import UTC, datetime, timedelta
+
+    from app.models.job_center import JobExecution, JobPlaybook, JobVariable
+    from app.services.automation_worker import AutomationJobQueue
+    from app.services.job_center import (
+        enqueue_job,
+        resolve_extra_vars,
+        sync_job_execution,
+        tick_due_jobs,
+    )
+
+    await seed_assets(session_factory)
+    stream = RecordingRedisStream()
+    queue = AutomationJobQueue(redis=stream)
+    async with session_factory() as session:
+        session.add(
+            JobPlaybook(
+                tenant_id="tenant-a",
+                name="基线",
+                filename="linux-baseline.yml",
+                content="---\n",
+            )
+        )
+        session.add(JobVariable(tenant_id="tenant-a", name="region", extra_vars={"region": "ap-east"}))
+        await session.commit()
+        playbook = (await session.execute(select(JobPlaybook))).scalar_one()
+        with pytest.raises(ValueError, match="JOB_VARIABLE_NOT_FOUND"):
+            await resolve_extra_vars(session, tenant_id="tenant-a", names=["missing"])
+        job = Job(
+            tenant_id="tenant-a",
+            name="巡检",
+            kind="playbook",
+            playbook_id=playbook.id,
+            target_asset_ids=[1],
+            extra_var_names=["region"],
+            runas_account_id=1,
+            interval_seconds=3600,
+            next_run_at=datetime.now(UTC) - timedelta(seconds=10),
+            enabled=True,
+        )
+        session.add(job)
+        await session.flush()
+        execution = await enqueue_job(
+            session=session,
+            queue=queue,
+            job=job,
+            requested_by="user-1",
+        )
+        assert execution.status == "queued"
+        due = await tick_due_jobs(
+            session=session,
+            queue=queue,
+            tenant_id="tenant-a",
+            requested_by="user-1",
+        )
+        assert len(due) == 1
+        await session.commit()
+
+    payload = json.loads(stream.calls[0][1]["payload_json"])
+    assert payload["extra_vars"] == {"region": "ap-east"}
+    assert payload["runas_account_id"] == 1
+    assert "password" not in json.dumps(payload)
+    assert stream.calls[0][1]["payload_format"] == "json"
+
+    await sync_job_execution(
+        session_factory,
+        message_id=execution.message_id,
+        status="completed",
+        error_code=None,
+    )
+    await sync_job_execution(
+        session_factory,
+        message_id="does-not-exist",
+        status="failed",
+        error_code="X",
+    )
+    async with session_factory() as session:
+        stored = (
+            await session.execute(
+                select(JobExecution).where(JobExecution.message_id == execution.message_id)
+            )
+        ).scalar_one()
+    assert stored.status == "completed"

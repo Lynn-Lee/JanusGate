@@ -7,9 +7,14 @@ from pathlib import Path
 import pytest
 
 from app.services.job_center import (
+    MAX_INTERVAL_SECONDS,
+    PLAYBOOK_CONTENT_MAX_BYTES,
     coerce_extra_vars,
     validate_adhoc_command,
+    validate_interval_seconds,
+    validate_playbook_content,
     validate_playbook_filename,
+    validate_variable_name,
 )
 
 
@@ -60,3 +65,29 @@ def test_extra_vars_reject_sensitive_keys() -> None:
         "region": "ap-east",
         "replicas": 2,
     }
+
+
+def test_playbook_content_interval_and_variable_name_edges() -> None:
+    with pytest.raises(ValueError, match="JOB_PLAYBOOK_CONTENT_TOO_LARGE"):
+        validate_playbook_content("x" * (PLAYBOOK_CONTENT_MAX_BYTES + 1))
+    assert validate_playbook_content("---\n") == "---\n"
+    with pytest.raises(ValueError, match="ANSIBLE_PLAYBOOK_NOT_ALLOWED"):
+        validate_playbook_filename("   ")
+    with pytest.raises(ValueError, match="ADHOC_ARGS_REQUIRED"):
+        validate_adhoc_command(module="command", args="   ")
+    with pytest.raises(ValueError, match="ADHOC_ARGS_TOO_LONG"):
+        validate_adhoc_command(module="command", args="u" * 1025)
+    with pytest.raises(ValueError, match="JOB_VARIABLE_NAME_INVALID"):
+        validate_variable_name("1bad")
+    with pytest.raises(ValueError, match="JOB_INTERVAL_INVALID"):
+        validate_interval_seconds(1)
+    with pytest.raises(ValueError, match="JOB_INTERVAL_INVALID"):
+        validate_interval_seconds(MAX_INTERVAL_SECONDS + 1)
+    assert validate_interval_seconds(None) is None
+    assert validate_interval_seconds(60) == 60
+    with pytest.raises(ValueError, match="JOB_VARIABLE_INVALID"):
+        coerce_extra_vars(["not", "an", "object"])
+    with pytest.raises(ValueError, match="JOB_VARIABLE_INVALID"):
+        coerce_extra_vars({"": "x"})
+    with pytest.raises(ValueError, match="JOB_VARIABLE_INVALID"):
+        coerce_extra_vars({"ok": object()})
