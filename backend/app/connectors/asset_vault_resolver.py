@@ -28,6 +28,8 @@ from app.connectors.k8s_exec import (
     list_namespaced_pods,
     request_service_account_token,
 )
+from app.connectors.mysql_proxy import MysqlCredential, MysqlTarget
+from app.connectors.postgres_proxy import PostgresCredential, PostgresTarget
 from app.connectors.session_runtime import ConnectorSessionMode, SessionConnectionSpec
 from app.connectors.ssh_channel import SshChannelError, SshCredential, SshTarget
 from app.connectors.ssh_hostkey import HostKeyScan
@@ -38,6 +40,7 @@ from app.models.zone import Zone, ZoneGateway
 from app.protocols.catalog import PROTOCOL_CATALOG
 
 K8S_CONNECT_PROTOCOLS = frozenset({"k8s", "kubernetes"})
+DB_CONNECT_PROTOCOLS = frozenset({"postgresql", "mysql", "mariadb"})
 K8S_HTTPS_CA_DENIED_COPY = "无法连接（需要 HTTPS 和 CA）"
 K8S_CONNECT_DENIED_COPY = "无法连接"
 ZONE_GATEWAY_UNAVAILABLE = "ZONE_GATEWAY_UNAVAILABLE"
@@ -55,6 +58,9 @@ PROTOCOL_MODES: dict[str, ConnectorSessionMode] = {
     "sftp": ConnectorSessionMode.SFTP,
     "k8s": ConnectorSessionMode.K8S,
     "kubernetes": ConnectorSessionMode.K8S,
+    "postgresql": ConnectorSessionMode.DB_POSTGRESQL,
+    "mysql": ConnectorSessionMode.DB_MYSQL,
+    "mariadb": ConnectorSessionMode.DB_MYSQL,
 }
 
 
@@ -85,10 +91,13 @@ class CallableSecretUnwrapper:
 
 
 class AssetVaultSessionConnectionResolver:
-    """把网关身份解析为 SSH/K8s 连接参数：资产表 + 账号 Vault。
+    """把网关身份解析为 SSH/K8s/数据库连接参数：资产表 + 账号 Vault。
 
     SSH 走已批准主机密钥（fail-closed，禁止 TOFU）。K8s 走 API URL + 预置 CA +
     单一 namespace（建连前强制，仅资产上的 ns），Bearer token 仅内存持有。
+    数据库（postgresql / mysql / mariadb）走地址 + 端口 + Vault 密码；资产
+    ``namespace`` 复用为默认库名（空则 ``postgres`` / ``mysql``）；预置 ``server_ca``
+    时强制 TLS 且拒绝 TOFU。
     账号 ``use_token_request`` 开启时：Vault 仅提供 bootstrap，经 K8s TokenRequest
     签发短期会话令牌；失败 fail-closed「无法连接」，不回退长期 Vault token。
     Pod 由建连弹层传入，不落库。
@@ -135,6 +144,8 @@ class AssetVaultSessionConnectionResolver:
 
         if protocol in K8S_CONNECT_PROTOCOLS:
             return await self._resolve_k8s(request, asset, account)
+        if protocol in DB_CONNECT_PROTOCOLS:
+            return await self._resolve_db(request, asset, account, protocol)
         if protocol not in SSH_CONNECT_PROTOCOLS:
             raise SshChannelError("CONNECTOR_PROTOCOL_UNSUPPORTED", protocol)
         return await self._resolve_ssh(request, asset, account, protocol)
@@ -175,6 +186,62 @@ class AssetVaultSessionConnectionResolver:
             scope=scope,
         )
         return namespace, pods
+
+    async def _resolve_db(
+        self,
+        request: ConnectorDispatchRequest,
+        asset: Asset,
+        account: Account,
+        protocol: str,
+    ) -> SessionConnectionSpec:
+        """解析数据库资产：Vault 密码仅内存；有 ``server_ca`` 时强制 TLS。"""
+
+        try:
+            password = await self._secrets.unwrap(account.secret_id)
+        except Exception as exc:
+            raise SshChannelError(
+                "CONNECTOR_TARGET_UNRESOLVED",
+                f"no connection spec for asset={request.asset_id} account={request.account_id}",
+            ) from exc
+        if not (password or "").strip():
+            raise SshChannelError(
+                "CONNECTOR_TARGET_UNRESOLVED",
+                f"no connection spec for asset={request.asset_id} account={request.account_id}",
+            )
+
+        engine = "mysql" if protocol in {"mysql", "mariadb"} else "postgresql"
+        default_db = "mysql" if engine == "mysql" else "postgres"
+        database = (getattr(asset, "namespace", None) or "").strip() or default_db
+        server_ca = (getattr(asset, "server_ca", None) or "").strip() or None
+        require_tls = bool(server_ca)
+        host = (asset.address or "").strip()
+        port = int(asset.port or (3306 if engine == "mysql" else 5432))
+        username = account.username
+        if engine == "mysql":
+            return SessionConnectionSpec(
+                mode=ConnectorSessionMode.DB_MYSQL,
+                mysql_target=MysqlTarget(
+                    host=host,
+                    port=port,
+                    database=database,
+                    username=username,
+                    require_tls=require_tls,
+                    server_ca=server_ca,
+                ),
+                mysql_credential=MysqlCredential(password=password),
+            )
+        return SessionConnectionSpec(
+            mode=ConnectorSessionMode.DB_POSTGRESQL,
+            postgres_target=PostgresTarget(
+                host=host,
+                port=port,
+                database=database,
+                username=username,
+                require_tls=require_tls,
+                server_ca=server_ca,
+            ),
+            postgres_credential=PostgresCredential(password=password),
+        )
 
     async def _resolve_ssh(
         self,
