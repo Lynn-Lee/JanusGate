@@ -126,3 +126,7 @@ Phase 6 #t72 已落地 K8s exec 通道 `backend/app/connectors/k8s_exec.py`，�
 Phase 6 #t65 已落地命令过滤 ACL、数据脱敏规则，以及登录 ACL / 资产登录 ACL / 连接方式 ACL overlay，判定统一进 `PolicyDecisionService`，不在路由或连接器旁路。命令过滤按优先级 1-100（小者优先）取首个命中者，语义是**已授权会话之上的 deny-overlay**——无 ACL 命中时默认放行；数据脱敏则是转换而非决策，**累计应用**全部命中规则。登录 overlay 只限制交互式登录（不作用于 API Key）；资产登录 overlay 叠在 AssetPermission 之后，可按节点/资产 + 可选 IP 段 / 时段拒绝连接（时段存 naive 本地 HH:MM，按当前租户时区求值，默认 Asia/Singapore）；连接方式 overlay 按协议限制连接。规则集通过 `backend/app/policy/repository.py` 的 `AclRepository` 经租户 scope helper `scoped_select` 从数据库加载，并已接入 SSH exec、SSH PTY 和 K8s exec 的执行前守卫、交互式登录守卫、会话 connect 守卫及命令事件入库。详见 [`docs/site/acl-command-filter.md`](docs/site/acl-command-filter.md) 与 [`docs/site/acl-data-masking.md`](docs/site/acl-data-masking.md)。
 
 > 命令过滤、脱敏与三类 overlay 登录 ACL 均已 SHIP；#t69 / #t72 生产 `AssetVaultSessionConnectionResolver` 亦已 QA SHIP（测试仍注入 Noop/Fake）。
+
+### M6 作业中心（#t77 已完成）
+
+Phase 6 #t77 已落地作业中心：`JobPlaybook` / `JobVariable` / `Job` / `JobExecution`，API 前缀 `/api/v1/job-center/`，控制台 `/jobs`。Playbook 作业复用 #t52 `ansible.playbook`；临时命令走 `job.adhoc`（仅 Ansible `command` 模块，拒绝 shell 元字符）。变量与队列 payload 递归拒绝敏感键；runas 只带 `account_id`，inventory 不写密码。周期作业由 `POST /api/v1/job-center/scheduler/tick` 拾取。队列仍是 JSON-only，**禁止 pickle**。详见 [`docs/site/job-center.md`](docs/site/job-center.md)。

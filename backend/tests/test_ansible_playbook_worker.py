@@ -8,12 +8,15 @@ from collections.abc import AsyncGenerator
 from pathlib import Path
 
 import pytest
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from app.core.config import Settings
 from app.core.database import Base
+from app.models.account import Account
 from app.models.asset import Asset, Platform
 from app.models.automation import AutomationJobRun
+from app.models.job_center import Job, JobExecution, JobPlaybook
 from app.services.ansible_playbook import (
     AnsiblePlaybookRun,
     AnsiblePlaybookTarget,
@@ -464,3 +467,139 @@ async def test_local_ansible_runner_applies_configured_process_limits(
     assert captured_limits == [
         AnsibleProcessLimits(memory_limit_bytes=128 * 1024 * 1024, cpu_limit_seconds=2)
     ]
+
+
+@pytest.mark.asyncio
+async def test_local_ansible_runner_writes_extra_vars_and_runas_user(
+    tmp_path: Path,
+) -> None:
+    playbook_root = tmp_path / "playbooks"
+    runtime_root = tmp_path / "runtime"
+    playbook_root.mkdir()
+    runtime_root.mkdir()
+    calls: list[tuple[list[str], dict[str, object], dict[str, object]]] = []
+
+    async def command_runner(
+        args: list[str],
+        *,
+        cwd: Path,
+        env: dict[str, str],
+        process_limits: AnsibleProcessLimits,
+    ) -> int:
+        del env, process_limits
+        inventory_index = args.index("-i") + 1
+        inventory = json.loads(Path(args[inventory_index]).read_text(encoding="utf-8"))
+        extra_flag = args.index("-e") + 1
+        extra_path = Path(args[extra_flag].removeprefix("@"))
+        extra_vars = json.loads(extra_path.read_text(encoding="utf-8"))
+        calls.append((args, inventory, extra_vars))
+        assert extra_path.is_relative_to(cwd)
+        return 0
+
+    runner = LocalAnsiblePlaybookRunner(
+        playbook_root=playbook_root,
+        runtime_root=runtime_root,
+        command_runner=command_runner,
+    )
+    await runner.run(
+        AnsiblePlaybookRun(
+            tenant_id="tenant-a",
+            requested_by="user-1",
+            playbook_name="catalog.yml",
+            check_mode=False,
+            extra_vars={"region": "ap-east"},
+            runas_username="deploy",
+            playbook_content="---\n- hosts: all\n",
+            targets=[
+                AnsiblePlaybookTarget(
+                    id=1,
+                    tenant_id="tenant-a",
+                    name="prod-linux",
+                    address="203.0.113.10",
+                    port=22,
+                    platform_id=1,
+                )
+            ],
+        )
+    )
+
+    args, inventory, extra_vars = calls[0]
+    assert extra_vars == {"region": "ap-east"}
+    assert inventory["all"]["hosts"]["asset_1"]["ansible_user"] == "deploy"
+    assert "ansible_password" not in inventory["all"]["hosts"]["asset_1"]
+    assert args[1].endswith("catalog.yml")
+
+
+@pytest.mark.asyncio
+async def test_playbook_handler_loads_catalog_yaml_extra_vars_and_runas(
+    session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    await seed_assets(session_factory)
+    async with session_factory() as session:
+        session.add(
+            Account(
+                id=9,
+                tenant_id="tenant-a",
+                asset_id=1,
+                username="deploy",
+                protocol="ssh",
+                secret_id="sec_should_not_leak",
+            )
+        )
+        session.add(
+            JobPlaybook(
+                id=7,
+                tenant_id="tenant-a",
+                name="基线",
+                filename="catalog.yml",
+                content="---\n- hosts: all\n",
+            )
+        )
+        session.add(
+            Job(
+                id=4,
+                tenant_id="tenant-a",
+                name="巡检",
+                kind="playbook",
+                playbook_id=7,
+                target_asset_ids=[1],
+            )
+        )
+        session.add(
+            JobExecution(
+                tenant_id="tenant-a",
+                job_id=4,
+                message_id="1700000000007-0",
+                status="queued",
+                requested_by="user-1",
+            )
+        )
+        await session.commit()
+
+    runner = RecordingPlaybookRunner()
+    handler = AnsiblePlaybookWorkerHandler(session_factory=session_factory, runner=runner)
+    await handler(
+        tenant_id="tenant-a",
+        requested_by="user-1",
+        payload={
+            "playbook_name": "linux-baseline.yml",
+            "target_asset_ids": [1],
+            "check_mode": False,
+            "extra_vars": {"region": "ap-east"},
+            "job_playbook_id": 7,
+            "runas_account_id": 9,
+        },
+        message_id="1700000000007-0",
+    )
+
+    assert runner.calls[0].playbook_name == "catalog.yml"
+    assert runner.calls[0].playbook_content == "---\n- hosts: all\n"
+    assert runner.calls[0].extra_vars == {"region": "ap-east"}
+    assert runner.calls[0].runas_username == "deploy"
+    async with session_factory() as session:
+        execution = (
+            await session.execute(
+                select(JobExecution).where(JobExecution.message_id == "1700000000007-0")
+            )
+        ).scalar_one()
+    assert execution.status == "completed"
