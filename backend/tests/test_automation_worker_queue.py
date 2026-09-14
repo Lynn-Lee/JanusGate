@@ -168,6 +168,22 @@ async def test_automation_worker_dispatches_json_stream_message_and_acks() -> No
 
 
 @pytest.mark.asyncio
+async def test_automation_job_queue_allows_job_adhoc() -> None:
+    stream = RecordingRedisStream()
+    queue = AutomationJobQueue(redis=stream, stream_name="janusgate:automation")
+    job_id = await queue.enqueue(
+        tenant_id="tenant-a",
+        job_type="job.adhoc",
+        requested_by="user-1",
+        payload={"module": "command", "args": "uptime", "target_asset_ids": [1]},
+    )
+    assert job_id == "1700000000000-0"
+    assert stream.calls[0][1]["job_type"] == "job.adhoc"
+    assert stream.calls[0][1]["payload_format"] == "json"
+    assert "pickle" not in json.dumps(stream.calls[0][1]).lower()
+
+
+@pytest.mark.asyncio
 async def test_automation_job_queue_allows_account_verify() -> None:
     stream = RecordingRedisStream()
     queue = AutomationJobQueue(redis=stream, stream_name="janusgate:automation")

@@ -2,6 +2,7 @@
 JanusGate — FastAPI 应用入口。
 策略驱动的 PAM / 零信任访问网关。
 """
+
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from typing import Any
@@ -11,7 +12,6 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 
 from app.api import (
-    zones,
     account_templates,
     accounts,
     acl,
@@ -20,17 +20,19 @@ from app.api import (
     assets,
     auth,
     automation,
-    oidc,
     connectors,
+    job_center,
     notification_deliveries,
     notification_rules,
-    rbac,
+    oidc,
     protocols,
+    rbac,
     session_recordings,
     sessions,
     ssh_certificate_authorities,
     ssh_certificates,
     webhook_endpoints,
+    zones,
 )
 from app.api.audits.routes import router as audits_router
 from app.api.tenancy.routes import router as tenancy_router
@@ -78,6 +80,7 @@ app.include_router(acl.router, prefix="/api/v1")
 app.include_router(zones.router, prefix="/api/v1")
 app.include_router(admin.router, prefix="/api/v1")
 app.include_router(automation.router, prefix="/api/v1")
+app.include_router(job_center.router, prefix="/api/v1")
 app.include_router(assets.router, prefix="/api/v1")
 app.include_router(protocols.router, prefix="/api/v1")
 app.include_router(asset_tree.router, prefix="/api/v1")

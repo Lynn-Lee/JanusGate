@@ -464,3 +464,64 @@ async def test_local_ansible_runner_applies_configured_process_limits(
     assert captured_limits == [
         AnsibleProcessLimits(memory_limit_bytes=128 * 1024 * 1024, cpu_limit_seconds=2)
     ]
+
+
+@pytest.mark.asyncio
+async def test_local_ansible_runner_writes_extra_vars_and_runas_user(
+    tmp_path: Path,
+) -> None:
+    playbook_root = tmp_path / "playbooks"
+    runtime_root = tmp_path / "runtime"
+    playbook_root.mkdir()
+    runtime_root.mkdir()
+    calls: list[tuple[list[str], dict[str, object], dict[str, object]]] = []
+
+    async def command_runner(
+        args: list[str],
+        *,
+        cwd: Path,
+        env: dict[str, str],
+        process_limits: AnsibleProcessLimits,
+    ) -> int:
+        del env, process_limits
+        inventory_index = args.index("-i") + 1
+        inventory = json.loads(Path(args[inventory_index]).read_text(encoding="utf-8"))
+        extra_flag = args.index("-e") + 1
+        extra_path = Path(args[extra_flag].removeprefix("@"))
+        extra_vars = json.loads(extra_path.read_text(encoding="utf-8"))
+        calls.append((args, inventory, extra_vars))
+        assert extra_path.is_relative_to(cwd)
+        return 0
+
+    runner = LocalAnsiblePlaybookRunner(
+        playbook_root=playbook_root,
+        runtime_root=runtime_root,
+        command_runner=command_runner,
+    )
+    await runner.run(
+        AnsiblePlaybookRun(
+            tenant_id="tenant-a",
+            requested_by="user-1",
+            playbook_name="catalog.yml",
+            check_mode=False,
+            extra_vars={"region": "ap-east"},
+            runas_username="deploy",
+            playbook_content="---\n- hosts: all\n",
+            targets=[
+                AnsiblePlaybookTarget(
+                    id=1,
+                    tenant_id="tenant-a",
+                    name="prod-linux",
+                    address="203.0.113.10",
+                    port=22,
+                    platform_id=1,
+                )
+            ],
+        )
+    )
+
+    args, inventory, extra_vars = calls[0]
+    assert extra_vars == {"region": "ap-east"}
+    assert inventory["all"]["hosts"]["asset_1"]["ansible_user"] == "deploy"
+    assert "ansible_password" not in inventory["all"]["hosts"]["asset_1"]
+    assert args[1].endswith("catalog.yml")
