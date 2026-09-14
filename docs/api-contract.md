@@ -591,7 +591,25 @@ template=soc2-access
 - payload 入库前会脱敏 token/password/secret/credential 等敏感键或赋值片段；响应不返回 payload。
 - `NotificationDeliveryWorker` 只读取 `pending` / 到期 `failed` 记录，成功后标记 `delivered`，失败后更新 `attempts`、`last_error` 与下一次重试时间，达到最大尝试次数后标记 `dead_letter`。
 - `HttpWebhookNotificationSender` 使用 `POST` 向 endpoint URL 投递 `{event_type, delivery_id, payload}`，并附带 `X-JanusGate-Event-Type` 与 `X-JanusGate-Tenant-Id`。非 2xx 或网络错误会 fail-closed 抛出稳定错误，worker 随后进入重试/死信流程；错误信息不包含 payload、signing secret 或下游响应体。
-- 当前切片不内置 IM sender 或多级审批。
+- `ChannelAwareNotificationSender`（#t75）按 `channel_type` 分发 WebHook / IM / HTTPS 网关 / 站内信，失败同样只保留稳定错误并进入同一条 dead-letter 契约。
+
+## Phase 6 通知渠道扩展 API（#t75）
+
+### POST `/api/v1/webhook-endpoints/`
+
+`channel_type` 支持 `webhook` / `dingtalk` / `feishu` / `lark` / `wecom` / `slack` / `sms` / `email` / `inbox`。IM 只允许官方 host，机器人 token 从 URL 剥离后 AES-256-GCM 落库；响应 `url` 不含凭据，只返回 `credential_configured`。`sms` / `email` 走 HTTPS 网关 Bearer。`inbox` 不需要 URL。
+
+### GET/POST `/api/v1/system-message-subscriptions/`
+
+租户隔离的系统消息订阅。站内信渠道必须带 `recipient_user_id`，否则 `400 INBOX_RECIPIENT_REQUIRED`。通知规则不能绑定站内信渠道，返回 `400 INBOX_CHANNEL_REQUIRES_SUBSCRIPTION`。
+
+### POST `/api/v1/notification-events/`
+
+按当前租户 active 规则与订阅扇出到投递队列。同一渠道 + 接收人只入队一次。响应 `202` 只返回 `{event_type, queued, inbox_queued}`，不回显 payload。
+
+### GET `/api/v1/in-app-messages/`
+
+只返回当前用户在当前租户的站内信。跨用户、跨租户为空列表。正文沿用 #t47 脱敏规则。已登录用户无需 `notifications:*` 权限即可读取自己的站内信。
 
 ### GET `/api/v1/notification-deliveries/`
 
