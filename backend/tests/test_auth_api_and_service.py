@@ -407,6 +407,15 @@ async def test_auth_service_authenticate_and_create_user(monkeypatch: pytest.Mon
     monkeypatch.setattr(auth_service_module, "hash_password", lambda password: f"hashed:{password}")
     monkeypatch.setattr(auth_service_module, "password_policy_violations", lambda password: ["weak"] if password == "weak" else [])
 
+    async def _min_length(_db: Any, _tenant_id: str) -> int:
+        return 8
+
+    async def _no_leak(*_args: Any, **_kwargs: Any) -> None:
+        return None
+
+    monkeypatch.setattr(auth_service_module, "password_min_length_for_tenant", _min_length)
+    monkeypatch.setattr(auth_service_module, "reject_if_leaked", _no_leak)
+
     assert await AuthService.authenticate(FakeDB(ScalarResult(None)), "missing", "correct") is None
     assert await AuthService.authenticate(FakeDB(ScalarResult(user(is_active=False))), "alice", "correct") is None
     assert await AuthService.authenticate(FakeDB(ScalarResult(user(password_hash="hashed"))), "alice", "wrong") is None
@@ -429,6 +438,15 @@ async def test_auth_service_password_totp_and_api_key_paths(monkeypatch: pytest.
     monkeypatch.setattr(auth_service_module, "password_policy_violations", lambda password: ["weak"] if password == "weak" else [])
     monkeypatch.setattr(auth_service_module, "encrypt_field", lambda value: f"encrypted:{value}")
     monkeypatch.setattr(auth_service_module, "decrypt_field", lambda value: value.removeprefix("encrypted:"))
+
+    async def _min_length(_db: Any, _tenant_id: str) -> int:
+        return 8
+
+    async def _no_leak(*_args: Any, **_kwargs: Any) -> None:
+        return None
+
+    monkeypatch.setattr(auth_service_module, "password_min_length_for_tenant", _min_length)
+    monkeypatch.setattr(auth_service_module, "reject_if_leaked", _no_leak)
 
     with pytest.raises(ValueError, match="用户不存在"):
         await AuthService.change_password(FakeDB(ScalarResult(None)), 1, "old", "NewPass-123")

@@ -3,6 +3,7 @@ import { useState } from 'react';
 import { useAuth } from '../auth/AuthContext';
 import { ErrorState, LoadingState } from '../components/StatusView';
 import { getErrorMessage, useApiData, useApiMessage } from './pageUtils';
+import { GovernanceReportCard } from './settings/GovernancePanels';
 import type { AuditComplianceReport, AuditEvent, AuditListResponse, AuditReportSummary } from './types';
 
 export const auditMetadataRedactedKeys = [
@@ -96,6 +97,7 @@ export function AuditsPage() {
           ) : null}
         </Card>
       </div>
+      <GovernanceReportCard />
       <Card>
         <Space className="jg-block" wrap>
           <Input.Search placeholder="关键词 / 资源 / actor" style={{ width: 260 }} />

@@ -17,6 +17,8 @@ from app.core.security import (
     verify_password,
 )
 from app.models.user import ApiKey, User
+from app.services.leak_passwords import reject_if_leaked
+from app.services.tenant_settings import password_min_length_for_tenant
 
 
 class AuthService:
@@ -33,15 +35,24 @@ class AuthService:
 
     @staticmethod
     async def create_user(
-        db: AsyncSession, username: str, password: str, email: str = ""
+        db: AsyncSession,
+        username: str,
+        password: str,
+        email: str = "",
+        tenant_id: str = "default",
     ) -> User:
         violations = password_policy_violations(password)
         if violations:
             raise ValueError("; ".join(violations))
+        min_length = await password_min_length_for_tenant(db, tenant_id)
+        if len(password) < min_length:
+            raise ValueError(f"密码长度不能少于 {min_length} 位")
+        await reject_if_leaked(db, tenant_id=tenant_id, password=password)
         user = User(
             username=username,
             display_name=username,
             email=email,
+            tenant_id=tenant_id,
             password_hash=hash_password(password),
             password_changed_at=datetime.now(UTC),
         )
@@ -65,6 +76,10 @@ class AuthService:
         violations = password_policy_violations(new_password)
         if violations:
             raise ValueError("; ".join(violations))
+        min_length = await password_min_length_for_tenant(db, user.tenant_id)
+        if len(new_password) < min_length:
+            raise ValueError(f"密码长度不能少于 {min_length} 位")
+        await reject_if_leaked(db, tenant_id=user.tenant_id, password=new_password)
         user.password_hash = hash_password(new_password)
         user.password_changed_at = datetime.now(UTC)
         await db.commit()
