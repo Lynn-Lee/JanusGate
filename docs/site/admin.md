@@ -16,6 +16,7 @@
 - 账号托管页面只展示 Vault `secret_id` 引用，不展示凭据明文。
 - 会话页面展示当前用户可见会话，并支持读取指定录制 ID 的命令时间线。
 - 会话录制命令摘要会脱敏 token、password、secret、credential 等赋值文本。
+- 作业中心 `/jobs` 管理 Playbook、变量、作业和执行记录；立即执行与「调度到期作业」都走 JSON-only 队列，不展示凭据明文。
 
 ## License / Edition
 
