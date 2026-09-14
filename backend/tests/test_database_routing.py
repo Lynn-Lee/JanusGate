@@ -1,4 +1,5 @@
 """Database engine routing regression tests."""
+
 from __future__ import annotations
 
 from typing import Any
@@ -13,6 +14,7 @@ from app.api.audits.routes import router as audits_router
 from app.api.auth import router as auth_router
 from app.api.automation import router as automation_router
 from app.api.connectors import router as connectors_router
+from app.api.job_center import router as job_center_router
 from app.api.notification_deliveries import router as notification_deliveries_router
 from app.api.notification_rules import router as notification_rules_router
 from app.api.session_recordings import router as session_recordings_router
@@ -45,6 +47,10 @@ DB_BACKED_GET_ROUTE_ROUTING_INVENTORY = {
     ("GET", "/assets/{asset_id}"),
     ("GET", "/auth/me"),
     ("GET", "/automation/jobs/runs"),
+    ("GET", "/job-center/executions/"),
+    ("GET", "/job-center/jobs/"),
+    ("GET", "/job-center/playbooks/"),
+    ("GET", "/job-center/variables/"),
     ("GET", "/connectors/"),
     ("GET", "/notification-deliveries/"),
     ("GET", "/notification-rules/"),
@@ -84,6 +90,7 @@ ROUTERS_WITH_GET_ROUTES = [
     audits_router,
     auth_router,
     automation_router,
+    job_center_router,
     connectors_router,
     notification_deliveries_router,
     notification_rules_router,
@@ -306,8 +313,6 @@ def test_webhook_endpoint_write_routes_keep_writer_database_dependency() -> None
         assert get_read_db not in dependencies
 
 
-
-
 def test_acl_read_routes_use_read_database_dependency() -> None:
     read_routes = [
         ("GET", "/command-filter-acls/"),
@@ -389,6 +394,33 @@ def test_ssh_ca_write_routes_keep_writer_database_dependency() -> None:
         assert get_read_db not in dependencies
 
 
+def test_job_center_read_routes_use_read_database_dependency() -> None:
+    read_routes = [
+        ("GET", "/job-center/playbooks/"),
+        ("GET", "/job-center/variables/"),
+        ("GET", "/job-center/jobs/"),
+        ("GET", "/job-center/executions/"),
+    ]
+    for method, path in read_routes:
+        dependencies = _route_dependency_calls(router=job_center_router, method=method, path=path)
+        assert get_read_db in dependencies
+        assert get_db not in dependencies
+
+
+def test_job_center_write_routes_keep_writer_database_dependency() -> None:
+    write_routes = [
+        ("POST", "/job-center/playbooks/"),
+        ("POST", "/job-center/variables/"),
+        ("POST", "/job-center/jobs/"),
+        ("POST", "/job-center/jobs/{job_id}/run"),
+        ("POST", "/job-center/scheduler/tick"),
+    ]
+    for method, path in write_routes:
+        dependencies = _route_dependency_calls(router=job_center_router, method=method, path=path)
+        assert get_db in dependencies
+        assert get_read_db not in dependencies
+
+
 def test_automation_job_run_read_routes_use_read_database_dependency() -> None:
     read_routes = [
         ("GET", "/automation/jobs/runs"),
@@ -455,9 +487,7 @@ def test_session_write_routes_keep_writer_service_dependency() -> None:
     ]
 
     for method, path in write_routes:
-        dependency_names = _route_dependency_names(
-            router=sessions_router, method=method, path=path
-        )
+        dependency_names = _route_dependency_names(router=sessions_router, method=method, path=path)
         assert "get_session_gateway_service" in dependency_names
         assert "get_read_session_gateway_service" not in dependency_names
 

@@ -114,7 +114,41 @@ const sshTrustBundle = {
   ],
   total: 1
 };
-const sshCertificate = {
+const jobPlaybook = {
+  id: 1,
+  name: 'Linux 基线',
+  filename: 'linux-baseline.yml',
+  content: '---\n- hosts: all\n'
+};
+const jobVariable = {
+  id: 1,
+  name: 'region',
+  extra_vars: { region: 'ap-east' }
+};
+const jobDefinition = {
+  id: 4,
+  name: '基线巡检',
+  kind: 'playbook',
+  playbook_id: 1,
+  adhoc_module: 'command',
+  adhoc_args: '',
+  target_asset_ids: [1],
+  extra_var_names: ['region'],
+  runas_account_id: 1,
+  interval_seconds: 3600,
+  next_run_at: '2026-09-14T07:00:00Z',
+  enabled: true,
+  check_mode: true
+};
+const jobExecution = {
+  id: 8,
+  job_id: 4,
+  message_id: '1700000000000-0',
+  status: 'queued',
+  requested_by: 'user-1',
+  error_code: null,
+  queued_at: '2026-09-14T07:00:00Z'
+};
   id: 5,
   tenant_id: 'tenant-a',
   ca_id: 3,
@@ -204,6 +238,30 @@ function installFetch() {
       return Response.json({ items: [], total: 0 });
     }
     if (url.endsWith('/api/v1/automation/jobs/runs')) return Response.json({ items: [], total: 0 });
+    if (url.endsWith('/api/v1/job-center/playbooks/') && method === 'GET') {
+      return Response.json({ items: [jobPlaybook], total: 1 });
+    }
+    if (url.endsWith('/api/v1/job-center/playbooks/') && method === 'POST') {
+      return Response.json({ ...jobPlaybook, id: 2, name: '新建 Playbook' }, { status: 201 });
+    }
+    if (url.endsWith('/api/v1/job-center/variables/') && method === 'GET') {
+      return Response.json({ items: [jobVariable], total: 1 });
+    }
+    if (url.endsWith('/api/v1/job-center/jobs/') && method === 'GET') {
+      return Response.json({ items: [jobDefinition], total: 1 });
+    }
+    if (url.endsWith('/api/v1/job-center/jobs/') && method === 'POST') {
+      return Response.json({ ...jobDefinition, id: 5, name: 'uptime', kind: 'adhoc' }, { status: 201 });
+    }
+    if (url.endsWith('/api/v1/job-center/jobs/4/run') && method === 'POST') {
+      return Response.json({ job_id: 4, message_id: '1700000000002-0', job_type: 'ansible.playbook', status: 'queued' }, { status: 202 });
+    }
+    if (url.endsWith('/api/v1/job-center/executions/') && method === 'GET') {
+      return Response.json({ items: [jobExecution], total: 1 });
+    }
+    if (url.endsWith('/api/v1/job-center/scheduler/tick') && method === 'POST') {
+      return Response.json({ queued: 1, items: [{ job_id: 4, message_id: '1700000000003-0', job_type: 'ansible.playbook', status: 'queued' }] }, { status: 202 });
+    }
     if (url.endsWith('/api/v1/zones/')) return Response.json({ items: [], total: 0 });
     if (url.includes('/api/v1/workflows/ticket-flows')) return Response.json({ items: [], total: 0 });
     if (url.endsWith('/api/v1/zones/gateway-candidates/')) return Response.json([]);
@@ -608,6 +666,38 @@ describe('MVP pages', () => {
           method: 'POST',
           body: JSON.stringify({ reason: 'console revoked' })
         })
+      )
+    );
+  });
+
+  it('shows job center playbooks, variables, jobs and runs a playbook without pickle or secrets', async () => {
+    const fetchMock = installFetch();
+    vi.stubGlobal('fetch', fetchMock);
+    history.pushState(null, '', '/jobs');
+    render(<App />);
+
+    expect(await screen.findByRole('heading', { name: '作业中心' })).toBeInTheDocument();
+    expect(screen.getByText('Linux 基线')).toBeInTheDocument();
+    expect(screen.getByText('linux-baseline.yml')).toBeInTheDocument();
+    expect(screen.getByText('region')).toBeInTheDocument();
+    expect(screen.getByText('基线巡检')).toBeInTheDocument();
+    expect(screen.getByText('1700000000000-0')).toBeInTheDocument();
+    expect(screen.queryByText(/pickle/i)).not.toBeInTheDocument();
+    expect(screen.queryByText('sec_tenant_a_deploy')).not.toBeInTheDocument();
+    expect(screen.getByRole('link', { name: '作业中心' })).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole('button', { name: '立即执行' }));
+    await waitFor(() =>
+      expect(fetchMock).toHaveBeenCalledWith(
+        '/api/v1/job-center/jobs/4/run',
+        expect.objectContaining({ method: 'POST' })
+      )
+    );
+    await userEvent.click(screen.getByRole('button', { name: '调度到期作业' }));
+    await waitFor(() =>
+      expect(fetchMock).toHaveBeenCalledWith(
+        '/api/v1/job-center/scheduler/tick',
+        expect.objectContaining({ method: 'POST' })
       )
     );
   });
