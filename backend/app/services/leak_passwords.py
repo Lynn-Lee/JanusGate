@@ -12,7 +12,7 @@ from app.core.security import password_policy_violations
 from app.models.governance import LeakPassword
 from app.services.tenant_settings import password_min_length_for_tenant, weak_password_check_enabled
 
-LEAKED_PASSWORD_REJECTED = "密码出现在泄露密码库中，请更换"
+LEAK_LIST_REJECT_MESSAGE = "密码出现在泄露密码库中，请更换"
 _SHA256_HEX = re.compile(r"^[0-9a-f]{64}$")
 
 # 内置样本都能通过复杂度策略，但是常见泄露口令；测试账号口令不要放进来。
@@ -60,7 +60,7 @@ async def reject_if_leaked(db: AsyncSession, *, tenant_id: str, password: str) -
     if not await weak_password_check_enabled(db, tenant_id):
         return
     if await password_is_leaked(db, tenant_id=tenant_id, password=password):
-        raise ValueError(LEAKED_PASSWORD_REJECTED)
+        raise ValueError(LEAK_LIST_REJECT_MESSAGE)
 
 
 async def enforce_new_password(db: AsyncSession, *, tenant_id: str, password: str) -> None:

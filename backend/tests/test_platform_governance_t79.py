@@ -16,7 +16,7 @@ from app.models.asset import Asset, Platform
 from app.services.auth import AuthService
 from app.services.leak_passwords import (
     BUILTIN_LEAK_SHA256,
-    LEAKED_PASSWORD_REJECTED,
+    LEAK_LIST_REJECT_MESSAGE,
     leak_password_sha256,
 )
 
@@ -231,14 +231,14 @@ async def test_leak_password_stores_hash_only_and_blocks_auth(
         assert builtin.json() == {"leaked": True}
 
     async with session_factory() as session:
-        with pytest.raises(ValueError, match=LEAKED_PASSWORD_REJECTED):
+        with pytest.raises(ValueError, match=LEAK_LIST_REJECT_MESSAGE):
             await AuthService.create_user(session, "carol", "UniqueLeak9!", tenant_id="tenant-a")
         created_user = await AuthService.create_user(
             session, "carol", "Stronger-Password-123", tenant_id="tenant-a"
         )
         created_user.password_hash = hash_password("old-password")
         await session.commit()
-        with pytest.raises(ValueError, match=LEAKED_PASSWORD_REJECTED):
+        with pytest.raises(ValueError, match=LEAK_LIST_REJECT_MESSAGE):
             await AuthService.change_password(session, created_user.id, "old-password", "Welcome1!")
 
 
