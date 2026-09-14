@@ -17,12 +17,12 @@ from app.main import app
 from app.models.webhook import (
     NotificationDelivery,
     NotificationRule,
+    SystemMessageSubscription,
     WebhookEndpoint,
 )
 from app.services.notification_channels import (
     CHANNEL_DINGTALK,
     CHANNEL_EMAIL,
-    CHANNEL_INBOX,
     ChannelTargetError,
     build_delivery_url,
     sanitize_channel_target,
@@ -31,6 +31,7 @@ from app.services.notification_delivery_worker import (
     ChannelAwareNotificationSender,
     NotificationDeliveryWorker,
 )
+from app.services.notification_fanout import fanout_notification_event
 
 
 @pytest.fixture
@@ -42,6 +43,14 @@ async def session_factory() -> AsyncGenerator[async_sessionmaker[AsyncSession], 
         yield async_sessionmaker(engine, expire_on_commit=False)
     finally:
         await engine.dispose()
+        app.dependency_overrides.clear()
+
+
+@pytest.fixture(autouse=True)
+def clear_overrides() -> None:
+    app.dependency_overrides.clear()
+    yield
+    app.dependency_overrides.clear()
 
 
 def install_db(session_factory: async_sessionmaker[AsyncSession]) -> None:
@@ -242,7 +251,7 @@ async def test_notification_event_fanout_writes_inbox_for_current_user_only(
             session_factory=session_factory,
             sender=ChannelAwareNotificationSender(session_factory=session_factory),
         )
-        result = await worker.run_due_once(now=datetime(2026, 9, 14, 6, 0, tzinfo=UTC))
+        result = await worker.run_due_once(now=datetime.now(UTC) + timedelta(minutes=1))
         assert result.delivered == 1
 
         own_inbox = client.get("/api/v1/in-app-messages/")
@@ -410,3 +419,98 @@ async def test_cross_tenant_subscriptions_are_isolated(
     assert tenant_b.json() == {"items": [], "total": 0}
     assert stolen.status_code == 404
     assert stolen.json()["code"] == "WEBHOOK_ENDPOINT_NOT_FOUND"
+
+
+@pytest.mark.asyncio
+async def test_fanout_skips_inbox_without_recipient_and_dedupes_same_endpoint(
+    session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    async with session_factory() as session:
+        webhook = WebhookEndpoint(
+            tenant_id="tenant-a",
+            name="siem",
+            url="https://siem.example.test/janusgate",
+            channel_type="webhook",
+            event_types_json='["audit.event.created"]',
+            status="active",
+        )
+        inbox = WebhookEndpoint(
+            tenant_id="tenant-a",
+            name="inbox",
+            url="",
+            channel_type="inbox",
+            event_types_json='["audit.event.created"]',
+            status="active",
+        )
+        session.add_all([webhook, inbox])
+        await session.flush()
+        session.add_all(
+            [
+                NotificationRule(
+                    tenant_id="tenant-a",
+                    name="siem-rule",
+                    event_types_json='["audit.event.created"]',
+                    webhook_endpoint_id=webhook.id,
+                    status="active",
+                ),
+                NotificationRule(
+                    tenant_id="tenant-a",
+                    name="inbox-rule-ignored",
+                    event_types_json='["audit.event.created"]',
+                    webhook_endpoint_id=inbox.id,
+                    status="active",
+                ),
+                SystemMessageSubscription(
+                    tenant_id="tenant-a",
+                    name="dup-webhook",
+                    event_types_json='["audit.event.created"]',
+                    webhook_endpoint_id=webhook.id,
+                    status="active",
+                ),
+                SystemMessageSubscription(
+                    tenant_id="tenant-a",
+                    name="inbox-no-user",
+                    event_types_json='["audit.event.created"]',
+                    webhook_endpoint_id=inbox.id,
+                    status="active",
+                ),
+            ]
+        )
+        await session.commit()
+        result = await fanout_notification_event(
+            db=session,
+            tenant_id="tenant-a",
+            event_type="audit.event.created",
+            payload={"token": "super-secret", "audit_event_id": "evt-1"},
+        )
+    assert result.queued == 1
+    assert result.inbox_queued == 0
+
+
+@pytest.mark.asyncio
+async def test_inbox_sender_requires_recipient() -> None:
+    delivery = NotificationDelivery(
+        tenant_id="tenant-a",
+        webhook_endpoint_id=1,
+        event_type="audit.event.created",
+        payload_json="{}",
+        status="pending",
+        attempts=0,
+        next_attempt_at=datetime(2026, 9, 14, 6, 0, tzinfo=UTC),
+    )
+    sender = ChannelAwareNotificationSender(
+        session_factory=async_sessionmaker(create_async_engine("sqlite+aiosqlite:///:memory:"))
+    )
+    with pytest.raises(RuntimeError, match="inbox recipient required"):
+        await sender.send(
+            endpoint=WebhookEndpoint(
+                tenant_id="tenant-a",
+                name="inbox",
+                url="",
+                channel_type="inbox",
+                event_types_json="[]",
+                status="active",
+            ),
+            delivery=delivery,
+            payload={},
+        )
