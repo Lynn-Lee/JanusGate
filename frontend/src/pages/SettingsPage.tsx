@@ -7,6 +7,11 @@ import { ErrorState, LoadingState } from '../components/StatusView';
 import { UserSelect, type DirectoryUser } from '../components/UserSelect';
 import { getErrorMessage, useApiData, useApiMessage } from './pageUtils';
 import { OidcSettingsCard } from './settings/OidcSettingsCard';
+import {
+  InAppMessagePanel,
+  NotificationChannelPanels,
+  SystemMessageSubscriptionPanels
+} from './settings/NotificationChannelPanels';
 import { TicketFlowPanels } from './settings/TicketFlowPanels';
 import type { AccountTemplate, Asset, AssetNode, GatewayCandidate, ListResponse, Zone } from './types';
 
@@ -121,6 +126,22 @@ function canWriteTicketFlows(isSuperuser: boolean, permissions: string[]): boole
   return isSuperuser || permissions.includes('admin') || permissions.includes('workflow:admin');
 }
 
+function canReadNotificationChannels(isSuperuser: boolean, permissions: string[]): boolean {
+  return isSuperuser || permissions.includes('admin') || permissions.includes('webhooks:read') || permissions.includes('webhooks:write');
+}
+
+function canWriteNotificationChannels(isSuperuser: boolean, permissions: string[]): boolean {
+  return isSuperuser || permissions.includes('admin') || permissions.includes('webhooks:write');
+}
+
+function canReadSubscriptions(isSuperuser: boolean, permissions: string[]): boolean {
+  return isSuperuser || permissions.includes('admin') || permissions.includes('notifications:read') || permissions.includes('notifications:write');
+}
+
+function canWriteSubscriptions(isSuperuser: boolean, permissions: string[]): boolean {
+  return isSuperuser || permissions.includes('admin') || permissions.includes('notifications:write');
+}
+
 
 function actionLabel(action: OverlayAction): string {
   return action === 'accept' ? '允许' : '拒绝';
@@ -162,6 +183,10 @@ export function SettingsPage() {
   const writeAccountTemplates = canWriteAccountTemplates(Boolean(user?.is_superuser), permissions);
   const showTicketFlows = canReadTicketFlows(Boolean(user?.is_superuser), permissions);
   const writeTicketFlows = canWriteTicketFlows(Boolean(user?.is_superuser), permissions);
+  const showNotificationChannels = canReadNotificationChannels(Boolean(user?.is_superuser), permissions);
+  const writeNotificationChannels = canWriteNotificationChannels(Boolean(user?.is_superuser), permissions);
+  const showSubscriptions = canReadSubscriptions(Boolean(user?.is_superuser), permissions);
+  const writeSubscriptions = canWriteSubscriptions(Boolean(user?.is_superuser), permissions);
   const showOidc = Boolean(user?.is_superuser) || permissions.includes('admin');
 
   const saveLicenseConfig = async (values: LicenseConfigForm) => {
@@ -295,6 +320,9 @@ export function SettingsPage() {
           ) : null}
         </Card>
         {showOidc ? <OidcSettingsCard /> : null}
+        {showNotificationChannels ? <NotificationChannelPanels canWrite={writeNotificationChannels} /> : null}
+        {showSubscriptions ? <SystemMessageSubscriptionPanels canWrite={writeSubscriptions} /> : null}
+        <InAppMessagePanel />
         <Card title="部署信息摘要">
           <Descriptions column={1} size="small">
             <Descriptions.Item label="环境">Docker Compose / Helm 均有基线</Descriptions.Item>
