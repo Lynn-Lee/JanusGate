@@ -36,6 +36,7 @@ from app.services.notification_delivery_worker import (
     ChannelAwareNotificationSender,
     NotificationDeliveryWorker,
 )
+from app.services.notification_fanout import fanout_notification_event
 
 
 @pytest.fixture
@@ -575,3 +576,77 @@ async def test_sms_channel_api_requires_gateway_credential(
     assert body["credential_configured"] is True
     assert "gateway-secret" not in json.dumps(body)
     assert "should-not-stay" not in json.dumps(body)
+
+
+@pytest.mark.asyncio
+async def test_fanout_skips_inbox_without_recipient_and_dedupes_channel(
+    session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    async with session_factory() as session:
+        webhook = WebhookEndpoint(
+            tenant_id="tenant-a",
+            name="siem",
+            url="https://siem.example.test/janusgate",
+            channel_type="webhook",
+            event_types_json=json.dumps(["audit.event.created"]),
+            status="active",
+        )
+        inbox = WebhookEndpoint(
+            tenant_id="tenant-a",
+            name="inbox",
+            url="",
+            channel_type="inbox",
+            event_types_json=json.dumps(["audit.event.created"]),
+            status="active",
+        )
+        session.add_all([webhook, inbox])
+        await session.flush()
+        session.add_all(
+            [
+                NotificationRule(
+                    tenant_id="tenant-a",
+                    name="audit-to-siem",
+                    event_types_json=json.dumps(["audit.event.created"]),
+                    webhook_endpoint_id=webhook.id,
+                    status="active",
+                ),
+                SystemMessageSubscription(
+                    tenant_id="tenant-a",
+                    name="audit-to-siem-again",
+                    event_types_json=json.dumps(["audit.event.created"]),
+                    webhook_endpoint_id=webhook.id,
+                    status="active",
+                ),
+                SystemMessageSubscription(
+                    tenant_id="tenant-a",
+                    name="inbox-missing-recipient",
+                    event_types_json=json.dumps(["audit.event.created"]),
+                    webhook_endpoint_id=inbox.id,
+                    status="active",
+                ),
+                SystemMessageSubscription(
+                    tenant_id="tenant-a",
+                    name="inbox-ok",
+                    event_types_json=json.dumps(["audit.event.created"]),
+                    webhook_endpoint_id=inbox.id,
+                    recipient_user_id="user-1",
+                    status="active",
+                ),
+            ]
+        )
+        await session.commit()
+        result = await fanout_notification_event(
+            db=session,
+            tenant_id="tenant-a",
+            event_type="audit.event.created",
+            payload={"audit_event_id": "evt-1", "token": "live-token"},
+        )
+
+    assert result.queued == 2
+    assert result.inbox_queued == 1
+    async with session_factory() as session:
+        stored = (await session.execute(NotificationDelivery.__table__.select())).mappings().all()
+    assert len(stored) == 2
+    payloads = [json.loads(row["payload_json"]) for row in stored]
+    assert all(item["token"] == "[REDACTED]" for item in payloads)
+    assert {row["recipient_user_id"] for row in stored} == {None, "user-1"}
