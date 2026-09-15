@@ -31,7 +31,6 @@ from typing import Any
 from urllib.parse import quote, urlencode
 
 import httpx
-
 from websockets import Subprotocol
 from websockets.asyncio.client import ClientConnection
 from websockets.asyncio.client import connect as ws_connect

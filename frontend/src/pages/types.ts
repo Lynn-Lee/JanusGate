@@ -333,3 +333,48 @@ export type AssetGrant = {
 export type ConnectImpact = {
   lost: Array<{ subject_id: string; asset_id: string; asset_name: string }>;
 };
+
+export type NotificationChannelType =
+  | 'webhook'
+  | 'dingtalk'
+  | 'feishu'
+  | 'lark'
+  | 'wecom'
+  | 'slack'
+  | 'sms'
+  | 'email'
+  | 'inbox';
+
+export type NotificationChannel = {
+  id: number;
+  tenant_id: string;
+  name: string;
+  url: string;
+  channel_type: NotificationChannelType;
+  event_types: string[];
+  status: string;
+  signing_secret_configured: boolean;
+  credential_configured: boolean;
+};
+
+export type SystemMessageSubscription = {
+  id: number;
+  tenant_id: string;
+  name: string;
+  event_types: string[];
+  webhook_endpoint_id: number;
+  webhook_endpoint_name: string;
+  channel_type: NotificationChannelType;
+  recipient_user_id: string | null;
+  status: string;
+};
+
+export type InAppMessage = {
+  id: number;
+  tenant_id: string;
+  event_type: string;
+  title: string;
+  body: Record<string, unknown>;
+  read_at: string | null;
+  created_at: string | null;
+};

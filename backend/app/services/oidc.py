@@ -74,9 +74,7 @@ def is_fully_configured(provider: OidcProvider | None) -> bool:
         return False
     if not (provider.client_id or "").strip():
         return False
-    if not (provider.client_secret_encrypted or "").strip():
-        return False
-    return True
+    return bool((provider.client_secret_encrypted or "").strip())
 
 
 def build_callback_url(request_base_url: str | None = None) -> str:

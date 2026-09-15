@@ -29,7 +29,9 @@ class RecordingSender(NotificationDeliverySender):
         endpoint: WebhookEndpoint,
         delivery: NotificationDelivery,
         payload: dict[str, object],
+        db: object | None = None,
     ) -> None:
+        _ = db
         self.requests.append(
             {"endpoint_url": endpoint.url, "event_type": delivery.event_type, "payload": payload}
         )
