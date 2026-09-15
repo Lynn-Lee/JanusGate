@@ -211,6 +211,17 @@ function installFetch() {
     }
     if (url.includes('/api/v1/system-message-subscriptions')) return Response.json({ items: [], total: 0 });
     if (url.includes('/api/v1/in-app-messages')) return Response.json({ items: [], total: 0 });
+    if (url.endsWith('/api/v1/auth/oidc/settings')) {
+      return Response.json({
+        enabled: false,
+        display_name: '',
+        issuer_url: '',
+        client_id: '',
+        client_secret_configured: false,
+        scopes: 'openid profile email',
+        callback_url: 'https://janusgate.example/api/v1/auth/oidc/callback'
+      });
+    }
     if (url.endsWith('/api/v1/zones/gateway-candidates/')) return Response.json([]);
     return Response.json(session);
   });
