@@ -25,18 +25,27 @@ async def ensure_builtin_roles(db: AsyncSession, tenant_id: str) -> list[RoleMod
     for builtin_key, definition in BUILTIN_ROLE_DEFINITIONS.items():
         if builtin_key in existing:
             continue
+        organization_id = definition.get("organization_id")
+        permissions_raw = definition["permissions"]
+        menus_raw = definition["menus"]
+        permissions = (
+            [str(item) for item in permissions_raw]
+            if isinstance(permissions_raw, (list, tuple))
+            else []
+        )
+        menus = [str(item) for item in menus_raw] if isinstance(menus_raw, (list, tuple)) else []
         role = RoleModel(
             id=new_role_id(),
             tenant_id=tenant_id,
             name=str(definition["name"]),
             display_name=str(definition["display_name"]),
             scope_type=str(definition["scope_type"]),
-            organization_id=definition.get("organization_id"),  # type: ignore[arg-type]
+            organization_id=None if organization_id is None else str(organization_id),
             is_builtin=True,
             builtin_key=builtin_key,
             description=str(definition["description"]),
-            permissions_json=dump_json_list([str(p) for p in definition["permissions"]]),  # type: ignore[arg-type]
-            menu_permissions_json=dump_json_list([str(m) for m in definition["menus"]]),  # type: ignore[arg-type]
+            permissions_json=dump_json_list(permissions),
+            menu_permissions_json=dump_json_list(menus),
         )
         db.add(role)
         created.append(role)

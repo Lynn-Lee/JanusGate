@@ -671,7 +671,7 @@ class WorkflowService:
         now: Callable[[], datetime] | None = None,
         request_id_factory: Callable[[], str] | None = None,
         grant_id_factory: Callable[[], str] | None = None,
-        ticket_flow_loader: Callable[[str], Any] | None = None,
+        ticket_flow_loader: Callable[..., Any] | None = None,
     ) -> None:
         self.store = store or InMemoryWorkflowStore()
         self.audit_sink = audit_sink or NoopAuditSink()
@@ -703,12 +703,16 @@ class WorkflowService:
     ) -> TicketFlowSnapshot | None:
         if self.ticket_flow_loader is not None:
             try:
-                flow = self.ticket_flow_loader(tenant_id, flow_type)
+                loaded = self.ticket_flow_loader(tenant_id, flow_type)
             except TypeError:
                 # backward-compatible loaders that only accept tenant_id
-                flow = self.ticket_flow_loader(tenant_id)
-            if hasattr(flow, "__await__"):
-                flow = await flow
+                loaded = self.ticket_flow_loader(tenant_id)
+            flow: TicketFlowSnapshot | None
+            if isinstance(loaded, TicketFlowSnapshot) or loaded is None:
+                flow = loaded
+            else:
+                resolved = await loaded
+                flow = resolved if isinstance(resolved, TicketFlowSnapshot) else None
             return flow
         return self._enabled_flows.get(f"{tenant_id}:{flow_type}") or (
             self._enabled_flows.get(tenant_id) if flow_type == "asset_grant" else None

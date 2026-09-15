@@ -192,9 +192,9 @@ class AccountVerifyWorkerHandler:
 
 async def _unwrap(secrets: SecretUnwrapper, secret_id: str) -> str:
     value = secrets.unwrap(secret_id)
-    if hasattr(value, "__await__"):
-        return await value  # type: ignore[misc]
-    return str(value)
+    if isinstance(value, str):
+        return value
+    return await value
 
 
 async def _load_account_asset(

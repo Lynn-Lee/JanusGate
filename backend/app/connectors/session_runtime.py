@@ -19,8 +19,10 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import dataclass
 from enum import StrEnum
-from typing import Any, Protocol
+from typing import TYPE_CHECKING, Any, Protocol
 from uuid import uuid4
+
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.api.sessions.service import ConnectorDispatchRequest
 from app.connectors.command_policy import CommandPolicyGuard, default_command_policy_guard
@@ -36,6 +38,13 @@ from app.connectors.ssh_channel import (
 from app.connectors.ssh_interactive import SshInteractiveSession
 from app.connectors.ssh_sftp import FileTransferEventSink, SftpChannel
 from app.policy.schemas import ResourceRef, SubjectRef
+
+if TYPE_CHECKING:
+    from app.connectors.asset_vault_resolver import (
+        AssetVaultSessionConnectionResolver,
+        SessionSecretUnwrapper,
+    )
+    from app.connectors.host_key_trust import HostKeyScanner, HostKeyTrustStore
 
 
 class ConnectorSessionMode(StrEnum):
@@ -326,11 +335,11 @@ class _NoopFileTransferEventSink:
 
 def build_production_session_resolver(
     *,
-    session_factory=None,
-    secrets=None,
-    host_keys=None,
-    scanner=None,
-):
+    session_factory: async_sessionmaker[AsyncSession] | None = None,
+    secrets: SessionSecretUnwrapper | None = None,
+    host_keys: HostKeyTrustStore | None = None,
+    scanner: HostKeyScanner | None = None,
+) -> AssetVaultSessionConnectionResolver:
     """装配生产 SessionConnectionResolver：资产注册表 + Vault + 已批准主机密钥 / K8s CA。"""
 
     from hashlib import sha256
@@ -379,11 +388,11 @@ def build_production_session_resolver(
 
 def build_production_connector_scheduler(
     *,
-    session_factory=None,
-    secrets=None,
-    host_keys=None,
-    scanner=None,
-):
+    session_factory: async_sessionmaker[AsyncSession] | None = None,
+    secrets: SessionSecretUnwrapper | None = None,
+    host_keys: HostKeyTrustStore | None = None,
+    scanner: HostKeyScanner | None = None,
+) -> ConnectorRuntimeScheduler:
     """装配生产连接器调度器：资产注册表 + Vault + 已批准主机密钥 / K8s CA。"""
 
     from app.core.database import AsyncSessionLocal
