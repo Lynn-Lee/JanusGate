@@ -52,7 +52,7 @@ class Account(Base):
     # #t73 账号模板（删除模板仅 unlink，不级联删账号）。
     template_id: Mapped[int | None] = mapped_column(
         Integer,
-        ForeignKey("account_templates.id", ondelete="SET NULL"),
+        ForeignKey("account_templates.id", name="fk_accounts_template_id_account_templates", ondelete="SET NULL"),
         nullable=True,
         index=True,
     )

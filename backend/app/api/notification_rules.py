@@ -8,6 +8,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.webhook_schemas import (
+    NotificationChannelType,
     NotificationRuleCreate,
     NotificationRuleListResponse,
     NotificationRuleResponse,
@@ -16,6 +17,7 @@ from app.api.webhook_schemas import (
 from app.core.database import get_db, get_read_db
 from app.core.deps import current_user
 from app.models.webhook import NotificationRule, WebhookEndpoint
+from app.services.notification_channels import CHANNEL_INBOX, parse_event_types
 
 router = APIRouter(prefix="/notification-rules", tags=["Notification Rules"])
 
@@ -28,7 +30,7 @@ async def list_notification_rules(
     _require_notification_permission(user, "notifications:read")
     tenant_id = str(user.get("tenant_id") or "default")
     result = await db.execute(
-        select(NotificationRule, WebhookEndpoint.name)
+        select(NotificationRule, WebhookEndpoint)
         .join(
             WebhookEndpoint,
             (WebhookEndpoint.id == NotificationRule.webhook_endpoint_id)
@@ -38,10 +40,7 @@ async def list_notification_rules(
         .order_by(NotificationRule.id)
     )
     rows = result.all()
-    items = [
-        _notification_rule_response(rule, webhook_endpoint_name=endpoint_name)
-        for rule, endpoint_name in rows
-    ]
+    items = [_notification_rule_response(rule, endpoint=endpoint) for rule, endpoint in rows]
     return NotificationRuleListResponse(items=items, total=len(items))
 
 
@@ -51,11 +50,14 @@ async def create_notification_rule(
     db: AsyncSession = Depends(get_db),
     user: dict[str, Any] = Depends(current_user),
 ) -> NotificationRuleResponse:
+    """创建通知规则。inbox 渠道必须走订阅，不能绑规则。"""
     _require_notification_permission(user, "notifications:write")
     tenant_id = str(user.get("tenant_id") or "default")
     endpoint = await _get_active_webhook_endpoint(
         db=db, tenant_id=tenant_id, endpoint_id=data.webhook_endpoint_id
     )
+    if endpoint.channel_type == CHANNEL_INBOX:
+        raise HTTPException(status_code=400, detail="INBOX_CHANNEL_REQUIRES_SUBSCRIPTION")
     rule = NotificationRule(
         tenant_id=tenant_id,
         name=data.name,
@@ -66,7 +68,7 @@ async def create_notification_rule(
     db.add(rule)
     await db.commit()
     await db.refresh(rule)
-    return _notification_rule_response(rule, webhook_endpoint_name=endpoint.name)
+    return _notification_rule_response(rule, endpoint=endpoint)
 
 
 def _require_notification_permission(user: dict[str, Any], permission: str) -> None:
@@ -93,26 +95,20 @@ async def _get_active_webhook_endpoint(
 
 
 def _notification_rule_response(
-    rule: NotificationRule, *, webhook_endpoint_name: str
+    rule: NotificationRule, *, endpoint: WebhookEndpoint
 ) -> NotificationRuleResponse:
     return NotificationRuleResponse(
         id=rule.id,
         tenant_id=rule.tenant_id,
         name=rule.name,
-        event_types=_event_types(rule.event_types_json),
+        event_types=parse_event_types(rule.event_types_json),
         webhook_endpoint_id=rule.webhook_endpoint_id,
-        webhook_endpoint_name=webhook_endpoint_name,
+        webhook_endpoint_name=endpoint.name,
+        channel_type=NotificationChannelType(endpoint.channel_type or "webhook"),
         status=NotificationRuleStatus(rule.status),
         created_at=_as_utc(rule.created_at),
         updated_at=_as_utc(rule.updated_at),
     )
-
-
-def _event_types(value: str) -> list[str]:
-    parsed = json.loads(value)
-    if not isinstance(parsed, list):
-        return []
-    return [str(item) for item in parsed]
 
 
 def _as_utc(value: datetime | None) -> datetime | None:

@@ -27,7 +27,11 @@ def test_phase5_docs_site_foundation_is_wired_for_operator_handoff() -> None:
 
     assert "docs/site/index.md" in docs_readme
     assert "Phase 5 #t59" in docs_index
-    assert "install.md" in docs_index
+    assert "asset-tree-authorization.md" in docs_index
+    assert "notification-channels.md" in docs_index
+    assert "notification-channels.md" in build_script
+    assert "通知渠道" in admin_guide
+    assert "/api/v1/notification-subscriptions/" in api_docs
     assert "admin.md" in docs_index
     assert "api.md" in docs_index
     assert "runbooks.md" in docs_index

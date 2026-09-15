@@ -1,6 +1,5 @@
 """Phase 4 notification delivery queue API routes."""
 import json
-import re
 from datetime import UTC, datetime
 from typing import Any
 
@@ -17,13 +16,9 @@ from app.api.webhook_schemas import (
 from app.core.database import get_db, get_read_db
 from app.core.deps import current_user
 from app.models.webhook import NotificationDelivery, NotificationRule, WebhookEndpoint
+from app.services.notification_channels import CHANNEL_INBOX, parse_event_types, redact_notification_payload
 
 router = APIRouter(tags=["Notification Deliveries"])
-
-_SENSITIVE_KEY_PARTS = ("authorization", "cookie", "credential", "password", "secret", "token")
-_SENSITIVE_ASSIGNMENT = re.compile(
-    r"(?i)\\b(token|password|passwd|secret|credential)\\s*=\\s*[^\\s,;]+"
-)
 
 
 @router.get(
@@ -60,6 +55,8 @@ async def enqueue_notification_delivery(
     _require_notification_permission(user, "notifications:write")
     tenant_id = str(user.get("tenant_id") or "default")
     rule, endpoint = await _get_active_rule_and_endpoint(db=db, tenant_id=tenant_id, rule_id=rule_id)
+    if endpoint.channel_type == CHANNEL_INBOX:
+        raise HTTPException(status_code=400, detail="INBOX_CHANNEL_REQUIRES_SUBSCRIPTION")
     if not _event_type_allowed(data.event_type, rule=rule, endpoint=endpoint):
         raise HTTPException(status_code=400, detail="NOTIFICATION_EVENT_NOT_ALLOWED")
 
@@ -68,8 +65,9 @@ async def enqueue_notification_delivery(
         tenant_id=tenant_id,
         notification_rule_id=rule.id,
         webhook_endpoint_id=endpoint.id,
+        recipient_user_id=data.recipient_user_id,
         event_type=data.event_type,
-        payload_json=json.dumps(_redact_payload(data.payload), sort_keys=True, default=str),
+        payload_json=json.dumps(redact_notification_payload(data.payload), sort_keys=True, default=str),
         status=NotificationDeliveryStatus.PENDING.value,
         attempts=0,
         next_attempt_at=now,
@@ -114,7 +112,7 @@ async def _get_active_rule_and_endpoint(
 def _event_type_allowed(
     event_type: str, *, rule: NotificationRule, endpoint: WebhookEndpoint
 ) -> bool:
-    return event_type in _event_types(rule.event_types_json) and event_type in _event_types(
+    return event_type in parse_event_types(rule.event_types_json) and event_type in parse_event_types(
         endpoint.event_types_json
     )
 
@@ -127,6 +125,7 @@ def _notification_delivery_response(
         tenant_id=delivery.tenant_id,
         notification_rule_id=delivery.notification_rule_id,
         webhook_endpoint_id=delivery.webhook_endpoint_id,
+        recipient_user_id=delivery.recipient_user_id,
         event_type=delivery.event_type,
         status=NotificationDeliveryStatus(delivery.status),
         attempts=delivery.attempts,
@@ -135,30 +134,6 @@ def _notification_delivery_response(
         created_at=_as_utc(delivery.created_at),
         updated_at=_as_utc(delivery.updated_at),
     )
-
-
-def _event_types(value: str) -> list[str]:
-    parsed = json.loads(value)
-    if not isinstance(parsed, list):
-        return []
-    return [str(item) for item in parsed]
-
-
-def _redact_payload(value: Any) -> Any:
-    if isinstance(value, dict):
-        redacted: dict[str, Any] = {}
-        for key, item in value.items():
-            normalized_key = str(key).lower()
-            if any(part in normalized_key for part in _SENSITIVE_KEY_PARTS):
-                redacted[str(key)] = "[REDACTED]"
-            else:
-                redacted[str(key)] = _redact_payload(item)
-        return redacted
-    if isinstance(value, list):
-        return [_redact_payload(item) for item in value]
-    if isinstance(value, str):
-        return _SENSITIVE_ASSIGNMENT.sub(r"\\1=[REDACTED]", value)
-    return value
 
 
 def _as_utc(value: datetime | None) -> datetime | None:

@@ -24,7 +24,13 @@ from app.models.tenancy import Organization, Project, Team, Tenant
 from app.models.user import ApiKey, User
 from app.models.vault import SecretRecordModel
 from app.models.zone import Zone, ZoneGateway
-from app.models.webhook import NotificationDelivery, NotificationRule, WebhookEndpoint
+from app.models.webhook import (
+    InAppMessage,
+    NotificationDelivery,
+    NotificationRule,
+    SystemMessageSubscription,
+    WebhookEndpoint,
+)
 from app.models.workflow import (
     ApprovalPolicyModel,
     ApprovalRuleModel,
@@ -54,6 +60,7 @@ __all__ = [
     "Connector",
     "DataMaskingRuleModel",
     "CredentialRotation",
+    "InAppMessage",
     "JitGrantModel",
     "LicenseConfigurationModel",
     "LoginAclModel",
@@ -62,6 +69,7 @@ __all__ = [
     "NodeModel",
     "OidcProvider",
     "NotificationDelivery",
+    "SystemMessageSubscription",
     "Organization",
     "Platform",
     "PlatformProtocolModel",
