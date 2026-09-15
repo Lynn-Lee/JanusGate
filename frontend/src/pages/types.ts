@@ -245,6 +245,45 @@ export type AutomationJobRun = {
   reason?: string | null;
 };
 
+export type JobPlaybook = {
+  id: number;
+  name: string;
+  filename: string;
+  content: string;
+};
+
+export type JobVariable = {
+  id: number;
+  name: string;
+  extra_vars: Record<string, unknown>;
+};
+
+export type JobDefinition = {
+  id: number;
+  name: string;
+  kind: 'playbook' | 'adhoc' | string;
+  playbook_id: number | null;
+  adhoc_module: string;
+  adhoc_args: string;
+  target_asset_ids: number[];
+  extra_var_names: string[];
+  runas_account_id: number | null;
+  interval_seconds: number | null;
+  next_run_at: string | null;
+  enabled: boolean;
+  check_mode: boolean;
+};
+
+export type JobExecution = {
+  id: number;
+  job_id: number;
+  message_id: string;
+  status: string;
+  requested_by: string;
+  error_code: string | null;
+  queued_at: string | null;
+};
+
 export type CredentialRotation = {
   id: number;
   tenant_id: string;
@@ -332,4 +371,49 @@ export type AssetGrant = {
 
 export type ConnectImpact = {
   lost: Array<{ subject_id: string; asset_id: string; asset_name: string }>;
+};
+
+export type NotificationChannelType =
+  | 'webhook'
+  | 'dingtalk'
+  | 'feishu'
+  | 'lark'
+  | 'wecom'
+  | 'slack'
+  | 'sms'
+  | 'email'
+  | 'inbox';
+
+export type NotificationChannel = {
+  id: number;
+  tenant_id: string;
+  name: string;
+  url: string;
+  channel_type: NotificationChannelType;
+  event_types: string[];
+  status: string;
+  signing_secret_configured: boolean;
+  credential_configured: boolean;
+};
+
+export type SystemMessageSubscription = {
+  id: number;
+  tenant_id: string;
+  name: string;
+  event_types: string[];
+  webhook_endpoint_id: number;
+  webhook_endpoint_name: string;
+  channel_type: NotificationChannelType;
+  recipient_user_id: string | null;
+  status: string;
+};
+
+export type InAppMessage = {
+  id: number;
+  tenant_id: string;
+  event_type: string;
+  title: string;
+  body: Record<string, unknown>;
+  read_at: string | null;
+  created_at: string | null;
 };

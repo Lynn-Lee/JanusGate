@@ -77,4 +77,4 @@ async def list_platform_protocol_rows(
         .where(PlatformProtocolModel.platform_id == platform_id)
         .order_by(PlatformProtocolModel.is_primary.desc(), PlatformProtocolModel.protocol_id.asc())
     )
-    return list(result.all())
+    return [(binding, protocol) for binding, protocol in result.all()]

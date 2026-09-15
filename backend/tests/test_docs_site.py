@@ -26,6 +26,11 @@ def test_phase5_docs_site_foundation_is_wired_for_operator_handoff() -> None:
     roadmap = (REPO_ROOT / "docs/architecture/10-master-evaluation-and-roadmap.md").read_text()
 
     assert "docs/site/index.md" in docs_readme
+    assert "notification-channels.md" in docs_index
+    assert (REPO_ROOT / "docs/site/notification-channels.md").exists()
+    notification_guide = (REPO_ROOT / "docs/site/notification-channels.md").read_text()
+    assert "INVALID_CHANNEL_HOST" in notification_guide
+    assert "INBOX_RECIPIENT_REQUIRED" in notification_guide
     assert "Phase 5 #t59" in docs_index
     assert "install.md" in docs_index
     assert "admin.md" in docs_index
@@ -89,6 +94,7 @@ def test_phase5_docs_site_foundation_is_wired_for_operator_handoff() -> None:
     assert build_script_path.exists()
     build_script = build_script_path.read_text()
     assert "docs-site" in build_script
+    assert "notification-channels.md" in build_script
     assert "openapi.json" in build_script
     assert "index.md" in build_script
     assert "runbooks.md" in build_script
@@ -192,3 +198,21 @@ def test_phase5_docs_site_foundation_is_wired_for_operator_handoff() -> None:
     assert "操作 runbook evidence manifest" in roadmap
     assert "license operations evidence manifest" in roadmap
     assert "runtime alert evidence manifest" in roadmap
+
+
+def test_job_center_docs_are_wired_into_docs_site() -> None:
+    docs_index = (REPO_ROOT / "docs/site/index.md").read_text()
+    api_docs = (REPO_ROOT / "docs/site/api.md").read_text()
+    admin_guide = (REPO_ROOT / "docs/site/admin.md").read_text()
+    job_center_docs = (REPO_ROOT / "docs/site/job-center.md").read_text()
+    build_script = (REPO_ROOT / "scripts/build-docs-site.sh").read_text()
+    api_contract = (REPO_ROOT / "docs/api-contract.md").read_text()
+    assert "job-center.md" in docs_index
+    assert "/api/v1/job-center/" in api_docs
+    assert "作业中心" in admin_guide
+    assert "禁止 pickle" in job_center_docs
+    assert "job.adhoc" in job_center_docs
+    assert "docs/site/job-center.md" in build_script
+    assert "job-center.md" in build_script
+    assert "Phase 6 作业中心（#t77）" in api_contract
+    assert "job.adhoc" in api_contract

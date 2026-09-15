@@ -12,6 +12,8 @@
 from __future__ import annotations
 
 import hashlib
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from typing import Any, Protocol
 from uuid import uuid4
@@ -534,7 +536,7 @@ class WorkflowCommandReviewBroker:
                 session_id=session_id,
                 reviewer_subject_ids=reviewer_subject_ids,
             )
-            return request.id
+            return str(request.id)
 
     def _build_service(self, session: AsyncSession) -> Any:
         from app.api.workflows.service import SQLAlchemyWorkflowStore, WorkflowService
@@ -542,7 +544,7 @@ class WorkflowCommandReviewBroker:
 
         repo = TicketFlowRepository(session)
 
-        async def loader(tenant_id: str, flow_type: str = "asset_grant"):
+        async def loader(tenant_id: str, flow_type: str = "asset_grant") -> Any:
             return await repo.get_enabled_flow(tenant_id=tenant_id, flow_type=flow_type)
 
         return WorkflowService(
@@ -550,25 +552,15 @@ class WorkflowCommandReviewBroker:
             ticket_flow_loader=loader,
         )
 
-    def _session_scope(self):
+    @asynccontextmanager
+    async def _session_scope(self) -> AsyncIterator[AsyncSession]:
         if self._db is not None:
-            return _PassthroughAsyncSession(self._db)
+            yield self._db
+            return
         factory = self._session_factory
         if factory is None:
             from app.core.database import AsyncSessionLocal
 
             factory = AsyncSessionLocal
-        return factory()
-
-
-class _PassthroughAsyncSession:
-    """Use an externally owned AsyncSession without closing it."""
-
-    def __init__(self, session: AsyncSession) -> None:
-        self._session = session
-
-    async def __aenter__(self) -> AsyncSession:
-        return self._session
-
-    async def __aexit__(self, exc_type, exc, tb) -> None:  # noqa: ANN001
-        return None
+        async with factory() as session:
+            yield session

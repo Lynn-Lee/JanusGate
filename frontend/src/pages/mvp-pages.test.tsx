@@ -114,6 +114,41 @@ const sshTrustBundle = {
   ],
   total: 1
 };
+const jobPlaybook = {
+  id: 1,
+  name: 'Linux 基线',
+  filename: 'linux-baseline.yml',
+  content: '---\n- hosts: all\n'
+};
+const jobVariable = {
+  id: 1,
+  name: 'region',
+  extra_vars: { region: 'ap-east' }
+};
+const jobDefinition = {
+  id: 4,
+  name: '基线巡检',
+  kind: 'playbook',
+  playbook_id: 1,
+  adhoc_module: 'command',
+  adhoc_args: '',
+  target_asset_ids: [1],
+  extra_var_names: ['region'],
+  runas_account_id: 1,
+  interval_seconds: 3600,
+  next_run_at: '2026-09-14T07:00:00Z',
+  enabled: true,
+  check_mode: true
+};
+const jobExecution = {
+  id: 8,
+  job_id: 4,
+  message_id: '1700000000000-0',
+  status: 'queued',
+  requested_by: 'user-1',
+  error_code: null,
+  queued_at: '2026-09-14T07:00:00Z'
+};
 const sshCertificate = {
   id: 5,
   tenant_id: 'tenant-a',
@@ -204,8 +239,57 @@ function installFetch() {
       return Response.json({ items: [], total: 0 });
     }
     if (url.endsWith('/api/v1/automation/jobs/runs')) return Response.json({ items: [], total: 0 });
+    if (url.endsWith('/api/v1/job-center/playbooks/') && method === 'GET') {
+      return Response.json({ items: [jobPlaybook], total: 1 });
+    }
+    if (url.endsWith('/api/v1/job-center/playbooks/') && method === 'POST') {
+      return Response.json({ ...jobPlaybook, id: 2, name: '新建 Playbook' }, { status: 201 });
+    }
+    if (url.endsWith('/api/v1/job-center/variables/') && method === 'GET') {
+      return Response.json({ items: [jobVariable], total: 1 });
+    }
+    if (url.endsWith('/api/v1/job-center/jobs/') && method === 'GET') {
+      return Response.json({ items: [jobDefinition], total: 1 });
+    }
+    if (url.endsWith('/api/v1/job-center/jobs/') && method === 'POST') {
+      return Response.json({ ...jobDefinition, id: 5, name: 'uptime', kind: 'adhoc' }, { status: 201 });
+    }
+    if (url.endsWith('/api/v1/job-center/jobs/4/run') && method === 'POST') {
+      return Response.json(
+        { job_id: 4, message_id: '1700000000002-0', job_type: 'ansible.playbook', status: 'queued' },
+        { status: 202 }
+      );
+    }
+    if (url.endsWith('/api/v1/job-center/executions/') && method === 'GET') {
+      return Response.json({ items: [jobExecution], total: 1 });
+    }
+    if (url.endsWith('/api/v1/job-center/scheduler/tick') && method === 'POST') {
+      return Response.json(
+        {
+          queued: 1,
+          items: [{ job_id: 4, message_id: '1700000000003-0', job_type: 'ansible.playbook', status: 'queued' }]
+        },
+        { status: 202 }
+      );
+    }
     if (url.endsWith('/api/v1/zones/')) return Response.json({ items: [], total: 0 });
     if (url.includes('/api/v1/workflows/ticket-flows')) return Response.json({ items: [], total: 0 });
+    if (url.endsWith('/api/v1/webhook-endpoints/') || url.endsWith('/api/v1/webhook-endpoints')) {
+      return Response.json({ items: [], total: 0 });
+    }
+    if (url.includes('/api/v1/system-message-subscriptions')) return Response.json({ items: [], total: 0 });
+    if (url.includes('/api/v1/in-app-messages')) return Response.json({ items: [], total: 0 });
+    if (url.endsWith('/api/v1/auth/oidc/settings')) {
+      return Response.json({
+        enabled: false,
+        display_name: '',
+        issuer_url: '',
+        client_id: '',
+        client_secret_configured: false,
+        scopes: 'openid profile email',
+        callback_url: 'https://janusgate.example/api/v1/auth/oidc/callback'
+      });
+    }
     if (url.endsWith('/api/v1/zones/gateway-candidates/')) return Response.json([]);
     return Response.json(session);
   });
@@ -387,6 +471,12 @@ describe('MVP pages', () => {
     expect(screen.getByText('还没有账号模板')).toBeInTheDocument();
     expect(await screen.findByText('审批流')).toBeInTheDocument();
     expect(screen.getByText('还没有审批流')).toBeInTheDocument();
+    expect(await screen.findByText('通知渠道')).toBeInTheDocument();
+    expect(screen.getByText('还没有通知渠道')).toBeInTheDocument();
+    expect(await screen.findByText('系统消息订阅')).toBeInTheDocument();
+    expect(screen.getByText('还没有系统消息订阅')).toBeInTheDocument();
+    expect(await screen.findByText('站内信')).toBeInTheDocument();
+    expect(screen.getByText('还没有站内信')).toBeInTheDocument();
     expect(await screen.findByText('网域')).toBeInTheDocument();
     expect(screen.getByText('还没有网域')).toBeInTheDocument();
     expect(await screen.findByText('登录 ACL')).toBeInTheDocument();
@@ -394,6 +484,58 @@ describe('MVP pages', () => {
     expect(screen.getByText('连接方式 ACL')).toBeInTheDocument();
     expect(screen.getByText('只限制从网页或客户端登录，用 API Key 访问不受影响。')).toBeInTheDocument();
     expect(screen.queryByText('没有权限')).not.toBeInTheDocument();
+  });
+
+  it('opens notification channel create modal with official IM types', async () => {
+    const fetchMock = installFetch();
+    vi.stubGlobal('fetch', fetchMock);
+    history.pushState(null, '', '/settings');
+    render(<App />);
+
+    expect(await screen.findByText('通知渠道')).toBeInTheDocument();
+    await userEvent.click((await screen.findAllByRole('button', { name: '创建渠道' }))[0]);
+    const dialog = await screen.findByRole('dialog');
+    expect(within(dialog).getByText('创建通知渠道')).toBeInTheDocument();
+    await userEvent.click(within(dialog).getByLabelText('类型'));
+    expect(await screen.findByText('钉钉')).toBeInTheDocument();
+    expect(screen.getByText('飞书')).toBeInTheDocument();
+    expect(screen.getByText('Lark')).toBeInTheDocument();
+    expect(screen.getByText('企业微信')).toBeInTheDocument();
+    expect(screen.getByText('Slack')).toBeInTheDocument();
+    expect(screen.getByTitle('站内信')).toBeInTheDocument();
+    expect(screen.getByText('短信网关')).toBeInTheDocument();
+    expect(screen.getByText('邮件网关')).toBeInTheDocument();
+    expect(screen.queryByText('access_token')).not.toBeInTheDocument();
+  });
+
+  it('shows notification channel URLs without IM tokens', async () => {
+    const fetchMock = installFetch();
+    vi.stubGlobal('fetch', async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.endsWith('/api/v1/webhook-endpoints/') || url.endsWith('/api/v1/webhook-endpoints')) {
+        return Response.json({
+          items: [
+            {
+              id: 9,
+              name: '值班钉钉',
+              channel_type: 'dingtalk',
+              url: 'https://oapi.dingtalk.com/robot/send',
+              event_types: ['audit.event.created'],
+              status: 'active'
+            }
+          ],
+          total: 1
+        });
+      }
+      return fetchMock(input, init);
+    });
+    history.pushState(null, '', '/settings');
+    render(<App />);
+
+    expect(await screen.findByText('值班钉钉')).toBeInTheDocument();
+    expect(screen.getByText('钉钉')).toBeInTheDocument();
+    expect(screen.getByText('https://oapi.dingtalk.com/robot/send')).toBeInTheDocument();
+    expect(screen.queryByText(/access_token/)).not.toBeInTheDocument();
   });
 
   it('hides overlay ACL lists without acl:read', async () => {
@@ -422,6 +564,9 @@ describe('MVP pages', () => {
     expect(screen.queryByText('登录 ACL')).not.toBeInTheDocument();
     expect(screen.queryByText('资产登录 ACL')).not.toBeInTheDocument();
     expect(screen.queryByText('连接方式 ACL')).not.toBeInTheDocument();
+    expect(screen.queryByText('通知渠道')).not.toBeInTheDocument();
+    expect(screen.queryByText('系统消息订阅')).not.toBeInTheDocument();
+    expect(await screen.findByText('站内信')).toBeInTheDocument();
     expect(screen.queryByText('没有权限')).not.toBeInTheDocument();
   });
 
@@ -611,36 +756,42 @@ describe('MVP pages', () => {
       )
     );
   });
+
+  it('shows job center playbooks, variables, jobs and runs a playbook without pickle or secrets', async () => {
+    const fetchMock = installFetch();
+    vi.stubGlobal('fetch', fetchMock);
+    history.pushState(null, '', '/jobs');
+    render(<App />);
+
+    expect(await screen.findByRole('heading', { name: '作业中心' })).toBeInTheDocument();
+    expect(screen.getByText('Linux 基线')).toBeInTheDocument();
+    expect(screen.getByText('linux-baseline.yml')).toBeInTheDocument();
+    expect(screen.getByText('region')).toBeInTheDocument();
+    expect(screen.getByText('基线巡检')).toBeInTheDocument();
+    expect(screen.getByText('1700000000000-0')).toBeInTheDocument();
+    expect(screen.getByText(/不使用 pickle/)).toBeInTheDocument();
+    expect(screen.queryByText('sec_tenant_a_deploy')).not.toBeInTheDocument();
+    expect(screen.getByRole('link', { name: '作业中心' })).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole('button', { name: '立即执行' }));
+    await waitFor(() =>
+      expect(fetchMock).toHaveBeenCalledWith(
+        '/api/v1/job-center/jobs/4/run',
+        expect.objectContaining({ method: 'POST' })
+      )
+    );
+    await userEvent.click(screen.getByRole('button', { name: '调度到期作业' }));
+    await waitFor(() =>
+      expect(fetchMock).toHaveBeenCalledWith(
+        '/api/v1/job-center/scheduler/tick',
+        expect.objectContaining({ method: 'POST' })
+      )
+    );
+  });
 });
 
 
 describe('#t69 host key overlay and connect list', () => {
-  const k8sPlatform = { id: 2, name: 'Kubernetes', category: 'cloud', protocols: '["k8s"]', is_active: true };
-  const mixedPlatform = { id: 3, name: 'Mixed', category: 'host', protocols: '["ssh","k8s"]', is_active: true };
-  const k8sAsset = { id: 2, name: 'prod-cluster', address: 'k8s.internal', platform_id: 2, port: 443, username: '', is_active: true, description: '', created_at: '2026-07-01T00:00:00Z', namespace: 'prod', has_server_ca: true };
-  const mixedAsset = { id: 3, name: 'bastion', address: '10.0.0.11', platform_id: 3, port: 22, username: 'ops', is_active: true, description: '', created_at: '2026-07-01T00:00:00Z', namespace: 'prod', has_server_ca: true };
-
-  function installK8sConnectFetch(podsResponse: Response | ((url: string) => Response | undefined)) {
-    const fetchMock = installFetch();
-    vi.stubGlobal('fetch', async (input: RequestInfo | URL, init?: RequestInit) => {
-      const url = String(input);
-      const method = init?.method ?? 'GET';
-      if (url.endsWith('/api/v1/assets/') && method === 'GET') {
-        return Response.json([asset, k8sAsset, mixedAsset]);
-      }
-      if (url.endsWith('/api/v1/assets/platforms')) {
-        return Response.json([platform, k8sPlatform, mixedPlatform]);
-      }
-      if (url.includes('/k8s/pods')) {
-        const custom = typeof podsResponse === 'function' ? podsResponse(url) : podsResponse;
-        if (custom) {
-          return custom;
-        }
-      }
-      return fetchMock(input, init);
-    });
-  }
-
   it('shows k8s assets on the connect list and opens 建连弹层 after listing pods', async () => {
     const k8sPlatform = { id: 2, name: 'Kubernetes', category: 'cloud', protocols: '["k8s"]', is_active: true };
     const mixedPlatform = { id: 3, name: 'Mixed', category: 'host', protocols: '["ssh","k8s"]', is_active: true };

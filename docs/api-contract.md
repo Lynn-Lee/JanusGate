@@ -113,6 +113,8 @@ Approval policy DSL 当前支持 `context_equals`、`context_in`、`context_numb
 - `asset.scan`
 - `credential.rotate`
 - `ansible.playbook`
+- `account.verify`
+- `job.adhoc`
 
 ### POST `/api/v1/automation/jobs/asset-scans`
 
@@ -247,6 +249,42 @@ Approval policy DSL 当前支持 `context_equals`、`context_in`、`context_numb
 - 非 JSON payload format fail-closed 为 `UNSUPPORTED_AUTOMATION_JOB_PAYLOAD_FORMAT`，不得 ack 消息。
 - payload 键名包含 password/token/secret/private key/connection string 等敏感字段时 fail-closed 为 `AUTOMATION_JOB_PAYLOAD_CONTAINS_SECRET`。
 - `secret_id` 这类 Vault 引用可由后续执行器显式传递，但队列契约不得承载凭据明文。
+
+## Phase 6 作业中心（#t77）
+
+作业中心在 #t52 JSON-only 队列之上提供 Playbook 目录、作业变量、作业定义、临时命令与执行记录。Playbook 作业复用 `ansible.playbook`；临时命令走新类型 `job.adhoc`。**禁止 pickle**。`runas` 只把 `runas_account_id` 写入队列，worker 解析 username 写入 inventory 的 `ansible_user`，不写密码。周期作业通过 `POST /api/v1/job-center/scheduler/tick` 拾取到期项。
+
+鉴权：`automation:read` / `automation:write` 或 `admin`。租户取当前用户，不接受客户端传入 tenant。
+
+### GET/POST `/api/v1/job-center/playbooks/`
+
+创建请求：
+
+```json
+{
+  "name": "基线",
+  "filename": "linux-baseline.yml",
+  "content": "---\n- hosts: all\n"
+}
+```
+
+`filename` 必须是相对 `.yml`/`.yaml`；绝对路径或 `..` 返回 `ANSIBLE_PLAYBOOK_NOT_ALLOWED`。
+
+### GET/POST `/api/v1/job-center/variables/`
+
+`extra_vars` 为 JSON 对象。含 password/token/secret 等键时 fail-closed 为 `AUTOMATION_JOB_PAYLOAD_CONTAINS_SECRET`。
+
+### GET/POST `/api/v1/job-center/jobs/` 与 `POST /api/v1/job-center/jobs/{job_id}/run`
+
+`kind` 为 `playbook` 或 `adhoc`。adhoc 只允许 `command` 模块，参数禁止 shell 元字符。入队 payload 只含资产 ID、变量值、可选 `runas_account_id` 与 `job_playbook_id`，不含凭据。
+
+### GET `/api/v1/job-center/executions/`
+
+按当前租户返回最近 100 条 `JobExecution`（`message_id` 对齐 `AutomationJobRun`）。不返回 stdout/stderr/inventory。
+
+### POST `/api/v1/job-center/scheduler/tick`
+
+把当前租户 `enabled` 且 `next_run_at <= now` 的周期作业入队，并将 `next_run_at` 加上 `interval_seconds`。
 
 ## Phase 4 Audit Report API（#t49）
 
@@ -591,7 +629,25 @@ template=soc2-access
 - payload 入库前会脱敏 token/password/secret/credential 等敏感键或赋值片段；响应不返回 payload。
 - `NotificationDeliveryWorker` 只读取 `pending` / 到期 `failed` 记录，成功后标记 `delivered`，失败后更新 `attempts`、`last_error` 与下一次重试时间，达到最大尝试次数后标记 `dead_letter`。
 - `HttpWebhookNotificationSender` 使用 `POST` 向 endpoint URL 投递 `{event_type, delivery_id, payload}`，并附带 `X-JanusGate-Event-Type` 与 `X-JanusGate-Tenant-Id`。非 2xx 或网络错误会 fail-closed 抛出稳定错误，worker 随后进入重试/死信流程；错误信息不包含 payload、signing secret 或下游响应体。
-- 当前切片不内置 IM sender 或多级审批。
+- `ChannelAwareNotificationSender`（#t75）按 `channel_type` 分发 WebHook / IM / HTTPS 网关 / 站内信，失败同样只保留稳定错误并进入同一条 dead-letter 契约。
+
+## Phase 6 通知渠道扩展 API（#t75）
+
+### POST `/api/v1/webhook-endpoints/`
+
+`channel_type` 支持 `webhook` / `dingtalk` / `feishu` / `lark` / `wecom` / `slack` / `sms` / `email` / `inbox`。IM 只允许官方 host，机器人 token 从 URL 剥离后 AES-256-GCM 落库；响应 `url` 不含凭据，只返回 `credential_configured`。`sms` / `email` 走 HTTPS 网关 Bearer。`inbox` 不需要 URL。
+
+### GET/POST `/api/v1/system-message-subscriptions/`
+
+租户隔离的系统消息订阅。站内信渠道必须带 `recipient_user_id`，否则 `400 INBOX_RECIPIENT_REQUIRED`。通知规则不能绑定站内信渠道，返回 `400 INBOX_CHANNEL_REQUIRES_SUBSCRIPTION`。
+
+### POST `/api/v1/notification-events/`
+
+按当前租户 active 规则与订阅扇出到投递队列。同一渠道 + 接收人只入队一次。响应 `202` 只返回 `{event_type, queued, inbox_queued}`，不回显 payload。
+
+### GET `/api/v1/in-app-messages/`
+
+只返回当前用户在当前租户的站内信。跨用户、跨租户为空列表。正文沿用 #t47 脱敏规则。已登录用户无需 `notifications:*` 权限即可读取自己的站内信。
 
 ### GET `/api/v1/notification-deliveries/`
 
