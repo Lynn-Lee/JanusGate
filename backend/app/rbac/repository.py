@@ -17,6 +17,12 @@ from app.rbac.ops import dump_json_list, load_json_list, new_binding_id, new_rol
 from app.tenancy.scope import ActorScope, scoped_select
 
 
+def _as_str_list(value: object) -> list[str]:
+    if not isinstance(value, (list, tuple)):
+        return []
+    return [str(item) for item in value]
+
+
 async def ensure_builtin_roles(db: AsyncSession, tenant_id: str) -> list[RoleModel]:
     """为租户补齐四个内置角色，幂等。"""
     result = await db.execute(select(RoleModel).where(RoleModel.tenant_id == tenant_id))
@@ -31,12 +37,12 @@ async def ensure_builtin_roles(db: AsyncSession, tenant_id: str) -> list[RoleMod
             name=str(definition["name"]),
             display_name=str(definition["display_name"]),
             scope_type=str(definition["scope_type"]),
-            organization_id=definition.get("organization_id"),  # type: ignore[arg-type]
+            organization_id=str(definition["organization_id"]) if definition.get("organization_id") else None,
             is_builtin=True,
             builtin_key=builtin_key,
             description=str(definition["description"]),
-            permissions_json=dump_json_list([str(p) for p in definition["permissions"]]),  # type: ignore[arg-type]
-            menu_permissions_json=dump_json_list([str(m) for m in definition["menus"]]),  # type: ignore[arg-type]
+            permissions_json=dump_json_list(_as_str_list(definition["permissions"])),
+            menu_permissions_json=dump_json_list(_as_str_list(definition["menus"])),
         )
         db.add(role)
         created.append(role)
