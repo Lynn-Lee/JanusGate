@@ -23,8 +23,8 @@ from app.protocols.repository import ensure_builtin_protocols, sync_platform_pro
 from app.protocols.validation import ProtocolValidationError, validate_asset_protocol_binding
 from app.schemas.asset import (
     AssetCreate,
-    AssetUpdate,
     AssetResponse,
+    AssetUpdate,
     K8sPodListResponse,
     K8sPodResponse,
     PlatformCreate,

@@ -16,7 +16,11 @@ from app.api.webhook_schemas import (
 from app.core.database import get_db, get_read_db
 from app.core.deps import current_user
 from app.models.webhook import NotificationDelivery, NotificationRule, WebhookEndpoint
-from app.services.notification_channels import CHANNEL_INBOX, parse_event_types, redact_notification_payload
+from app.services.notification_channels import (
+    CHANNEL_INBOX,
+    parse_event_types,
+    redact_notification_payload,
+)
 
 router = APIRouter(tags=["Notification Deliveries"])
 

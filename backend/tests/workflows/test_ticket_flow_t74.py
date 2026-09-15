@@ -15,7 +15,11 @@ from app.api.workflows.service import (
 from app.core.database import Base, get_db, get_read_db
 from app.core.deps import current_user
 from app.main import app
-from app.workflows.ticket_flows import ApprovalLevelSnapshot, TicketFlowRepository, TicketFlowSnapshot
+from app.workflows.ticket_flows import (
+    ApprovalLevelSnapshot,
+    TicketFlowRepository,
+    TicketFlowSnapshot,
+)
 
 
 class FakeAuditSink:

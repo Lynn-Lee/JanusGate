@@ -9,6 +9,11 @@ from fastapi.responses import RedirectResponse
 from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncSession
 
+# Re-exported helpers used by auth.py login completion
+from app.api.auth import (  # noqa: E402
+    _enforce_login_acl,
+    _token_data_for_user,
+)
 from app.core.database import get_db, get_read_db
 from app.core.deps import current_user, get_redis
 from app.core.security import create_access_token, create_mfa_token, create_refresh_token
@@ -20,8 +25,8 @@ from app.schemas.oidc import (
     OidcSettingsUpdate,
 )
 from app.services.oidc import (
-    OIDC_LOGIN_FAIL,
     DEFAULT_SCOPES,
+    OIDC_LOGIN_FAIL,
     build_callback_url,
     frontend_base_url,
     is_fully_configured,
@@ -29,12 +34,6 @@ from app.services.oidc import (
     safe_next_url,
 )
 from app.tenancy.scope import actor_scope_from_user
-
-# Re-exported helpers used by auth.py login completion
-from app.api.auth import (  # noqa: E402
-    _enforce_login_acl,
-    _token_data_for_user,
-)
 
 router = APIRouter(prefix="/auth/oidc", tags=["OIDC"])
 
