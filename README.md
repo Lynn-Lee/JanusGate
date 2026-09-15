@@ -127,6 +127,10 @@ Phase 6 #t65 已落地命令过滤 ACL、数据脱敏规则，以及登录 ACL /
 
 > 命令过滤、脱敏与三类 overlay 登录 ACL 均已 SHIP；#t69 / #t72 生产 `AssetVaultSessionConnectionResolver` 亦已 QA SHIP（测试仍注入 Noop/Fake）。
 
+### M6 作业中心（#t77 已完成）
+
+Phase 6 #t77 已落地作业中心：`JobPlaybook` / `JobVariable` / `Job` / `JobExecution`，API 前缀 `/api/v1/job-center/`，控制台 `/jobs`。Playbook 作业复用 #t52 `ansible.playbook`；临时命令走 `job.adhoc`（仅 Ansible `command` 模块，拒绝 shell 元字符）。变量与队列 payload 递归拒绝敏感键；runas 只带 `account_id`，inventory 不写密码。周期作业由 `POST /api/v1/job-center/scheduler/tick` 拾取。队列仍是 JSON-only，**禁止 pickle**。详见 [`docs/site/job-center.md`](docs/site/job-center.md)。
+
 ### M5 通知渠道（#t75 已完成）
 
 Phase 6 #t75 已在 #t47 投递队列上扩展渠道类型：钉钉 / 飞书 / Lark / 企业微信 / Slack 只允许官方 host，机器人 token 从 URL 剥离后 AES-256-GCM 落库；邮件/短信走 HTTPS 网关 Bearer；站内信由 worker 写入当前用户 `InAppMessage`。系统消息订阅按事件类型扇出，站内信必须指定接收人。设置页提供「通知渠道」「系统消息订阅」「站内信」。详见 [`docs/site/notification-channels.md`](docs/site/notification-channels.md)。

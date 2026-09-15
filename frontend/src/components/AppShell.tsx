@@ -2,6 +2,7 @@ import {
   ApartmentOutlined,
   AuditOutlined,
   ClusterOutlined,
+  CodeOutlined,
   DesktopOutlined,
   KeyOutlined,
   LockOutlined,
@@ -23,6 +24,7 @@ const navItems: Required<MenuProps>['items'] = [
   { key: '/tenancy', icon: <ApartmentOutlined />, label: <Link to="/tenancy">多租户</Link> },
   { key: '/ssh-ca', icon: <LockOutlined />, label: <Link to="/ssh-ca">SSH CA</Link> },
   { key: '/audits', icon: <AuditOutlined />, label: <Link to="/audits">审计日志</Link> },
+  { key: '/jobs', icon: <CodeOutlined />, label: <Link to="/jobs">作业中心</Link> },
   { key: '/settings', icon: <SettingOutlined />, label: <Link to="/settings">系统设置</Link> }
 ];
 

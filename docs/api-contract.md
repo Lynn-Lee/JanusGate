@@ -113,6 +113,8 @@ Approval policy DSL 当前支持 `context_equals`、`context_in`、`context_numb
 - `asset.scan`
 - `credential.rotate`
 - `ansible.playbook`
+- `account.verify`
+- `job.adhoc`
 
 ### POST `/api/v1/automation/jobs/asset-scans`
 
@@ -247,6 +249,42 @@ Approval policy DSL 当前支持 `context_equals`、`context_in`、`context_numb
 - 非 JSON payload format fail-closed 为 `UNSUPPORTED_AUTOMATION_JOB_PAYLOAD_FORMAT`，不得 ack 消息。
 - payload 键名包含 password/token/secret/private key/connection string 等敏感字段时 fail-closed 为 `AUTOMATION_JOB_PAYLOAD_CONTAINS_SECRET`。
 - `secret_id` 这类 Vault 引用可由后续执行器显式传递，但队列契约不得承载凭据明文。
+
+## Phase 6 作业中心（#t77）
+
+作业中心在 #t52 JSON-only 队列之上提供 Playbook 目录、作业变量、作业定义、临时命令与执行记录。Playbook 作业复用 `ansible.playbook`；临时命令走新类型 `job.adhoc`。**禁止 pickle**。`runas` 只把 `runas_account_id` 写入队列，worker 解析 username 写入 inventory 的 `ansible_user`，不写密码。周期作业通过 `POST /api/v1/job-center/scheduler/tick` 拾取到期项。
+
+鉴权：`automation:read` / `automation:write` 或 `admin`。租户取当前用户，不接受客户端传入 tenant。
+
+### GET/POST `/api/v1/job-center/playbooks/`
+
+创建请求：
+
+```json
+{
+  "name": "基线",
+  "filename": "linux-baseline.yml",
+  "content": "---\n- hosts: all\n"
+}
+```
+
+`filename` 必须是相对 `.yml`/`.yaml`；绝对路径或 `..` 返回 `ANSIBLE_PLAYBOOK_NOT_ALLOWED`。
+
+### GET/POST `/api/v1/job-center/variables/`
+
+`extra_vars` 为 JSON 对象。含 password/token/secret 等键时 fail-closed 为 `AUTOMATION_JOB_PAYLOAD_CONTAINS_SECRET`。
+
+### GET/POST `/api/v1/job-center/jobs/` 与 `POST /api/v1/job-center/jobs/{job_id}/run`
+
+`kind` 为 `playbook` 或 `adhoc`。adhoc 只允许 `command` 模块，参数禁止 shell 元字符。入队 payload 只含资产 ID、变量值、可选 `runas_account_id` 与 `job_playbook_id`，不含凭据。
+
+### GET `/api/v1/job-center/executions/`
+
+按当前租户返回最近 100 条 `JobExecution`（`message_id` 对齐 `AutomationJobRun`）。不返回 stdout/stderr/inventory。
+
+### POST `/api/v1/job-center/scheduler/tick`
+
+把当前租户 `enabled` 且 `next_run_at <= now` 的周期作业入队，并将 `next_run_at` 加上 `interval_seconds`。
 
 ## Phase 4 Audit Report API（#t49）
 

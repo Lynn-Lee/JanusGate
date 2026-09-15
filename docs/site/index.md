@@ -17,6 +17,7 @@ Phase 5 #t59 文档站 foundation 面向安装、运维和 API 集成读者，�
 - [RBAC 角色与权限](rbac.md)：#t63 的 Role / RoleBinding / 对象级 Permission、system+org 双 scope、内置角色、菜单权限与登录 token 签发接入。
 - [资产类型与协议](asset-types-protocols.md)：#t66 的声明式协议目录、Platform 协议约束、8 种资产类型与 19+1 协议种子。
 - [通知渠道扩展](notification-channels.md)：#t75 的 IM / 邮件短信网关 / 站内信渠道、系统消息订阅、脱敏 payload 与 dead-letter 契约。
+- [作业中心](job-center.md)：#t77 的 Playbook / 变量 / 作业 / 临时命令 / 周期 tick；JSON-only 队列，无 pickle。
 
 ## 版本边界
 
