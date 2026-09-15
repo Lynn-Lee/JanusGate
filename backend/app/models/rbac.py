@@ -7,14 +7,15 @@
 from __future__ import annotations
 
 from datetime import datetime
+from typing import Literal
 
 from sqlalchemy import Boolean, DateTime, Index, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.database import Base
 
-SCOPE_SYSTEM = "system"
-SCOPE_ORGANIZATION = "organization"
+SCOPE_SYSTEM: Literal["system"] = "system"
+SCOPE_ORGANIZATION: Literal["organization"] = "organization"
 SUBJECT_USER = "user"
 SUBJECT_USER_GROUP = "user_group"
 

@@ -347,7 +347,7 @@ async def test_reject_stays_blocked() -> None:
 
 async def test_accept_reject_acl_unchanged() -> None:
     sink = InMemoryCommandAuditSink()
-    allow_guard = CommandPolicyGuard(
+    _allow_guard = CommandPolicyGuard(
         _FakePolicy(effect=CommandFilterEffect.ALLOW),
         subject=SubjectRef(id="user-1", tenant_id="tenant-1"),
         resource=ResourceRef(id="asset-1", type="ssh", tenant_id="tenant-1"),

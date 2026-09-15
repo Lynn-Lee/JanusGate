@@ -1133,13 +1133,13 @@ class PolicyDecisionService:
             return current.astimezone(tz)
         if isinstance(raw, str) and raw:
             try:
-                current = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+                parsed = datetime.fromisoformat(raw.replace("Z", "+00:00"))
             except ValueError:
-                current = None
-            else:
-                if current.tzinfo is None:
-                    current = current.replace(tzinfo=UTC)
-                return current.astimezone(tz)
+                parsed = None
+            if parsed is not None:
+                if parsed.tzinfo is None:
+                    parsed = parsed.replace(tzinfo=UTC)
+                return parsed.astimezone(tz)
         return datetime.now(tz)
 
     @staticmethod

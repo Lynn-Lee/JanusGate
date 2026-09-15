@@ -8,7 +8,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import httpx
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.models.webhook import NotificationDelivery, NotificationRule, WebhookEndpoint
@@ -135,7 +135,7 @@ class NotificationDeliveryWorker:
     ) -> list[tuple[NotificationDelivery, WebhookEndpoint]]:
         result = await session.execute(
             select(NotificationDelivery, WebhookEndpoint)
-            .join(
+            .outerjoin(
                 NotificationRule,
                 (NotificationRule.id == NotificationDelivery.notification_rule_id)
                 & (NotificationRule.tenant_id == NotificationDelivery.tenant_id),
@@ -148,8 +148,11 @@ class NotificationDeliveryWorker:
             .where(
                 NotificationDelivery.status.in_(("pending", "failed")),
                 NotificationDelivery.next_attempt_at <= now,
-                NotificationRule.status == "active",
                 WebhookEndpoint.status == "active",
+                or_(
+                    NotificationDelivery.notification_rule_id.is_(None),
+                    NotificationRule.status == "active",
+                ),
             )
             .order_by(NotificationDelivery.id)
             .limit(self._batch_size)

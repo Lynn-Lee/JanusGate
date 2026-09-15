@@ -1,4 +1,4 @@
-"""Phase 4 webhook endpoint management API routes."""
+"""Phase 4 / Phase 6 #t75 通知渠道管理 API。"""
 import hashlib
 import json
 from datetime import UTC, datetime
@@ -9,6 +9,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.webhook_schemas import (
+    NotificationChannelType,
     WebhookEndpointCreate,
     WebhookEndpointListResponse,
     WebhookEndpointResponse,
@@ -17,6 +18,12 @@ from app.api.webhook_schemas import (
 from app.core.database import get_db, get_read_db
 from app.core.deps import current_user
 from app.models.webhook import WebhookEndpoint
+from app.services.notification_channels import (
+    ChannelValidationError,
+    encrypt_channel_credential,
+    parse_event_types,
+    sanitize_channel_target,
+)
 
 router = APIRouter(prefix="/webhook-endpoints", tags=["Webhook"])
 
@@ -44,14 +51,25 @@ async def create_webhook_endpoint(
     db: AsyncSession = Depends(get_db),
     user: dict[str, Any] = Depends(current_user),
 ) -> WebhookEndpointResponse:
+    """创建通知渠道。IM token 从 URL 剥离后 AES-256-GCM 落库，响应 URL 不含凭据。"""
+
     _require_webhook_permission(user, "webhooks:write")
-    _validate_webhook_url(data.url)
+    try:
+        target = sanitize_channel_target(
+            channel_type=data.channel_type.value,
+            url=data.url,
+            credential=data.credential,
+        )
+    except ChannelValidationError as exc:
+        raise HTTPException(status_code=400, detail=exc.code) from None
     endpoint = WebhookEndpoint(
         tenant_id=str(user.get("tenant_id") or "default"),
         name=data.name,
-        url=data.url,
+        url=target.public_url,
+        channel_type=data.channel_type.value,
         event_types_json=json.dumps(data.event_types),
         signing_secret_digest=_secret_digest(data.signing_secret),
+        credential_encrypted=encrypt_channel_credential(target.credential),
         status=data.status.value,
     )
     db.add(endpoint)
@@ -67,11 +85,6 @@ def _require_webhook_permission(user: dict[str, Any], permission: str) -> None:
     raise HTTPException(status_code=403, detail=f"缺少权限: {permission}")
 
 
-def _validate_webhook_url(value: str) -> None:
-    if not value.startswith("https://"):
-        raise HTTPException(status_code=400, detail="INVALID_WEBHOOK_URL")
-
-
 def _secret_digest(value: str | None) -> str | None:
     if value is None:
         return None
@@ -84,19 +97,14 @@ def _webhook_endpoint_response(endpoint: WebhookEndpoint) -> WebhookEndpointResp
         tenant_id=endpoint.tenant_id,
         name=endpoint.name,
         url=endpoint.url,
-        event_types=_event_types(endpoint.event_types_json),
+        channel_type=NotificationChannelType(endpoint.channel_type or "webhook"),
+        event_types=parse_event_types(endpoint.event_types_json),
         status=WebhookEndpointStatus(endpoint.status),
         signing_secret_configured=endpoint.signing_secret_digest is not None,
+        credential_configured=bool(endpoint.credential_encrypted),
         created_at=_as_utc(endpoint.created_at),
         updated_at=_as_utc(endpoint.updated_at),
     )
-
-
-def _event_types(value: str) -> list[str]:
-    parsed = json.loads(value)
-    if not isinstance(parsed, list):
-        return []
-    return [str(item) for item in parsed]
 
 
 def _as_utc(value: datetime | None) -> datetime | None:

@@ -7,6 +7,11 @@ import { ErrorState, LoadingState } from '../components/StatusView';
 import { UserSelect, type DirectoryUser } from '../components/UserSelect';
 import { getErrorMessage, useApiData, useApiMessage } from './pageUtils';
 import { OidcSettingsCard } from './settings/OidcSettingsCard';
+import {
+  InAppMessagePanel,
+  NotificationChannelPanel,
+  SystemMessageSubscriptionPanel
+} from './settings/NotificationChannelPanels';
 import { TicketFlowPanels } from './settings/TicketFlowPanels';
 import type { AccountTemplate, Asset, AssetNode, GatewayCandidate, ListResponse, Zone } from './types';
 
@@ -121,6 +126,32 @@ function canWriteTicketFlows(isSuperuser: boolean, permissions: string[]): boole
   return isSuperuser || permissions.includes('admin') || permissions.includes('workflow:admin');
 }
 
+function canReadWebhooks(isSuperuser: boolean, permissions: string[]): boolean {
+  return (
+    isSuperuser ||
+    permissions.includes('admin') ||
+    permissions.includes('webhooks:read') ||
+    permissions.includes('webhooks:write')
+  );
+}
+
+function canWriteWebhooks(isSuperuser: boolean, permissions: string[]): boolean {
+  return isSuperuser || permissions.includes('admin') || permissions.includes('webhooks:write');
+}
+
+function canReadNotifications(isSuperuser: boolean, permissions: string[]): boolean {
+  return (
+    isSuperuser ||
+    permissions.includes('admin') ||
+    permissions.includes('notifications:read') ||
+    permissions.includes('notifications:write')
+  );
+}
+
+function canWriteNotifications(isSuperuser: boolean, permissions: string[]): boolean {
+  return isSuperuser || permissions.includes('admin') || permissions.includes('notifications:write');
+}
+
 
 function actionLabel(action: OverlayAction): string {
   return action === 'accept' ? '允许' : '拒绝';
@@ -162,6 +193,10 @@ export function SettingsPage() {
   const writeAccountTemplates = canWriteAccountTemplates(Boolean(user?.is_superuser), permissions);
   const showTicketFlows = canReadTicketFlows(Boolean(user?.is_superuser), permissions);
   const writeTicketFlows = canWriteTicketFlows(Boolean(user?.is_superuser), permissions);
+  const showChannels = canReadWebhooks(Boolean(user?.is_superuser), permissions);
+  const writeChannels = canWriteWebhooks(Boolean(user?.is_superuser), permissions);
+  const showSubscriptions = canReadNotifications(Boolean(user?.is_superuser), permissions);
+  const writeSubscriptions = canWriteNotifications(Boolean(user?.is_superuser), permissions);
   const showOidc = Boolean(user?.is_superuser) || permissions.includes('admin');
 
   const saveLicenseConfig = async (values: LicenseConfigForm) => {
@@ -305,6 +340,9 @@ export function SettingsPage() {
         </Card>
         {showAccountTemplates ? <AccountTemplatePanels canWrite={writeAccountTemplates} /> : null}
         {showTicketFlows ? <TicketFlowPanels canWrite={writeTicketFlows} /> : null}
+        {showChannels ? <NotificationChannelPanel canWrite={writeChannels} /> : null}
+        {showSubscriptions ? <SystemMessageSubscriptionPanel canWrite={writeSubscriptions} /> : null}
+        <InAppMessagePanel />
         {showOverlayAcls ? <ZonePanels canWrite={writeOverlayAcls} /> : null}
         {showOverlayAcls ? <OverlayAclPanels canWrite={writeOverlayAcls} /> : null}
       </div>

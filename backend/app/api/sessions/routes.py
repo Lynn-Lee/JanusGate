@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from typing import Any, NoReturn, cast
+from typing import TYPE_CHECKING, Any, NoReturn, cast
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -31,6 +31,9 @@ from app.core.deps import current_user
 from app.core.redis import create_redis_client
 from app.policy.decision import PolicyDecisionService
 from app.workflows.audit import WorkflowAuditSink
+
+if TYPE_CHECKING:
+    from app.connectors.session_runtime import ConnectorRuntimeScheduler
 
 router = APIRouter(prefix="/sessions", tags=["会话网关"])
 
@@ -129,7 +132,7 @@ async def _tenant_policy_client(
     return PolicyDecisionServiceClient(service)
 
 
-def _production_connector_scheduler():
+def _production_connector_scheduler() -> ConnectorRuntimeScheduler:
     from app.connectors.session_runtime import build_production_connector_scheduler
 
     return build_production_connector_scheduler()

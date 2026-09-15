@@ -31,7 +31,6 @@ from typing import Any
 from urllib.parse import quote, urlencode
 
 import httpx
-
 from websockets import Subprotocol
 from websockets.asyncio.client import ClientConnection
 from websockets.asyncio.client import connect as ws_connect
@@ -405,7 +404,7 @@ async def request_service_account_token(
     except ValueError as exc:
         raise K8sChannelError("K8S_TOKEN_REQUEST_FAILED", "TokenRequest response is not json") from exc
     status_obj = payload.get("status") if isinstance(payload, dict) else None
-    token = ""
+    token = ""  # nosec B105
     if isinstance(status_obj, dict):
         token = str(status_obj.get("token") or "").strip()
     if not token:

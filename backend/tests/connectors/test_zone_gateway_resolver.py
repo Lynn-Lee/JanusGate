@@ -156,7 +156,7 @@ def _resolver(
 
 
 @pytest.mark.asyncio
-async def test_empty_zone_members_fail_closed_无法连接(
+async def test_empty_zone_members_fail_closed_无法连接(  # noqa: N802
     session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
     target, _gateway, key = await _seed_pair(session_factory, with_zone_members=False)

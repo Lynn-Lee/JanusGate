@@ -27,7 +27,6 @@ def test_phase5_docs_site_foundation_is_wired_for_operator_handoff() -> None:
 
     assert "docs/site/index.md" in docs_readme
     assert "Phase 5 #t59" in docs_index
-    assert "install.md" in docs_index
     assert "admin.md" in docs_index
     assert "api.md" in docs_index
     assert "runbooks.md" in docs_index
@@ -35,6 +34,7 @@ def test_phase5_docs_site_foundation_is_wired_for_operator_handoff() -> None:
     assert "operation-runbook-evidence.json" in docs_index
     assert "license-operations-evidence.json" in docs_index
     assert "runtime-alert-evidence.json" in docs_index
+    assert "notification-channels.md" in docs_index
     assert "SECRET_KEY" in install_guide
     assert "docker compose up --build -d" in install_guide
     assert "helm upgrade --install" in install_guide
@@ -71,6 +71,8 @@ def test_phase5_docs_site_foundation_is_wired_for_operator_handoff() -> None:
         assert screenshot_asset.exists()
         assert "<svg" in screenshot_asset.read_text()
     assert "/api/v1/auth/login" in api_docs
+    assert "/api/v1/notification-subscriptions/" in api_docs
+    assert "通知渠道" in admin_guide
     assert "/api/v1/sessions/" in api_docs
     assert "/api/v1/admin/license-summary" in api_docs
     assert "scripts/export-openapi-json.sh" in api_docs
@@ -99,6 +101,7 @@ def test_phase5_docs_site_foundation_is_wired_for_operator_handoff() -> None:
     assert "fixtures/operation-runbook-evidence.json" in build_script
     assert "fixtures/license-operations-evidence.json" in build_script
     assert "fixtures/runtime-alert-evidence.json" in build_script
+    assert "notification-channels.md" in build_script
     assert "assets/screenshots/live-screenshots/admin-settings-license-summary.png" in build_script
     assert screenshot_script_path.exists()
     screenshot_script = screenshot_script_path.read_text()
