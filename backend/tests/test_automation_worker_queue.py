@@ -180,3 +180,18 @@ async def test_automation_job_queue_allows_account_verify() -> None:
     assert job_id == "1700000000000-0"
     assert stream.calls[0][1]["job_type"] == "account.verify"
     assert json.loads(stream.calls[0][1]["payload_json"]) == {"account_id": 42}
+
+@pytest.mark.asyncio
+async def test_automation_job_queue_allows_account_push() -> None:
+    stream = RecordingRedisStream()
+    queue = AutomationJobQueue(redis=stream)
+    message_id = await queue.enqueue(
+        tenant_id="tenant-a",
+        job_type="account.push",
+        requested_by="user-1",
+        payload={"account_id": 7},
+    )
+    assert message_id
+    assert stream.calls[0][1]["job_type"] == "account.push"
+    assert '"account_id":7' in stream.calls[0][1]["payload_json"]
+

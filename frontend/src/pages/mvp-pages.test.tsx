@@ -75,7 +75,15 @@ const account = {
   status: 'active',
   rotation_policy: 'manual',
   use_token_request: false,
-  token_ttl_seconds: 900
+  token_ttl_seconds: 900,
+  credential_type: 'private_key'
+};
+const passwordAccount = {
+  ...account,
+  id: 3,
+  username: 'passwd-user',
+  secret_id: 'sec_password_user',
+  credential_type: 'password'
 };
 const k8sAccount = {
   ...account,
@@ -165,12 +173,15 @@ function installFetch() {
     if (url.endsWith('/api/v1/tenancy/organizations')) return Response.json({ items: [organization], total: 1 });
     if (url.endsWith('/api/v1/tenancy/teams')) return Response.json({ items: [team], total: 1 });
     if (url.endsWith('/api/v1/tenancy/projects')) return Response.json({ items: [project], total: 1 });
-    if (url.endsWith('/api/v1/accounts/') && method === 'GET') return Response.json({ items: [account, k8sAccount], total: 2 });
+    if (url.endsWith('/api/v1/accounts/') && method === 'GET') return Response.json({ items: [account, k8sAccount, passwordAccount], total: 3 });
     if (url.endsWith('/api/v1/accounts/1/rotations') && method === 'GET') {
       return Response.json({ items: [rotation], total: 1 });
     }
     if (url.endsWith('/api/v1/accounts/2/rotations') && method === 'GET') {
       return Response.json({ items: [], total: 0 });
+    }
+    if (url.endsWith('/api/v1/accounts/1/push') && method === 'POST') {
+      return Response.json({ job_id: 'push-1', job_type: 'account.push', status: 'queued', account_id: 1 }, { status: 202 });
     }
     if (url.endsWith('/api/v1/accounts/1/rotations') && method === 'POST') {
       return Response.json({ ...rotation, id: 8, reason: 'console requested rotation' }, { status: 201 });
@@ -550,6 +561,34 @@ describe('MVP pages', () => {
           method: 'POST',
           body: JSON.stringify({ reason: 'console requested rotation' })
         })
+      )
+    );
+  });
+
+  it('shows push action only for key-type SSH accounts and confirms before enqueue', async () => {
+    const fetchMock = installFetch();
+    vi.stubGlobal('fetch', fetchMock);
+    history.pushState(null, '', '/accounts');
+    render(<App />);
+
+    expect(await screen.findByRole('heading', { name: '账号托管与凭据轮换' })).toBeInTheDocument();
+    const deployRow = screen.getByText('deploy').closest('tr');
+    expect(deployRow).not.toBeNull();
+    expect(within(deployRow as HTMLElement).getByRole('button', { name: '推送' })).toBeInTheDocument();
+
+    const passwordRow = screen.getByText('passwd-user').closest('tr');
+    expect(passwordRow).not.toBeNull();
+    expect(within(passwordRow as HTMLElement).queryByRole('button', { name: '推送' })).not.toBeInTheDocument();
+
+    await userEvent.click(within(deployRow as HTMLElement).getByRole('button', { name: '推送' }));
+    expect(await screen.findByText('将把该账号公钥写入目标主机的 authorized_keys。确定推送？')).toBeInTheDocument();
+    const dialog = await screen.findByRole('dialog');
+    expect(within(dialog).getByRole('button', { name: '取消' })).toBeInTheDocument();
+    await userEvent.click(within(dialog).getByRole('button', { name: '推送' }));
+    await waitFor(() =>
+      expect(fetchMock).toHaveBeenCalledWith(
+        '/api/v1/accounts/1/push',
+        expect.objectContaining({ method: 'POST' })
       )
     );
   });

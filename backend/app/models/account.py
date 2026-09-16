@@ -60,6 +60,8 @@ class Account(Base):
     verify_status: Mapped[str] = mapped_column(String(20), nullable=False, default="unverified")
     last_verify_message_id: Mapped[str | None] = mapped_column(String(120), nullable=True)
     last_verify_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # #t73 account.push：password | private_key（UI 隐藏口令账号的「推送」；worker 仍以密钥内容为准）
+    credential_type: Mapped[str | None] = mapped_column(String(20), nullable=True, default=None)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
@@ -71,7 +73,7 @@ class Account(Base):
 
 
 class AccountRisk(Base):
-    """#t73 账号风险记录（本切片仅 verify_failed）。"""
+    """#t73 账号风险记录（verify_failed / push_failed）。"""
 
     __tablename__ = "account_risks"
 

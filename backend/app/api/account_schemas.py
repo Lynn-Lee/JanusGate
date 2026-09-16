@@ -22,6 +22,7 @@ class AccountCreate(BaseModel):
     use_token_request: bool = False
     token_ttl_seconds: int = Field(default=TOKEN_TTL_DEFAULT, ge=TOKEN_TTL_MIN, le=TOKEN_TTL_MAX)
     template_id: int | None = None
+    credential_type: str | None = None  # password | private_key
 
 
 class AccountUpdate(BaseModel):
@@ -35,6 +36,7 @@ class AccountUpdate(BaseModel):
     token_ttl_seconds: int | None = Field(default=None, ge=TOKEN_TTL_MIN, le=TOKEN_TTL_MAX)
     template_id: int | None = None
     username: str | None = Field(default=None, min_length=1, max_length=100)
+    credential_type: str | None = None
 
 
 class AccountResponse(BaseModel):
@@ -54,6 +56,7 @@ class AccountResponse(BaseModel):
     template_id: int | None = None
     verify_status: str = "unverified"
     last_verify_message_id: str | None = None
+    credential_type: str | None = None
 
 
 class AccountListResponse(BaseModel):
@@ -87,3 +90,11 @@ class AccountVerifyJobResponse(BaseModel):
     status: str
     account_id: int
     verify_status: str
+
+
+class AccountPushJobResponse(BaseModel):
+    job_id: str
+    job_type: str
+    status: str
+    account_id: int
+
