@@ -33,10 +33,13 @@ def verify_password(plain: str, hashed: str) -> bool:
         return False
 
 
-def password_policy_violations(password: str) -> list[str]:
+def password_policy_violations(password: str, min_length: int | None = None) -> list[str]:
+    """复杂度策略。租户 overlay 只能把最小长度抬高，不能低于全局下限。"""
+
+    required_length = PASSWORD_MIN_LENGTH if min_length is None else max(PASSWORD_MIN_LENGTH, min_length)
     violations: list[str] = []
-    if len(password) < PASSWORD_MIN_LENGTH:
-        violations.append(f"密码长度不能少于 {PASSWORD_MIN_LENGTH} 位")
+    if len(password) < required_length:
+        violations.append(f"密码长度不能少于 {required_length} 位")
     if not re.search(r"[A-Z]", password):
         violations.append("必须包含至少 1 个大写字母")
     if not re.search(r"[a-z]", password):

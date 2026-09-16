@@ -36,7 +36,7 @@ class Asset(Base):
     node_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
     zone_id: Mapped[int | None] = mapped_column(
         Integer,
-        ForeignKey("zones.id", name="fk_assets_zone_id_zones", ondelete="SET NULL"),
+        ForeignKey("zones.id", ondelete="SET NULL", name="fk_assets_zone_id_zones"),
         nullable=True,
         index=True,
     )

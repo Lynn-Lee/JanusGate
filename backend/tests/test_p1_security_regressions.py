@@ -76,6 +76,8 @@ def clear_dependency_overrides() -> None:
 
 @pytest.fixture(autouse=True)
 def allow_login_overlay(monkeypatch: pytest.MonkeyPatch) -> None:
+    """P1 用例用 FakeDB，不能装载 overlay ACL；登录守卫已由 auth 专项测试覆盖。"""
+
     async def _allow(*_args: Any, **_kwargs: Any) -> None:
         return None
 
@@ -90,7 +92,7 @@ def stub_token_data_for_fake_db(monkeypatch: pytest.MonkeyPatch) -> None:
             "sub": str(user.id),
             "username": user.username,
             "tenant_id": getattr(user, "tenant_id", None) or "default",
-            "permissions": list(auth_api.MVP_CONSOLE_PERMISSIONS),
+            "permissions": ["assets:read", "sessions:connect"],
             "menu_permissions": [],
             "role_ids": [],
         }

@@ -8,6 +8,12 @@ import { UserSelect, type DirectoryUser } from '../components/UserSelect';
 import { getErrorMessage, useApiData, useApiMessage } from './pageUtils';
 import { OidcSettingsCard } from './settings/OidcSettingsCard';
 import {
+  GovernanceLabelPanels,
+  GovernanceLeakPasswordCard,
+  GovernancePreferenceCard,
+  GovernanceSettingCard
+} from './settings/GovernancePanels';
+import {
   InAppMessagePanel,
   NotificationChannelPanel,
   SystemMessageSubscriptionPanel
@@ -118,6 +124,18 @@ function canWriteAcls(isSuperuser: boolean, permissions: string[]): boolean {
   return isSuperuser || permissions.includes('admin') || permissions.includes('acl:write');
 }
 
+function canReadLabels(isSuperuser: boolean, permissions: string[]): boolean {
+  return isSuperuser || permissions.includes('admin') || permissions.includes('assets:read') || permissions.includes('assets:write');
+}
+
+function canWriteLabels(isSuperuser: boolean, permissions: string[]): boolean {
+  return isSuperuser || permissions.includes('admin') || permissions.includes('assets:write');
+}
+
+function canManageGovernance(isSuperuser: boolean, permissions: string[]): boolean {
+  return isSuperuser || permissions.includes('admin');
+}
+
 function canReadTicketFlows(isSuperuser: boolean, permissions: string[]): boolean {
   return isSuperuser || permissions.includes('admin') || permissions.includes('workflow:admin');
 }
@@ -198,6 +216,9 @@ export function SettingsPage() {
   const showSubscriptions = canReadNotifications(Boolean(user?.is_superuser), permissions);
   const writeSubscriptions = canWriteNotifications(Boolean(user?.is_superuser), permissions);
   const showOidc = Boolean(user?.is_superuser) || permissions.includes('admin');
+  const showLabels = canReadLabels(Boolean(user?.is_superuser), permissions);
+  const writeLabels = canWriteLabels(Boolean(user?.is_superuser), permissions);
+  const showGovernanceAdmin = canManageGovernance(Boolean(user?.is_superuser), permissions);
 
   const saveLicenseConfig = async (values: LicenseConfigForm) => {
     setLicenseSubmitting(true);
@@ -330,6 +351,10 @@ export function SettingsPage() {
           ) : null}
         </Card>
         {showOidc ? <OidcSettingsCard /> : null}
+        <GovernancePreferenceCard />
+        {showLabels ? <GovernanceLabelPanels canWrite={writeLabels} /> : null}
+        {showGovernanceAdmin ? <GovernanceSettingCard /> : null}
+        {showGovernanceAdmin ? <GovernanceLeakPasswordCard /> : null}
         <Card title="部署信息摘要">
           <Descriptions column={1} size="small">
             <Descriptions.Item label="环境">Docker Compose / Helm 均有基线</Descriptions.Item>

@@ -68,6 +68,7 @@
 - Notification Subscriptions：`/api/v1/notification-subscriptions/*` 与 `POST /api/v1/notification-events/`，Phase 6 #t75 系统消息订阅与按规则/订阅扇出。
 - Notification Deliveries：`/api/v1/notification-rules/{rule_id}/deliveries` 与 `/api/v1/notification-deliveries/*`，Phase 4 WebHook 可靠投递队列基础；`NotificationDeliveryWorker` 负责到期投递、失败重试和 dead-letter 状态推进；#t75 `ChannelNotificationSender` 按渠道分发 IM / HTTPS 网关 / 站内信，错误不泄露 payload 或下游响应体。
 - In-App Messages：`/api/v1/in-app-messages/`，Phase 6 #t75 当前用户站内信列表。
+- Governance：`/api/v1/governance/*`，Phase 6 #t79 平台治理：资源标签、动态系统配置、用户偏好、泄露密码库与报表目录；动态配置拒绝未知键与密钥类字段，泄露密码库只存 SHA-256，报表运行不返回审计明细。
 - Admin：`/api/v1/admin/license-summary` 与 `/api/v1/admin/license-config`，Phase 5 #t58 Edition / License 边界摘要和 admin-only 持久化配置 foundation，不返回 license key、签名 secret、外部 validation token 或任何商业密钥材料。
 
 ## Phase 5 Edition / License Boundary（#t58）

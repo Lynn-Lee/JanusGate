@@ -1,6 +1,6 @@
 """连接器侧命令策略守卫（#t65：执行前接线）。
 
-在 SSH exec/PTY 与 K8s exec **落到远端之前**调用
+在 SSH exec/PTY、K8s exec 与数据库 SQL **落到远端之前**调用
 :meth:`~app.policy.decision.PolicyDecisionService.evaluate_command`。连接器不得自行判定。
 
 - ``DENY`` 不落远程并写 #t61；``REVIEW`` 开/复用工单并返回 ``command_review_pending``（终端「命令待复核」）
