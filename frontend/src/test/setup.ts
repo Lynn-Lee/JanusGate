@@ -1,4 +1,15 @@
 import '@testing-library/jest-dom/vitest';
+import '@ant-design/v5-patch-for-react-19';
+import { afterEach } from 'vitest';
+import { cleanup } from '@testing-library/react';
+
+afterEach(() => {
+  cleanup();
+  // antd 静态 Modal/message 渲染在自建容器中，RTL cleanup 不会移除，需手动清理避免跨用例泄漏
+  document
+    .querySelectorAll('.ant-modal-root, .ant-message-root, .ant-notification-root')
+    .forEach((el) => el.remove());
+});
 
 Object.defineProperty(window, 'matchMedia', {
   writable: true,

@@ -9,6 +9,7 @@ from app.api.account_schemas import (
     TOKEN_TTL_DEFAULT,
     AccountCreate,
     AccountListResponse,
+    AccountPushJobResponse,
     AccountResponse,
     AccountUpdate,
     AccountVerifyJobResponse,
@@ -84,6 +85,7 @@ async def create_account(
         use_token_request=bool(data.use_token_request),
         token_ttl_seconds=int(data.token_ttl_seconds),
         template_id=template_id,
+        credential_type=data.credential_type,
     )
     db.add(account)
     await db.commit()
@@ -169,6 +171,40 @@ async def trigger_account_verify(
         status="queued",
         account_id=account.id,
         verify_status=account.verify_status,
+    )
+
+
+@router.post(
+    "/{account_id}/push",
+    response_model=AccountPushJobResponse,
+    status_code=status.HTTP_202_ACCEPTED,
+)
+async def trigger_account_push(
+    account_id: int,
+    db: AsyncSession = Depends(get_db),
+    queue: AutomationJobQueue = Depends(get_automation_job_queue),
+    user: dict[str, Any] = Depends(current_user),
+) -> AccountPushJobResponse:
+    """手动触发 account.push（仅 key-type SSH）；载荷不含凭据。"""
+
+    _require_account_permission(user, "accounts:write")
+    account = await _get_scoped_account(db=db, user=user, account_id=account_id)
+    if account.protocol.lower() != "ssh":
+        raise HTTPException(status_code=400, detail="无法推送")
+    if str(getattr(account, "credential_type", "") or "").lower() == "password":
+        raise HTTPException(status_code=400, detail="无法推送")
+
+    job_id = await queue.enqueue(
+        tenant_id=account.tenant_id,
+        requested_by=str(user.get("id") or ""),
+        job_type="account.push",
+        payload={"account_id": account.id},
+    )
+    return AccountPushJobResponse(
+        job_id=job_id,
+        job_type="account.push",
+        status="queued",
+        account_id=account.id,
     )
 
 
@@ -304,6 +340,7 @@ def _account_response(account: Account) -> AccountResponse:
         template_id=getattr(account, "template_id", None),
         verify_status=str(getattr(account, "verify_status", None) or "unverified"),
         last_verify_message_id=getattr(account, "last_verify_message_id", None),
+        credential_type=getattr(account, "credential_type", None),
     )
 
 

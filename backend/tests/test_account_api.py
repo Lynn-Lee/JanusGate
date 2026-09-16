@@ -125,6 +125,7 @@ async def test_account_api_creates_and_lists_accounts_with_tenant_scope(
         "template_id": None,
         "verify_status": "unverified",
         "last_verify_message_id": None,
+        "credential_type": None,
     }
     assert "plaintext" not in created
     assert tenant_a_list.status_code == 200

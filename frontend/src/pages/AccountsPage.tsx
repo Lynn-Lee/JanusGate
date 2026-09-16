@@ -37,6 +37,12 @@ function isSshProtocol(protocol: string): boolean {
   return protocol.toLowerCase() === 'ssh';
 }
 
+function isKeyTypeSshAccount(account: Account): boolean {
+  if (!isSshProtocol(account.protocol)) return false;
+  // 口令账号隐藏「推送」；未标注时按 key-type 展示（worker 仍 fail-closed）
+  return (account.credential_type || 'private_key').toLowerCase() !== 'password';
+}
+
 type AccountEditValues = {
   secret_id: string;
   status: string;
@@ -63,6 +69,7 @@ export function AccountsPage() {
   const [saving, setSaving] = useState(false);
   const [creating, setCreating] = useState(false);
   const [verifyingIds, setVerifyingIds] = useState<Set<number>>(new Set());
+  const [pushingIds, setPushingIds] = useState<Set<number>>(new Set());
   const [editForm] = Form.useForm<AccountEditValues>();
   const [createForm] = Form.useForm<AccountCreateValues>();
   const useTokenRequest = Form.useWatch('use_token_request', editForm);
@@ -84,6 +91,11 @@ export function AccountsPage() {
 
   const verifyRuns = useMemo(
     () => (runs.data?.items ?? []).filter((run) => run.job_type === 'account.verify'),
+    [runs.data]
+  );
+
+  const pushRuns = useMemo(
+    () => (runs.data?.items ?? []).filter((run) => run.job_type === 'account.push'),
     [runs.data]
   );
 
@@ -121,6 +133,37 @@ export function AccountsPage() {
       toast.error(getErrorMessage(error));
     } finally {
       setVerifyingIds((prev) => {
+        const next = new Set(prev);
+        next.delete(account.id);
+        return next;
+      });
+    }
+  };
+
+  const confirmAndPush = (account: Account) => {
+    if (!isKeyTypeSshAccount(account)) return;
+    Modal.confirm({
+      title: '推送公钥',
+      content: '将把该账号公钥写入目标主机的 authorized_keys。确定推送？',
+      okText: '推送',
+      cancelText: '取消',
+      onOk: () => triggerPush(account)
+    });
+  };
+
+  const triggerPush = async (account: Account) => {
+    if (!isKeyTypeSshAccount(account)) return;
+    setPushingIds((prev) => new Set(prev).add(account.id));
+    try {
+      await api.post(`/api/v1/accounts/${account.id}/push`, {});
+      toast.success('公钥已推送');
+      accounts.reload();
+      runs.reload();
+    } catch (error) {
+      const message = getErrorMessage(error);
+      toast.error(message.includes('无法推送') ? '无法推送' : '推送失败');
+    } finally {
+      setPushingIds((prev) => {
         const next = new Set(prev);
         next.delete(account.id);
         return next;
@@ -309,6 +352,17 @@ export function AccountsPage() {
                         {verifyingIds.has(record.id) || record.verify_status === 'verifying' ? '校验中' : '校验'}
                       </Button>
                     ) : null}
+                    {isKeyTypeSshAccount(record) ? (
+                      <Button
+                        type="link"
+                        size="small"
+                        loading={pushingIds.has(record.id)}
+                        disabled={pushingIds.has(record.id)}
+                        onClick={() => confirmAndPush(record)}
+                      >
+                        {pushingIds.has(record.id) ? '推送中' : '推送'}
+                      </Button>
+                    ) : null}
                   </Space>
                 )
               },
@@ -341,6 +395,32 @@ export function AccountsPage() {
             size="small"
             columns={[
               { title: '类型', dataIndex: 'job_type' },
+              { title: '状态', dataIndex: 'status', render: statusTag },
+              {
+                title: '原因',
+                dataIndex: 'reason',
+                render: (value: string | null | undefined, record: AutomationJobRun) =>
+                  value || record.error_code || '—'
+              },
+              { title: '请求人', dataIndex: 'requested_by' }
+            ]}
+          />
+        </Card>
+
+        <Card title="推送任务">
+          <Table
+            rowKey="message_id"
+            dataSource={pushRuns}
+            pagination={false}
+            size="small"
+            columns={[
+              { title: '类型', dataIndex: 'job_type' },
+              {
+                title: '摘要',
+                dataIndex: 'playbook_name',
+                render: (value: string | null | undefined, record: AutomationJobRun) =>
+                  value || (record.status === 'completed' ? '成功' : record.reason || record.status)
+              },
               { title: '状态', dataIndex: 'status', render: statusTag },
               {
                 title: '原因',

@@ -245,6 +245,7 @@ export type Account = {
   template_id?: number | null;
   verify_status?: string;
   last_verify_message_id?: string | null;
+  credential_type?: string | null;
 };
 
 export type AutomationJobRun = {
