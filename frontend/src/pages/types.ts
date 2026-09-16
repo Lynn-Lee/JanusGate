@@ -152,6 +152,20 @@ export type AuditEvent = {
 
 export type AuditListResponse = { items: AuditEvent[]; total: number; limit: number; offset: number };
 
+export type OnlineSession = {
+  id: string;
+  subject_id: string;
+  asset_id: string;
+  account_id: string;
+  protocol: string;
+  status: string;
+  client_ip: string;
+  created_at: string;
+  updated_at: string;
+};
+
+export type OnlineSessionListResponse = { items: OnlineSession[]; total: number };
+
 export type AuditReportSummary = {
   tenant_id: string;
   total: number;
@@ -243,6 +257,45 @@ export type AutomationJobRun = {
   target_count: number | null;
   error_code: string | null;
   reason?: string | null;
+};
+
+export type JobPlaybook = {
+  id: number;
+  name: string;
+  filename: string;
+  content: string;
+};
+
+export type JobVariable = {
+  id: number;
+  name: string;
+  extra_vars: Record<string, unknown>;
+};
+
+export type JobDefinition = {
+  id: number;
+  name: string;
+  kind: 'playbook' | 'adhoc' | string;
+  playbook_id: number | null;
+  adhoc_module: string;
+  adhoc_args: string;
+  target_asset_ids: number[];
+  extra_var_names: string[];
+  runas_account_id: number | null;
+  interval_seconds: number | null;
+  next_run_at: string | null;
+  enabled: boolean;
+  check_mode: boolean;
+};
+
+export type JobExecution = {
+  id: number;
+  job_id: number;
+  message_id: string;
+  status: string;
+  requested_by: string;
+  error_code: string | null;
+  queued_at: string | null;
 };
 
 export type CredentialRotation = {

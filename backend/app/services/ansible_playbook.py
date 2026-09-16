@@ -1,4 +1,5 @@
 """Ansible playbook automation worker handler."""
+
 from __future__ import annotations
 
 import asyncio
@@ -7,7 +8,7 @@ import os
 import resource
 import tempfile
 from collections.abc import Awaitable, Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Protocol
 
@@ -15,9 +16,12 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.core.config import Settings, settings
+from app.models.account import Account
 from app.models.asset import Asset
 from app.models.automation import AutomationJobRun
-from app.services.automation_worker import JsonValue
+from app.models.job_center import JobPlaybook
+from app.services.automation_worker import JsonValue, _assert_no_sensitive_payload_keys
+from app.services.job_center import sync_job_execution
 
 
 @dataclass(frozen=True)
@@ -37,6 +41,9 @@ class AnsiblePlaybookRun:
     playbook_name: str
     check_mode: bool
     targets: list[AnsiblePlaybookTarget]
+    extra_vars: dict[str, JsonValue] = field(default_factory=dict)
+    runas_username: str | None = None
+    playbook_content: str | None = None
 
 
 @dataclass(frozen=True)
@@ -79,21 +86,38 @@ class LocalAnsiblePlaybookRunner:
         self._process_limits = process_limits or AnsibleProcessLimits()
 
     async def run(self, playbook: AnsiblePlaybookRun) -> None:
-        playbook_path = self._resolve_playbook(playbook.playbook_name)
         self._runtime_root.mkdir(parents=True, exist_ok=True)
         with tempfile.TemporaryDirectory(
             prefix=f"janusgate-ansible-{playbook.tenant_id}-",
             dir=self._runtime_root,
         ) as work_dir_name:
             work_dir = Path(work_dir_name)
+            if playbook.playbook_content is not None:
+                playbook_path = self._write_playbook_content(
+                    work_dir,
+                    playbook.playbook_name,
+                    playbook.playbook_content,
+                )
+            else:
+                playbook_path = self._resolve_playbook(playbook.playbook_name)
             inventory_path = work_dir / "inventory.json"
             inventory_path.write_text(
-                json.dumps(_build_inventory(playbook.targets), sort_keys=True),
+                json.dumps(
+                    _build_inventory(playbook.targets, runas_username=playbook.runas_username),
+                    sort_keys=True,
+                ),
                 encoding="utf-8",
             )
             args = [self._executable, str(playbook_path), "-i", str(inventory_path)]
             if playbook.check_mode:
                 args.append("--check")
+            if playbook.extra_vars:
+                extra_vars_path = work_dir / "extra_vars.json"
+                extra_vars_path.write_text(
+                    json.dumps(playbook.extra_vars, sort_keys=True),
+                    encoding="utf-8",
+                )
+                args.extend(["-e", f"@{extra_vars_path}"])
             try:
                 result = await asyncio.wait_for(
                     self._command_runner(
@@ -117,6 +141,22 @@ class LocalAnsiblePlaybookRunner:
         if not playbook_path.is_relative_to(self._playbook_root) or not playbook_path.is_file():
             raise ValueError("ANSIBLE_PLAYBOOK_NOT_ALLOWED")
         return playbook_path
+
+    def _write_playbook_content(self, work_dir: Path, playbook_name: str, content: str) -> Path:
+        """把目录中的 YAML 写到 runtime 临时目录，文件名只取 basename 以防路径逃逸。"""
+
+        candidate = Path(playbook_name)
+        if (
+            candidate.is_absolute()
+            or candidate.suffix not in {".yml", ".yaml"}
+            or ".." in candidate.parts
+        ):
+            raise ValueError("ANSIBLE_PLAYBOOK_NOT_ALLOWED")
+        dest = (work_dir / candidate.name).resolve()
+        if not dest.is_relative_to(work_dir.resolve()):
+            raise ValueError("ANSIBLE_PLAYBOOK_NOT_ALLOWED")
+        dest.write_text(content, encoding="utf-8")
+        return dest
 
 
 def build_local_ansible_playbook_runner(
@@ -158,6 +198,10 @@ class AnsiblePlaybookWorkerHandler:
         playbook_name = _payload_str(payload, "playbook_name")
         target_asset_ids = _payload_int_list(payload, "target_asset_ids")
         check_mode = _payload_bool(payload, "check_mode")
+        extra_vars = _payload_object(payload, "extra_vars")
+        _assert_no_sensitive_payload_keys(extra_vars)
+        job_playbook_id = _payload_optional_int(payload, "job_playbook_id")
+        runas_account_id = _payload_optional_int(payload, "runas_account_id")
 
         async with self._session_factory() as session:
             assets = await _get_active_assets(
@@ -179,6 +223,18 @@ class AnsiblePlaybookWorkerHandler:
                 )
                 for asset in (assets_by_id[asset_id] for asset_id in target_asset_ids)
             ]
+            playbook_content: str | None = None
+            if job_playbook_id is not None:
+                playbook = await session.get(JobPlaybook, job_playbook_id)
+                if playbook is None or playbook.tenant_id != tenant_id:
+                    raise ValueError("JOB_PLAYBOOK_NOT_FOUND")
+                playbook_content = playbook.content
+                playbook_name = playbook.filename
+            runas_username = await _resolve_runas_username(
+                session,
+                tenant_id=tenant_id,
+                account_id=runas_account_id,
+            )
 
         run = AnsiblePlaybookRun(
             tenant_id=tenant_id,
@@ -186,6 +242,9 @@ class AnsiblePlaybookWorkerHandler:
             playbook_name=playbook_name,
             check_mode=check_mode,
             targets=targets,
+            extra_vars=extra_vars,
+            runas_username=runas_username,
+            playbook_content=playbook_content,
         )
         await self._record_run(
             message_id=message_id,
@@ -197,9 +256,16 @@ class AnsiblePlaybookWorkerHandler:
             status="running",
             error_code=None,
         )
+        await sync_job_execution(
+            self._session_factory,
+            message_id=message_id,
+            status="running",
+            error_code=None,
+        )
         try:
             await self._runner.run(run)
         except Exception as exc:
+            error_code = _safe_error_code(exc)
             await self._record_run(
                 message_id=message_id,
                 tenant_id=tenant_id,
@@ -208,7 +274,13 @@ class AnsiblePlaybookWorkerHandler:
                 check_mode=check_mode,
                 target_count=len(targets),
                 status="failed",
-                error_code=_safe_error_code(exc),
+                error_code=error_code,
+            )
+            await sync_job_execution(
+                self._session_factory,
+                message_id=message_id,
+                status="failed",
+                error_code=error_code,
             )
             raise
         await self._record_run(
@@ -218,6 +290,12 @@ class AnsiblePlaybookWorkerHandler:
             playbook_name=playbook_name,
             check_mode=check_mode,
             target_count=len(targets),
+            status="completed",
+            error_code=None,
+        )
+        await sync_job_execution(
+            self._session_factory,
+            message_id=message_id,
             status="completed",
             error_code=None,
         )
@@ -267,6 +345,25 @@ async def _get_active_assets(
     return list(result.scalars().all())
 
 
+async def _resolve_runas_username(
+    session: AsyncSession,
+    *,
+    tenant_id: str,
+    account_id: int | None,
+) -> str | None:
+    """解析 runas 用户名；只返回 username，不读取 secret_id。"""
+
+    if account_id is None:
+        return None
+    result = await session.execute(
+        select(Account).where(Account.id == account_id).where(Account.tenant_id == tenant_id)
+    )
+    account = result.scalar_one_or_none()
+    if account is None:
+        raise ValueError("RUNAS_ACCOUNT_NOT_FOUND")
+    return account.username
+
+
 def _payload_bool(payload: dict[str, JsonValue], key: str) -> bool:
     value = payload.get(key)
     if not isinstance(value, bool):
@@ -293,28 +390,49 @@ def _payload_str(payload: dict[str, JsonValue], key: str) -> str:
     return value
 
 
+def _payload_optional_int(payload: dict[str, JsonValue], key: str) -> int | None:
+    if key not in payload:
+        return None
+    value = payload[key]
+    if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
+        raise ValueError("AUTOMATION_JOB_PAYLOAD_INVALID")
+    return value
+
+
+def _payload_object(payload: dict[str, JsonValue], key: str) -> dict[str, JsonValue]:
+    if key not in payload:
+        return {}
+    value = payload[key]
+    if not isinstance(value, dict):
+        raise ValueError("AUTOMATION_JOB_PAYLOAD_INVALID")
+    return value
+
+
 def _safe_error_code(exc: Exception) -> str:
     if exc.args and isinstance(exc.args[0], str) and exc.args[0].isupper():
         return exc.args[0][:120]
     return exc.__class__.__name__[:120]
 
 
-def _build_inventory(targets: list[AnsiblePlaybookTarget]) -> dict[str, object]:
-    return {
-        "all": {
-            "hosts": {
-                f"asset_{target.id}": {
-                    "ansible_host": target.address,
-                    "ansible_port": target.port,
-                    "janusgate_asset_id": target.id,
-                    "janusgate_asset_name": target.name,
-                    "janusgate_platform_id": target.platform_id,
-                    "janusgate_tenant_id": target.tenant_id,
-                }
-                for target in targets
-            }
+def _build_inventory(
+    targets: list[AnsiblePlaybookTarget],
+    *,
+    runas_username: str | None = None,
+) -> dict[str, object]:
+    hosts: dict[str, dict[str, object]] = {}
+    for target in targets:
+        host: dict[str, object] = {
+            "ansible_host": target.address,
+            "ansible_port": target.port,
+            "janusgate_asset_id": target.id,
+            "janusgate_asset_name": target.name,
+            "janusgate_platform_id": target.platform_id,
+            "janusgate_tenant_id": target.tenant_id,
         }
-    }
+        if runas_username:
+            host["ansible_user"] = runas_username
+        hosts[f"asset_{target.id}"] = host
+    return {"all": {"hosts": hosts}}
 
 
 def _safe_ansible_env() -> dict[str, str]:

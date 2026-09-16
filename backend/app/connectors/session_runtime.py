@@ -166,7 +166,8 @@ class ConnectorSessionRuntime:
 
     :param resolver: 身份 → 连接参数解析器。
     :param command_sink: 交互式通道的命令事件下游（INTERACTIVE 模式必需）。
-    :param transfer_sink: SFTP 通道的文件传输事件下游（SFTP 模式必需）。
+    :param transfer_sink: SFTP 通道的文件传输事件下游（SFTP 模式在无 factory 时必需）。
+    :param transfer_sink_factory: 按 dispatch 请求构造 per-session sink（#t78 进程内账本）。
     """
 
     def __init__(
@@ -175,6 +176,8 @@ class ConnectorSessionRuntime:
         *,
         command_sink: CommandEventSink | None = None,
         transfer_sink: FileTransferEventSink | None = None,
+        transfer_sink_factory: Callable[[ConnectorDispatchRequest], FileTransferEventSink]
+        | None = None,
         command_policy: CommandPolicyGuard | None = None,
         session_factory: Callable[..., Any] | None = None,
         id_factory: Callable[[], str] | None = None,
@@ -182,6 +185,7 @@ class ConnectorSessionRuntime:
         self._resolver = resolver
         self._command_sink = command_sink
         self._transfer_sink = transfer_sink
+        self._transfer_sink_factory = transfer_sink_factory
         self._command_policy = command_policy
         self._session_factory = session_factory
         self._id_factory = id_factory or (lambda: f"cs_{uuid4().hex}")
@@ -279,19 +283,25 @@ class ConnectorSessionRuntime:
                 policy=policy,
             )
         if spec.mode is ConnectorSessionMode.SFTP:
-            if self._transfer_sink is None:
-                raise SshChannelError(
-                    "CONNECTOR_TRANSFER_SINK_MISSING",
-                    "sftp mode requires a transfer_sink",
-                )
+            transfer_sink = self._resolve_transfer_sink(request)
             return await SftpChannel.open(
                 spec.target,
                 spec.credential,
-                self._transfer_sink,
+                transfer_sink,
                 jump_target=spec.jump_target,
                 jump_credential=spec.jump_credential,
             )
         raise SshChannelError("CONNECTOR_UNSUPPORTED_MODE", str(spec.mode))
+
+    def _resolve_transfer_sink(self, request: ConnectorDispatchRequest) -> FileTransferEventSink:
+        if self._transfer_sink_factory is not None:
+            return self._transfer_sink_factory(request)
+        if self._transfer_sink is not None:
+            return self._transfer_sink
+        raise SshChannelError(
+            "CONNECTOR_TRANSFER_SINK_MISSING",
+            "sftp mode requires a transfer_sink",
+        )
 
     async def _open_k8s_channel(
         self,
@@ -404,11 +414,6 @@ class _NoopCommandEventSink:
         return None
 
 
-class _NoopFileTransferEventSink:
-    async def emit(self, event: object) -> None:
-        return None
-
-
 def build_production_session_resolver(
     *,
     session_factory: async_sessionmaker[AsyncSession] | None = None,
@@ -480,10 +485,26 @@ def build_production_connector_scheduler(
         host_keys=host_keys,
         scanner=scanner,
     )
+    def transfer_sink_factory(request: ConnectorDispatchRequest) -> FileTransferEventSink:
+        from app.connectors.file_transfer_sink import AuditServiceFileTransferSink
+
+        connector_id = request.connector_id or "0"
+        return AuditServiceFileTransferSink(
+            actor={
+                "id": request.subject_id,
+                "username": request.subject_id,
+                "tenant_id": request.tenant_id,
+            },
+            connector_id=connector_id,
+            session_id=request.session_id,
+            asset_id=request.asset_id,
+            account_id=request.account_id,
+        )
+
     runtime = ConnectorSessionRuntime(
         resolver,
         command_sink=_NoopCommandEventSink(),
-        transfer_sink=_NoopFileTransferEventSink(),
+        transfer_sink_factory=transfer_sink_factory,
         session_factory=factory,
     )
     return ConnectorRuntimeScheduler(runtime)

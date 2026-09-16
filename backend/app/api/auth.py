@@ -221,6 +221,16 @@ async def change_password(
         await AuthService.change_password(db, user["id"], data.old_password, data.new_password)
     except ValueError as e:
         raise HTTPException(400, str(e)) from e
+    from app.api.audits.typed import record_password_change
+
+    await record_password_change(
+        actor=user,
+        resource_type="user",
+        resource_id=str(user.get("id") or ""),
+        action="password.change",
+        status="completed",
+        message="登录密码已修改",
+    )
     return {"status": "ok", "msg": "密码已修改"}
 
 

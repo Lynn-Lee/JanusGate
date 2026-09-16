@@ -230,6 +230,7 @@ class AuditEventRepository:
         tenant_id: str,
         event_type: str | None = None,
         severity: AuditSeverity | None = None,
+        categories: list[str] | None = None,
         limit: int = 50,
         offset: int = 0,
     ) -> tuple[list[AuditEvent], int]:
@@ -238,6 +239,8 @@ class AuditEventRepository:
             conditions.append(AuditEventModel.event_type == event_type)
         if severity is not None:
             conditions.append(AuditEventModel.severity == severity.value)
+        if categories:
+            conditions.append(AuditEventModel.category.in_(categories))
         ordering = (AuditEventModel.sequence_number.asc(),)
         total = len(
             (
@@ -410,6 +413,7 @@ class AuditService:
         severity: AuditSeverity | None,
         limit: int,
         offset: int,
+        categories: list[str] | None = None,
     ) -> tuple[list[AuditEvent], int]:
         async with self._read_session_factory() as db:
             return await self._repository.list(
@@ -417,6 +421,7 @@ class AuditService:
                 tenant_id=tenant_id,
                 event_type=event_type,
                 severity=severity,
+                categories=categories,
                 limit=limit,
                 offset=offset,
             )

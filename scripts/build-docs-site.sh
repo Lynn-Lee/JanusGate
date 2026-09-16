@@ -25,6 +25,8 @@ cp "$repo_root/docs/site/connectors-db.md" "$output_abs/connectors-db.md"
 cp "$repo_root/docs/site/acl-command-filter.md" "$output_abs/acl-command-filter.md"
 cp "$repo_root/docs/site/acl-data-masking.md" "$output_abs/acl-data-masking.md"
 cp "$repo_root/docs/site/asset-tree-authorization.md" "$output_abs/asset-tree-authorization.md"
+cp "$repo_root/docs/site/audit-types.md" "$output_abs/audit-types.md"
+cp "$repo_root/docs/site/job-center.md" "$output_abs/job-center.md"
 cp "$repo_root/docs/site/notification-channels.md" "$output_abs/notification-channels.md"
 cp "$repo_root/docs/site/platform-governance.md" "$output_abs/platform-governance.md"
 mkdir -p "$output_abs/assets"
@@ -103,6 +105,8 @@ cat > "$output_abs/manifest.json" <<'JSON'
     "acl-command-filter.md",
     "acl-data-masking.md",
     "asset-tree-authorization.md",
+    "audit-types.md",
+    "job-center.md",
     "notification-channels.md",
     "platform-governance.md"
   ]

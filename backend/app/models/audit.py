@@ -7,7 +7,7 @@
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import JSON, DateTime, Integer, String, Text, UniqueConstraint, func
+from sqlalchemy import JSON, DateTime, Index, Integer, String, Text, UniqueConstraint, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.database import Base
@@ -47,4 +47,5 @@ class AuditEventModel(Base):
 
     __table_args__ = (
         UniqueConstraint("tenant_id", "sequence_number", name="uq_audit_events_tenant_sequence"),
+        Index("ix_audit_events_tenant_category", "tenant_id", "category"),
     )

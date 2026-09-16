@@ -23,6 +23,7 @@ from app.models.governance import (
     UserPreference,
 )
 from app.models.host_key import AssetHostKeyModel
+from app.models.job_center import Job, JobExecution, JobPlaybook, JobVariable
 from app.models.oidc import OidcProvider
 from app.models.protocol import PlatformProtocolModel, ProtocolModel
 from app.models.rbac import RoleBindingModel, RoleModel, RoleObjectPermissionModel
@@ -71,6 +72,10 @@ __all__ = [
     "CredentialRotation",
     "InAppMessage",
     "JitGrantModel",
+    "Job",
+    "JobExecution",
+    "JobPlaybook",
+    "JobVariable",
     "LeakPassword",
     "LicenseConfigurationModel",
     "LoginAclModel",

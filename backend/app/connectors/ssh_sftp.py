@@ -7,9 +7,9 @@
 事件携带 SHA-256 摘要与字节数，便于并入 #t61 的 hash chain 与 WORM 归档（#t78 约束）；
 失败的传输同样产出一条 ``status=failed`` 的事件，保证失败传输在审计中可见。
 
-说明：#t78 的文件传输日志入库端点尚未建立（属 M6），本切片先以
-:class:`FileTransferEventSink` 协议解耦下游；待 #t78 落地入库端点后，提供 HTTP sink 即可
-接线，无需改动本传输通道（与命令事件 sink 的做法一致）。
+说明：#t78 已提供入库端点 ``POST /api/v1/connectors/{connector_id}/file-transfers``，
+事件经 :class:`HttpFileTransferEventSink` 或进程内 :class:`AuditServiceFileTransferSink`
+并入 #t61 hash chain。本模块仍只负责传输通道与 :class:`FileTransferEventSink` 协议。
 """
 
 from __future__ import annotations
